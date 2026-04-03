@@ -309,8 +309,8 @@ def _resolve_mflux_class(model_config):
         from mflux.models.z_image.variants.z_image import ZImage
         return ZImage
     if "FIBO" in name or "Fibo" in name:
-        from mflux.models.fibo.variants.txt2img.fibo import Fibo
-        return Fibo
+        from mflux.models.fibo.variants.txt2img.fibo import FIBO
+        return FIBO
     if "Qwen" in name:
         from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
         return QwenImage
