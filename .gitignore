@@ -35,3 +35,5 @@ icon.icns
 # Environment
 .env
 .env.local
+
+config/config.json
