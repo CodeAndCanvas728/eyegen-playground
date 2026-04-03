@@ -16,11 +16,12 @@ from core import (
     get_mflux_pipeline,
     sanitize_prompt, validate_dimensions, validate_image_path,
     generate_image, detect_backend, pull_model,
-    list_ollama_models, list_mflux_models,
+    list_ollama_models, list_mflux_models, clear_mflux_cache,
     hf_login, hf_status, hf_logout,
     PROJECT_ROOT, CONFIG_FILE, OUTPUT_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
     VALID_BACKENDS,
+    QuantizationError,
 )
 
 app = typer.Typer(
@@ -192,6 +193,27 @@ def generate(
                 err=True,
             )
         raise typer.Exit(1)
+    except QuantizationError as qe:
+        typer.echo(f"\n⚠️  Quantization failed: {qe.original}", err=True)
+        typer.echo("   Retrying with full precision (no quantization)...", err=True)
+        try:
+            pipeline = get_mflux_pipeline(config, quantize=None)
+            gen_image = generate_image(
+                pipeline, prompt, guidance_scale, num_steps, w, h, seed,
+                image_path=image_path, denoise=denoise_value,
+                backend=resolved_backend,
+            )
+            output.parent.mkdir(parents=True, exist_ok=True)
+            gen_image.save(output)
+            typer.echo(f"\n✅ Image saved to: {output}")
+            if not image_path:
+                typer.echo(f"   Size: {w}x{h} pixels")
+            typer.echo("\n💡 Tip: To avoid this warning, set quantize to None:")
+            typer.echo("   ./generate.py config-set mflux_quantize null")
+            typer.echo("   Or clear the model cache: ./generate.py clear-cache")
+        except Exception as retry_err:
+            typer.echo(f"\n❌ Retry also failed: {retry_err}", err=True)
+            raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"\n❌ Generation failed: {e}", err=True)
         raise typer.Exit(1)
@@ -383,6 +405,28 @@ def status():
         typer.echo(f"🔑 HuggingFace: logged in as {info.get('name', 'unknown')}")
     else:
         typer.echo(f"🔑 HuggingFace: not logged in (run hf-login for gated models)")
+
+
+@app.command(name="clear-cache")
+def clear_cache(
+    model: Optional[str] = typer.Argument(
+        None,
+        help="Model alias or HF repo-id to clear (e.g. 'dev'). Omit to clear all FLUX caches.",
+    ),
+):
+    """Clear cached model files from HuggingFace to force a fresh download."""
+    typer.echo(f"🗑  Clearing model cache{f' for {model}' if model else ''}...")
+    try:
+        removed = clear_mflux_cache(model)
+        if removed:
+            for r in removed:
+                typer.echo(f"  ✓ Removed: {r}")
+            typer.echo(f"✅ Cleared {len(removed)} cached revision(s). Models will re-download on next use.")
+        else:
+            typer.echo("ℹ  No matching cached models found.")
+    except Exception as e:
+        typer.echo(f"❌ Cache clear failed: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command(name="hf-login")

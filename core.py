@@ -9,9 +9,12 @@ Supports three backends:
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 # Detect whether we're running inside a py2app bundle.
 # py2app sets sys.frozen = 'macosx_app' at runtime; the bundle's Resources
@@ -55,6 +58,32 @@ DEFAULT_CONFIG = {
     "backend": BACKEND_AUTO,
     "mflux_quantize": 4,
 }
+
+
+# ---------------------------------------------------------------------------
+# Quantization error
+# ---------------------------------------------------------------------------
+
+class QuantizationError(RuntimeError):
+    """Raised when MLX quantized-weight dequantization fails at inference.
+
+    Callers can catch this to retry with ``quantize=None`` (full precision).
+    """
+
+    def __init__(self, original: Exception, model_name: str = ""):
+        self.original = original
+        self.model_name = model_name
+        super().__init__(
+            f"Quantization error for model '{model_name}': {original}. "
+            "Try regenerating with full precision (quantize=None) or clear "
+            "the model cache with: ./generate.py clear-cache"
+        )
+
+
+def _is_quantization_error(exc: Exception) -> bool:
+    """Return True if *exc* looks like the MLX dequantize uint32 ValueError."""
+    msg = str(exc).lower()
+    return "dequantize" in msg or ("uint32" in msg and "matrix" in msg)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +407,14 @@ def _generate_image_mflux(model, prompt: str, cfg_weight: float, num_steps: int,
         except Exception:
             pass
 
-    result = model.generate_image(**kwargs)
+    try:
+        result = model.generate_image(**kwargs)
+    except ValueError as exc:
+        if _is_quantization_error(exc):
+            model_name = getattr(model, "model_config", None)
+            model_name = getattr(model_name, "model_name", "unknown") if model_name else "unknown"
+            raise QuantizationError(exc, model_name) from exc
+        raise
 
     # Some models return GeneratedImage (with .image attr), others return PIL.Image directly
     if hasattr(result, "image"):
@@ -398,6 +434,40 @@ def list_mflux_models() -> list[dict]:
         # Fall back to static list
         aliases = sorted(_get_mflux_aliases())
         return [{"alias": a, "model_name": a} for a in aliases]
+
+
+def clear_mflux_cache(model_alias: str | None = None) -> list[str]:
+    """Delete cached MFLUX / HuggingFace model files and return removed paths.
+
+    If *model_alias* is given, resolve it to an HF repo-id and delete only
+    that model's cache.  Otherwise delete all FLUX-related caches.
+    """
+    from huggingface_hub import scan_cache_dir
+
+    removed: list[str] = []
+    repo_id: str | None = None
+
+    if model_alias:
+        try:
+            from mflux.models.common.config.model_config import ModelConfig
+            mc = ModelConfig.from_name(model_name=model_alias)
+            repo_id = mc.model_name
+        except Exception:
+            repo_id = model_alias  # treat as literal HF repo-id
+
+    cache_info = scan_cache_dir()
+    for repo in cache_info.repos:
+        if repo_id and repo.repo_id != repo_id:
+            continue
+        if not repo_id and "flux" not in repo.repo_id.lower():
+            continue
+        for revision in repo.revisions:
+            strategy = cache_info.delete_revisions(revision.commit_hash)
+            log.info("Removing cached revision %s for %s", revision.commit_hash, repo.repo_id)
+            strategy.execute()
+            removed.append(f"{repo.repo_id} ({revision.commit_hash[:8]})")
+
+    return removed
 
 
 # ---------------------------------------------------------------------------

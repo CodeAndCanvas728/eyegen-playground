@@ -26,12 +26,13 @@ from PySide6.QtWidgets import (
 
 from core import (
     load_config, get_pipeline, get_ollama_pipeline, get_mflux_pipeline,
-    generate_image,
+    generate_image, clear_mflux_cache,
     validate_dimensions, validate_image_path, detect_backend,
     pull_model, list_ollama_models,
     hf_login, hf_status, hf_logout,
     OUTPUT_DIR, CONFIG_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
+    QuantizationError,
 )
 
 # ---------------------------------------------------------------------------
@@ -145,6 +146,7 @@ def _clear_pipeline_cache():
 class GenerationWorker(QThread):
     finished = Signal(object, str)  # (PIL.Image, output_path)
     error = Signal(str)
+    quantize_failed = Signal(str)  # model_name — dequantize error, offer retry
     status = Signal(str)
     progress = Signal(int, int)  # (current_step, total_steps)
     cancelled = Signal()
@@ -231,6 +233,11 @@ class GenerationWorker(QThread):
         except GenerationCancelled:
             log.info("Generation cancelled by user")
             self.cancelled.emit()
+        except QuantizationError as qe:
+            log.warning("Quantization error for %s: %s", qe.model_name, qe.original)
+            _pipeline_cache["pipeline"] = None
+            _pipeline_cache["key"] = None
+            self.quantize_failed.emit(qe.model_name)
         except Exception as exc:
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
@@ -987,6 +994,7 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_finished)
         self.worker.error.connect(self._on_error)
+        self.worker.quantize_failed.connect(self._on_quantize_failed)
         self.worker.cancelled.connect(self._on_cancelled)
         self.worker.start()
 
@@ -1034,6 +1042,46 @@ class MainWindow(QMainWindow):
         dlg.setDetailedText(full_traceback)
         dlg.setInformativeText(f"Full log: {LOG_FILE}")
         dlg.exec()
+
+    def _on_quantize_failed(self, model_name: str):
+        """Handle QuantizationError — offer retry without quantization."""
+        self._elapsed_timer.stop()
+        self.progress_bar.hide()
+        self.progress_bar.reset()
+        self._reset_generate_btn()
+        self.status_label.setText("⚠️ Quantization failed")
+        self.status_label.setStyleSheet("color: orange;")
+
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Quantization Error")
+        dlg.setIcon(QMessageBox.Warning)
+        dlg.setText(
+            f"The quantized weights for '{model_name}' are incompatible "
+            f"with the current MLX version."
+        )
+        dlg.setInformativeText(
+            "You can retry with full precision (uses more memory) or "
+            "clear the model cache to force a fresh download."
+        )
+        retry_btn = dlg.addButton("Retry (full precision)", QMessageBox.AcceptRole)
+        clear_btn = dlg.addButton("Clear cache && retry", QMessageBox.ActionRole)
+        dlg.addButton(QMessageBox.Cancel)
+        dlg.exec()
+
+        clicked = dlg.clickedButton()
+        if clicked == clear_btn:
+            try:
+                removed = clear_mflux_cache()
+                log.info("Cleared %d cached revision(s)", len(removed))
+            except Exception as exc:
+                log.error("Cache clear failed: %s", exc)
+            self.quantize_combo.setCurrentIndex(
+                self.quantize_combo.findData(0))  # "None (full precision)"
+            self._start_generate()
+        elif clicked == retry_btn:
+            self.quantize_combo.setCurrentIndex(
+                self.quantize_combo.findData(0))  # "None (full precision)"
+            self._start_generate()
 
     def _stop_generation(self):
         """Cancel the running generation."""
