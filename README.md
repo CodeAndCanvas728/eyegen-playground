@@ -1,4 +1,4 @@
-# EyeGen
+# EyeGen Playground
 
 Local image generation on Apple Silicon — runs entirely offline, no API key needed.  
 Comes with a native macOS GUI and a full-featured CLI.
