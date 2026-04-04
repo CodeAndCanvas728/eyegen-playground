@@ -27,6 +27,7 @@ if _BUNDLED:
     CONFIG_DIR = _APP_SUPPORT
     CONFIG_FILE = _APP_SUPPORT / "config.json"
     OUTPUT_DIR = Path.home() / "Pictures" / "EyeGen"
+    MODELS_DIR = _APP_SUPPORT / "models"
     PROJECT_ROOT = Path.home()  # not meaningful in bundle context
 else:
     # Development / CLI mode: use the project directory
@@ -34,10 +35,12 @@ else:
     CONFIG_DIR = PROJECT_ROOT / "config"
     OUTPUT_DIR = PROJECT_ROOT / "outputs"
     CONFIG_FILE = CONFIG_DIR / "config.json"
+    MODELS_DIR = PROJECT_ROOT / "models"
 
 # Ensure directories exist
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Backend constants
@@ -57,6 +60,7 @@ DEFAULT_CONFIG = {
     "guidance_scale": 7.5,
     "backend": BACKEND_AUTO,
     "mflux_quantize": 4,
+    "mflux_model_path": None,
 }
 
 
@@ -357,12 +361,32 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
 
     The model instance exposes ``generate_image()``.
     *quantize* can be 4 (default), 8, or None.
+
+    If ``config["mflux_model_path"]`` points to a local directory of
+    pre-quantized weights (created by :func:`save_mflux_model`), the
+    model is loaded from disk and *quantize* is ignored — the stored
+    quantization level takes precedence.
     """
     from mflux.models.common.config.model_config import ModelConfig
 
     model_name = config.get("model", "dev")
     model_config = ModelConfig.from_name(model_name=model_name)
     cls = _resolve_mflux_class(model_config)
+
+    local_path = config.get("mflux_model_path")
+    if local_path:
+        p = Path(local_path).expanduser()
+        if not p.is_dir():
+            raise FileNotFoundError(
+                f"MFLUX model path does not exist: {p}\n"
+                "Save a model first:  ./generate.py save-model dev --quantize 4"
+            )
+        log.info("Loading MFLUX model from local path: %s", p)
+        return cls(
+            model_config=model_config,
+            model_path=str(p),
+            quantize=quantize,
+        )
 
     return cls(
         model_config=model_config,
@@ -468,6 +492,102 @@ def clear_mflux_cache(model_alias: str | None = None) -> list[str]:
             removed.append(f"{repo.repo_id} ({revision.commit_hash[:8]})")
 
     return removed
+
+
+def save_mflux_model(
+    model_alias: str,
+    quantize: int | None,
+    output_path: str | Path,
+    progress_callback=None,
+) -> Path:
+    """Download an MFLUX model, quantize it, and save to *output_path*.
+
+    This is a one-time operation.  The saved directory contains weights
+    **and** tokenizers so subsequent loads need no network access.
+
+    *progress_callback*, if provided, is called with ``(message: str)``
+    for status updates (downloading, quantizing, saving).
+
+    Returns the resolved output path.
+    """
+    from mflux.models.common.config.model_config import ModelConfig
+
+    output_path = Path(output_path).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    model_config = ModelConfig.from_name(model_name=model_alias)
+    cls = _resolve_mflux_class(model_config)
+
+    q_label = f"{quantize}-bit" if quantize else "full precision"
+    if progress_callback:
+        progress_callback(f"Downloading & quantizing '{model_alias}' ({q_label})…")
+    log.info("Saving MFLUX model '%s' (%s) to %s", model_alias, q_label, output_path)
+
+    model = cls(model_config=model_config, quantize=quantize)
+
+    if progress_callback:
+        progress_callback(f"Saving to {output_path}…")
+    model.save_model(str(output_path))
+
+    log.info("Model saved: %s", output_path)
+    if progress_callback:
+        progress_callback(f"✅ Model saved to {output_path}")
+    return output_path
+
+
+def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
+    """Check whether *path* contains a valid mflux-saved model.
+
+    Returns ``(True, metadata)`` where *metadata* includes at least
+    ``quantization_level`` (int or None) and ``mflux_version`` (str or None),
+    or ``(False, None)`` if the directory is missing or incomplete.
+    """
+    p = Path(path).expanduser()
+    if not p.is_dir():
+        return False, None
+
+    # mflux save produces component subdirs with .safetensors files.
+    # The exact subdirectory names depend on the model family; check
+    # for the most common Flux1 layout first, then fall back to a
+    # generic "at least one subdir with safetensors" check.
+    _FLUX1_COMPONENTS = ("transformer", "vae")
+    has_components = False
+    for comp in _FLUX1_COMPONENTS:
+        comp_dir = p / comp
+        if comp_dir.is_dir() and list(comp_dir.glob("*.safetensors")):
+            has_components = True
+        else:
+            has_components = False
+            break
+
+    if not has_components:
+        # Fallback: any subdir with safetensors?
+        has_any = any(
+            sf for d in p.iterdir()
+            if d.is_dir()
+            for sf in d.glob("*.safetensors")
+        )
+        if not has_any:
+            return False, None
+
+    # Read metadata from the first safetensors shard we find
+    meta: dict = {"quantization_level": None, "mflux_version": None}
+    try:
+        from safetensors import safe_open
+        for subdir in sorted(p.iterdir()):
+            if not subdir.is_dir():
+                continue
+            for sf in sorted(subdir.glob("*.safetensors")):
+                with safe_open(str(sf), framework="mlx") as f:
+                    m = f.metadata() or {}
+                    ql = m.get("quantization_level")
+                    meta["quantization_level"] = int(ql) if ql and ql != "None" else None
+                    meta["mflux_version"] = m.get("mflux_version")
+                return True, meta
+    except Exception:
+        pass
+
+    return True, meta
 
 
 # ---------------------------------------------------------------------------

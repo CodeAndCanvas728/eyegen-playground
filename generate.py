@@ -17,8 +17,9 @@ from core import (
     sanitize_prompt, validate_dimensions, validate_image_path,
     generate_image, detect_backend, pull_model,
     list_ollama_models, list_mflux_models, clear_mflux_cache,
+    save_mflux_model, validate_saved_model,
     hf_login, hf_status, hf_logout,
-    PROJECT_ROOT, CONFIG_FILE, OUTPUT_DIR, DEFAULT_CONFIG,
+    PROJECT_ROOT, CONFIG_FILE, OUTPUT_DIR, MODELS_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
     VALID_BACKENDS,
     QuantizationError,
@@ -139,6 +140,9 @@ def generate(
     typer.echo(f"✨ Generating image...")
     typer.echo(f"   Backend: {backend_label}")
     typer.echo(f"   Model: {model}")
+    local_model = config.get("mflux_model_path")
+    if local_model and resolved_backend == BACKEND_MFLUX:
+        typer.echo(f"   Local model: {local_model}")
     typer.echo(f"   Prompt: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
     if image_path:
         typer.echo(f"   Mode: img2img | Denoise: {denoise_value:.2f} | Input: {image_path}")
@@ -426,6 +430,62 @@ def clear_cache(
             typer.echo("ℹ  No matching cached models found.")
     except Exception as e:
         typer.echo(f"❌ Cache clear failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="save-model")
+def save_model_cmd(
+    model: str = typer.Argument(
+        ...,
+        help="MFLUX model alias (e.g. 'dev', 'schnell', 'fibo')",
+    ),
+    quantize_bits: Optional[int] = typer.Option(
+        4,
+        "--quantize", "-q",
+        help="Quantization bits: 4 (default), 8, or omit for full precision",
+    ),
+    path: Optional[Path] = typer.Option(
+        None,
+        "--path", "-p",
+        help="Output directory (default: models/<alias>-<q>bit)",
+    ),
+):
+    """Save a pre-quantized MFLUX model to disk for fast local loading.
+
+    Downloads the model from HuggingFace, quantizes it, and saves weights
+    + tokenizers to a local directory.  Subsequent runs can load from this
+    path instantly — no download or runtime quantization needed.
+
+    \b
+    Examples:
+      ./generate.py save-model dev --quantize 4
+      ./generate.py save-model schnell --quantize 8 --path ~/models/schnell-8bit
+    """
+    if path is None:
+        q_label = f"{quantize_bits}bit" if quantize_bits else "fp"
+        path = MODELS_DIR / f"{model}-{q_label}"
+
+    typer.echo(f"💾 Saving model '{model}' to {path}")
+    q_label = f"{quantize_bits}-bit" if quantize_bits else "full precision"
+    typer.echo(f"   Quantization: {q_label}")
+    typer.echo("   This may take a while (downloads the full model)…")
+
+    try:
+        result_path = save_mflux_model(
+            model_alias=model,
+            quantize=quantize_bits,
+            output_path=path,
+            progress_callback=lambda msg: typer.echo(f"   {msg}"),
+        )
+        typer.echo(f"\n✅ Model saved to: {result_path}")
+        valid, meta = validate_saved_model(result_path)
+        if valid and meta:
+            ql = meta.get("quantization_level")
+            typer.echo(f"   Quantization: {ql}-bit" if ql else "   Quantization: full precision")
+        typer.echo(f"\n💡 To use this model, set the path in your config:")
+        typer.echo(f"   ./generate.py config-set mflux_model_path {result_path}")
+    except Exception as e:
+        typer.echo(f"\n❌ Save failed: {e}", err=True)
         raise typer.Exit(1)
 
 

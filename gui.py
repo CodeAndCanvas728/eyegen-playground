@@ -27,10 +27,11 @@ from PySide6.QtWidgets import (
 from core import (
     load_config, get_pipeline, get_ollama_pipeline, get_mflux_pipeline,
     generate_image, clear_mflux_cache,
+    save_mflux_model, validate_saved_model,
     validate_dimensions, validate_image_path, detect_backend,
-    pull_model, list_ollama_models,
+    pull_model, list_ollama_models, list_mflux_models,
     hf_login, hf_status, hf_logout,
-    OUTPUT_DIR, CONFIG_DIR, DEFAULT_CONFIG,
+    OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
     QuantizationError,
 )
@@ -174,7 +175,8 @@ class GenerationWorker(QThread):
         try:
             # Check pipeline cache
             cache_key = (self.backend, self.config.get("model"),
-                         self.mflux_quantize, self.use_t5)
+                         self.mflux_quantize, self.use_t5,
+                         self.config.get("mflux_model_path"))
             if (_pipeline_cache["pipeline"] is not None
                     and _pipeline_cache["key"] == cache_key):
                 pipeline = _pipeline_cache["pipeline"]
@@ -272,6 +274,32 @@ class PullWorker(QThread):
             full = traceback.format_exc()
             log.error("Pull failed:\n%s", full)
             self.finished.emit(False, str(exc))
+
+
+class SaveModelWorker(QThread):
+    """Downloads, quantizes, and saves an MFLUX model in a background thread."""
+    finished = Signal(bool, str, str)  # (success, message, saved_path)
+    status = Signal(str)
+
+    def __init__(self, model_alias: str, quantize: int | None, output_path: str):
+        super().__init__()
+        self.model_alias = model_alias
+        self.quantize = quantize
+        self.output_path = output_path
+
+    def run(self):
+        try:
+            result = save_mflux_model(
+                model_alias=self.model_alias,
+                quantize=self.quantize,
+                output_path=self.output_path,
+                progress_callback=lambda msg: self.status.emit(msg),
+            )
+            self.finished.emit(True, "Model saved successfully", str(result))
+        except Exception as exc:
+            full = traceback.format_exc()
+            log.error("Save model failed:\n%s", full)
+            self.finished.emit(False, str(exc), "")
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +429,7 @@ class MainWindow(QMainWindow):
 
         self.worker: Optional[GenerationWorker] = None
         self.pull_worker: Optional[PullWorker] = None
+        self._save_worker: Optional[SaveModelWorker] = None
         self.config = load_config()
         self._gui_state = load_gui_state()
         # Saved steps/guidance before MFLUX auto-set them
@@ -646,6 +675,43 @@ class MainWindow(QMainWindow):
         self.quantize_row.hide()
         settings_layout.addWidget(self.quantize_row)
 
+        # MFLUX local model path
+        self.model_path_row = QWidget()
+        mp_layout = QVBoxLayout(self.model_path_row)
+        mp_layout.setContentsMargins(0, 0, 0, 0)
+        mp_top = QHBoxLayout()
+        mp_top.addWidget(QLabel("Saved model"))
+        self.model_path_input = QLineEdit()
+        self.model_path_input.setPlaceholderText("None (downloads from HuggingFace)")
+        self.model_path_input.setToolTip(
+            "Path to a pre-quantized model directory saved with Save Model.\n"
+            "Leave blank to download from HuggingFace on each first run."
+        )
+        self.model_path_input.editingFinished.connect(self._on_model_path_changed)
+        mp_top.addWidget(self.model_path_input)
+        browse_btn = QPushButton("Browse…")
+        browse_btn.setFixedWidth(70)
+        browse_btn.clicked.connect(self._on_browse_model_path)
+        mp_top.addWidget(browse_btn)
+        mp_layout.addLayout(mp_top)
+        # Status label + Save Model button on second row
+        mp_bottom = QHBoxLayout()
+        self.model_path_status = QLabel()
+        self.model_path_status.setStyleSheet("color: #888; font-size: 11px;")
+        self.model_path_status.setWordWrap(True)
+        mp_bottom.addWidget(self.model_path_status, 1)
+        self.save_model_btn = QPushButton("Save Model…")
+        self.save_model_btn.setFixedWidth(100)
+        self.save_model_btn.setToolTip(
+            "Download and save a pre-quantized MFLUX model to disk.\n"
+            "One-time operation — subsequent loads are instant."
+        )
+        self.save_model_btn.clicked.connect(self._on_save_model)
+        mp_bottom.addWidget(self.save_model_btn)
+        mp_layout.addLayout(mp_bottom)
+        self.model_path_row.hide()
+        settings_layout.addWidget(self.model_path_row)
+
         # Backend hint label (shown for MFLUX with recommended settings)
         self.backend_hint = QLabel()
         self.backend_hint.setWordWrap(True)
@@ -746,15 +812,20 @@ class MainWindow(QMainWindow):
         # Quantize dropdown only for MFLUX
         self.quantize_row.setVisible(is_mflux)
 
+        # Model path row only for MFLUX
+        self.model_path_row.setVisible(is_mflux)
+        if is_mflux:
+            self._refresh_model_path_status()
+
         # Pull button only for OllamaDiffuser
         self.pull_btn.setVisible(is_ollama)
 
         # Backend hint label
         if is_mflux:
-            self.backend_hint.setText(
-                "💡 FLUX models: ~4 steps, 3.5–4.0 guidance. "
-                "Models auto-download on first use."
-            )
+            hint = "💡 FLUX models: ~4 steps, 3.5–4.0 guidance."
+            if not self.model_path_input.text().strip():
+                hint += " Save a model locally for faster loading."
+            self.backend_hint.setText(hint)
             self.backend_hint.show()
         else:
             self.backend_hint.hide()
@@ -805,6 +876,147 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet("color: green;")
         else:
             self.status_label.setText(f"❌ {message}")
+            self.status_label.setStyleSheet("color: red;")
+
+    # -- MFLUX model path & save -----------------------------------------
+
+    def _on_browse_model_path(self):
+        """Open a folder picker for a saved MFLUX model directory."""
+        start_dir = str(MODELS_DIR) if MODELS_DIR.exists() else str(Path.home())
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Saved Model Directory", start_dir)
+        if path:
+            self.model_path_input.setText(path)
+            self._on_model_path_changed()
+
+    def _on_model_path_changed(self):
+        """Validate the model path and update the status label."""
+        self._refresh_model_path_status()
+        self._update_backend_dependent_controls()
+
+    def _refresh_model_path_status(self):
+        """Update model_path_status label based on the current path."""
+        path = self.model_path_input.text().strip()
+        if not path:
+            self.model_path_status.setText("")
+            return
+        valid, meta = validate_saved_model(path)
+        if valid and meta:
+            ql = meta.get("quantization_level")
+            q_str = f"{ql}-bit" if ql else "full precision"
+            ver = meta.get("mflux_version") or "unknown"
+            self.model_path_status.setText(f"✅ Valid model — {q_str} (mflux {ver})")
+            self.model_path_status.setStyleSheet("color: green; font-size: 11px;")
+        elif valid:
+            self.model_path_status.setText("✅ Model directory found (no metadata)")
+            self.model_path_status.setStyleSheet("color: #888; font-size: 11px;")
+        else:
+            self.model_path_status.setText("⚠ Not a valid saved model directory")
+            self.model_path_status.setStyleSheet("color: orange; font-size: 11px;")
+
+    def _on_save_model(self):
+        """Open the Save Model dialog and start the save worker."""
+        if hasattr(self, "_save_worker") and self._save_worker is not None and self._save_worker.isRunning():
+            self.status_label.setText("⚠ A model save is already in progress")
+            self.status_label.setStyleSheet("color: orange;")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Save Model")
+        dlg.setMinimumWidth(420)
+        layout = QVBoxLayout(dlg)
+
+        layout.addWidget(QLabel("Model alias:"))
+        alias_combo = QComboBox()
+        try:
+            models = list_mflux_models()
+            for m in models:
+                alias_combo.addItem(
+                    f"{m['alias']}  ({m['model_name']})", m["alias"])
+        except Exception:
+            for a in ("dev", "schnell", "fibo", "z-image"):
+                alias_combo.addItem(a, a)
+        # Pre-select current model if it's in the list
+        current = self.model_input.text().strip()
+        idx = alias_combo.findData(current)
+        if idx >= 0:
+            alias_combo.setCurrentIndex(idx)
+        layout.addWidget(alias_combo)
+
+        layout.addWidget(QLabel("Quantization:"))
+        q_combo = QComboBox()
+        q_combo.addItem("4-bit (recommended)", 4)
+        q_combo.addItem("8-bit", 8)
+        q_combo.addItem("None (full precision)", 0)
+        layout.addWidget(q_combo)
+
+        layout.addWidget(QLabel("Save directory:"))
+        path_row = QHBoxLayout()
+        path_input = QLineEdit()
+        def _update_default_path():
+            alias = alias_combo.currentData()
+            q = q_combo.currentData()
+            q_label = f"{q}bit" if q else "fp"
+            path_input.setText(str(MODELS_DIR / f"{alias}-{q_label}"))
+        _update_default_path()
+        alias_combo.currentIndexChanged.connect(lambda _: _update_default_path())
+        q_combo.currentIndexChanged.connect(lambda _: _update_default_path())
+        path_row.addWidget(path_input)
+        pick_btn = QPushButton("…")
+        pick_btn.setFixedWidth(30)
+        pick_btn.clicked.connect(lambda: path_input.setText(
+            QFileDialog.getExistingDirectory(dlg, "Choose Directory",
+                                             str(MODELS_DIR)) or path_input.text()))
+        path_row.addWidget(pick_btn)
+        layout.addLayout(path_row)
+
+        note = QLabel(
+            "⚠ This downloads the full model from HuggingFace, quantizes it,\n"
+            "and saves to disk. This is a one-time operation that may take\n"
+            "several minutes and use significant disk space."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(note)
+
+        from PySide6.QtWidgets import QDialogButtonBox
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        alias = alias_combo.currentData()
+        q = q_combo.currentData()
+        quantize = q if q != 0 else None
+        out_path = path_input.text().strip()
+        if not out_path:
+            return
+
+        self.save_model_btn.setEnabled(False)
+        self.generate_btn.setEnabled(False)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+
+        self._save_worker = SaveModelWorker(alias, quantize, out_path)
+        self._save_worker.status.connect(self._on_status)
+        self._save_worker.finished.connect(self._on_save_model_finished)
+        self._save_worker.start()
+
+    def _on_save_model_finished(self, success: bool, message: str, saved_path: str):
+        self.save_model_btn.setEnabled(True)
+        self.generate_btn.setEnabled(True)
+        self.progress_bar.hide()
+        self.progress_bar.reset()
+        if success:
+            self.status_label.setText(f"✅ {message}")
+            self.status_label.setStyleSheet("color: green;")
+            self.model_path_input.setText(saved_path)
+            self._on_model_path_changed()
+        else:
+            self.status_label.setText(f"❌ Save failed: {message}")
             self.status_label.setStyleSheet("color: red;")
 
     def _on_hf_login(self):
@@ -863,6 +1075,7 @@ class MainWindow(QMainWindow):
             "denoise": self.denoise_spin.value(),
             "backend": self.backend_combo.currentData(),
             "mflux_quantize": self.quantize_combo.currentData(),
+            "mflux_model_path": self.model_path_input.text(),
         }
 
     def _restore_state(self):
@@ -909,6 +1122,8 @@ class MainWindow(QMainWindow):
             idx = self.quantize_combo.findData(s["mflux_quantize"])
             if idx >= 0:
                 self.quantize_combo.setCurrentIndex(idx)
+        if "mflux_model_path" in s and s["mflux_model_path"]:
+            self.model_path_input.setText(s["mflux_model_path"])
         self._restoring_state = False
         # Apply backend-dependent visibility after all state is restored
         self._update_backend_dependent_controls()
@@ -958,6 +1173,13 @@ class MainWindow(QMainWindow):
 
         config = dict(self.config)
         config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
+
+        # Pass MFLUX saved model path through config
+        model_path = self.model_path_input.text().strip()
+        if model_path and resolved_backend == BACKEND_MFLUX:
+            config["mflux_model_path"] = model_path
+        else:
+            config["mflux_model_path"] = None
 
         resolved_backend = self._resolved_backend()
 
