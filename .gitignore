@@ -40,3 +40,4 @@ icon.icns
 .env.local
 
 config/config.json
+CLAUDE.md
