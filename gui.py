@@ -251,9 +251,10 @@ class PullWorker(QThread):
     finished = Signal(bool, str)  # (success, message)
     status = Signal(str)
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, hf_cache_dir: str | None = None):
         super().__init__()
         self.model_name = model_name
+        self.hf_cache_dir = hf_cache_dir
 
     def run(self):
         try:
@@ -264,7 +265,8 @@ class PullWorker(QThread):
                 if isinstance(msg, str):
                     self.status.emit(msg)
 
-            ok = pull_model(self.model_name, progress_callback=on_progress)
+            ok = pull_model(self.model_name, progress_callback=on_progress,
+                            hf_cache_dir=self.hf_cache_dir)
             if ok:
                 log.info("Pull complete: %s", self.model_name)
                 self.finished.emit(True, f"Model '{self.model_name}' is ready")
@@ -281,11 +283,13 @@ class SaveModelWorker(QThread):
     finished = Signal(bool, str, str)  # (success, message, saved_path)
     status = Signal(str)
 
-    def __init__(self, model_alias: str, quantize: int | None, output_path: str):
+    def __init__(self, model_alias: str, quantize: int | None, output_path: str,
+                 hf_cache_dir: str | None = None):
         super().__init__()
         self.model_alias = model_alias
         self.quantize = quantize
         self.output_path = output_path
+        self.hf_cache_dir = hf_cache_dir
 
     def run(self):
         try:
@@ -294,6 +298,7 @@ class SaveModelWorker(QThread):
                 quantize=self.quantize,
                 output_path=self.output_path,
                 progress_callback=lambda msg: self.status.emit(msg),
+                hf_cache_dir=self.hf_cache_dir,
             )
             self.finished.emit(True, "Model saved successfully", str(result))
         except Exception as exc:
@@ -719,6 +724,23 @@ class MainWindow(QMainWindow):
         self.backend_hint.hide()
         settings_layout.addWidget(self.backend_hint)
 
+        # HF Cache Directory (all backends)
+        settings_layout.addWidget(QLabel("HF Cache Dir"))
+        hf_cache_row = QHBoxLayout()
+        self.hf_cache_input = QLineEdit()
+        self.hf_cache_input.setPlaceholderText(
+            f"Default (~/.cache/huggingface/hub)")
+        self.hf_cache_input.setToolTip(
+            "Directory where HuggingFace caches downloaded model weights.\n"
+            "Leave blank to use the default (~/.cache/huggingface/hub)."
+        )
+        hf_cache_row.addWidget(self.hf_cache_input)
+        hf_cache_browse = QPushButton("Browse…")
+        hf_cache_browse.setFixedWidth(70)
+        hf_cache_browse.clicked.connect(self._on_browse_hf_cache)
+        hf_cache_row.addWidget(hf_cache_browse)
+        settings_layout.addLayout(hf_cache_row)
+
         ctrl_layout.addWidget(settings_group)
 
         # HuggingFace login button
@@ -816,6 +838,12 @@ class MainWindow(QMainWindow):
         self.model_path_row.setVisible(is_mflux)
         if is_mflux:
             self._refresh_model_path_status()
+        else:
+            # Re-enable Model/Quantize fields when not on MFLUX backend
+            self.model_input.setEnabled(True)
+            self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
+            self.quantize_combo.setEnabled(True)
+            self.quantize_combo.setToolTip("MFLUX runtime quantization level")
 
         # Pull button only for OllamaDiffuser
         self.pull_btn.setVisible(is_ollama)
@@ -861,7 +889,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)  # indeterminate
         self.progress_bar.show()
 
-        self.pull_worker = PullWorker(model)
+        self.pull_worker = PullWorker(model, hf_cache_dir=self.hf_cache_input.text().strip() or None)
         self.pull_worker.status.connect(self._on_status)
         self.pull_worker.finished.connect(self._on_pull_finished)
         self.pull_worker.start()
@@ -889,16 +917,34 @@ class MainWindow(QMainWindow):
             self.model_path_input.setText(path)
             self._on_model_path_changed()
 
+    def _on_browse_hf_cache(self):
+        """Open a folder picker for the HuggingFace cache directory."""
+        current = self.hf_cache_input.text().strip()
+        start_dir = current if current else str(Path.home() / ".cache" / "huggingface" / "hub")
+        path = QFileDialog.getExistingDirectory(
+            self, "Select HuggingFace Cache Directory", start_dir)
+        if path:
+            self.hf_cache_input.setText(path)
+
     def _on_model_path_changed(self):
         """Validate the model path and update the status label."""
         self._refresh_model_path_status()
         self._update_backend_dependent_controls()
 
     def _refresh_model_path_status(self):
-        """Update model_path_status label based on the current path."""
+        """Update model_path_status label based on the current path.
+
+        Also disables the Model and Quantize fields when a valid saved model
+        path is set, since the saved model's weights/quantization take
+        precedence over those UI values.
+        """
         path = self.model_path_input.text().strip()
         if not path:
             self.model_path_status.setText("")
+            self.model_input.setEnabled(True)
+            self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
+            self.quantize_combo.setEnabled(True)
+            self.quantize_combo.setToolTip("MFLUX runtime quantization level")
             return
         valid, meta = validate_saved_model(path)
         if valid and meta:
@@ -913,6 +959,19 @@ class MainWindow(QMainWindow):
         else:
             self.model_path_status.setText("⚠ Not a valid saved model directory")
             self.model_path_status.setStyleSheet("color: orange; font-size: 11px;")
+
+        # Grey out Model + Quantize when a valid saved model is active
+        saved_model_active = valid
+        self.model_input.setEnabled(not saved_model_active)
+        self.model_input.setToolTip(
+            "Determined by saved model path" if saved_model_active
+            else "Hugging Face model ID or OllamaDiffuser model name"
+        )
+        self.quantize_combo.setEnabled(not saved_model_active)
+        self.quantize_combo.setToolTip(
+            "Determined by saved model path" if saved_model_active
+            else "MFLUX runtime quantization level"
+        )
 
     def _on_save_model(self):
         """Open the Save Model dialog and start the save worker."""
@@ -1000,7 +1059,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
-        self._save_worker = SaveModelWorker(alias, quantize, out_path)
+        self._save_worker = SaveModelWorker(alias, quantize, out_path,
+                                             hf_cache_dir=self.hf_cache_input.text().strip() or None)
         self._save_worker.status.connect(self._on_status)
         self._save_worker.finished.connect(self._on_save_model_finished)
         self._save_worker.start()
@@ -1076,6 +1136,7 @@ class MainWindow(QMainWindow):
             "backend": self.backend_combo.currentData(),
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
+            "hf_cache_dir": self.hf_cache_input.text(),
         }
 
     def _restore_state(self):
@@ -1124,6 +1185,8 @@ class MainWindow(QMainWindow):
                 self.quantize_combo.setCurrentIndex(idx)
         if "mflux_model_path" in s and s["mflux_model_path"]:
             self.model_path_input.setText(s["mflux_model_path"])
+        if "hf_cache_dir" in s and s["hf_cache_dir"]:
+            self.hf_cache_input.setText(s["hf_cache_dir"])
         self._restoring_state = False
         # Apply backend-dependent visibility after all state is restored
         self._update_backend_dependent_controls()
@@ -1174,6 +1237,8 @@ class MainWindow(QMainWindow):
         config = dict(self.config)
         config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
 
+        resolved_backend = self._resolved_backend()
+
         # Pass MFLUX saved model path through config
         model_path = self.model_path_input.text().strip()
         if model_path and resolved_backend == BACKEND_MFLUX:
@@ -1181,7 +1246,8 @@ class MainWindow(QMainWindow):
         else:
             config["mflux_model_path"] = None
 
-        resolved_backend = self._resolved_backend()
+        # Pass HF cache dir through config (applies to all backends)
+        config["hf_cache_dir"] = self.hf_cache_input.text().strip() or None
 
         self.generate_btn.setText("⏹  Stop")
         self.generate_btn.setStyleSheet("background-color: #cc3333; color: white;")

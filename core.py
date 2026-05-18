@@ -61,6 +61,7 @@ DEFAULT_CONFIG = {
     "backend": BACKEND_AUTO,
     "mflux_quantize": 4,
     "mflux_model_path": None,
+    "hf_cache_dir": None,
 }
 
 
@@ -200,11 +201,28 @@ def _patch_mlx_attention():
         )
 
 
+def _apply_hf_cache(config: dict):
+    """Set HF_HUB_CACHE env var from config if a custom directory is configured.
+
+    HuggingFace hub reads this env var when downloading or locating cached
+    models, so setting it before any pipeline load redirects all downloads
+    and cache lookups to the specified directory.
+    """
+    import os
+    cache_dir = config.get("hf_cache_dir") if config else None
+    if cache_dir:
+        p = Path(cache_dir).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        os.environ["HF_HUB_CACHE"] = str(p)
+        log.info("HF_HUB_CACHE set to %s", p)
+
+
 def get_pipeline(config: dict, use_t5: bool = True):
     """Load and return a diffusionkit DiffusionPipeline (MLX backend).
 
     Applies the MLX attention patch first.
     """
+    _apply_hf_cache(config)
     _patch_mlx_attention()
     from diffusionkit.mlx import DiffusionPipeline
 
@@ -248,6 +266,7 @@ def get_ollama_pipeline(config: dict):
 
     The engine exposes ``generate_image()``.
     """
+    _apply_hf_cache(config)
     from ollamadiffuser.core.models.manager import model_manager
 
     model_name = config.get("model", "")
@@ -305,12 +324,13 @@ def _generate_image_ollama(engine, prompt: str, cfg_weight: float, num_steps: in
     return image
 
 
-def pull_model(model_name: str, progress_callback=None) -> bool:
+def pull_model(model_name: str, progress_callback=None, hf_cache_dir: str | None = None) -> bool:
     """Download a GGUF model via ollamadiffuser.
 
     *progress_callback*, if provided, is called with ``(message: str)``
     for status updates.
     """
+    _apply_hf_cache({"hf_cache_dir": hf_cache_dir})
     from ollamadiffuser.core.models.manager import model_manager
     return model_manager.pull_model(model_name, progress_callback=progress_callback)
 
@@ -367,6 +387,7 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
     model is loaded from disk and *quantize* is ignored — the stored
     quantization level takes precedence.
     """
+    _apply_hf_cache(config)
     from mflux.models.common.config.model_config import ModelConfig
 
     model_name = config.get("model", "dev")
@@ -499,6 +520,7 @@ def save_mflux_model(
     quantize: int | None,
     output_path: str | Path,
     progress_callback=None,
+    hf_cache_dir: str | None = None,
 ) -> Path:
     """Download an MFLUX model, quantize it, and save to *output_path*.
 
@@ -510,6 +532,7 @@ def save_mflux_model(
 
     Returns the resolved output path.
     """
+    _apply_hf_cache({"hf_cache_dir": hf_cache_dir})
     from mflux.models.common.config.model_config import ModelConfig
 
     output_path = Path(output_path).expanduser()
