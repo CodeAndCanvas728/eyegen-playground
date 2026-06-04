@@ -41,7 +41,7 @@ from core import (
 # visible even when the GUI status label truncates them.
 # ---------------------------------------------------------------------------
 
-LOG_FILE = Path.home() / "Library" / "Logs" / "EyeGen.log"
+LOG_FILE = CONFIG_DIR / "eyegen.log"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
@@ -855,6 +855,10 @@ class MainWindow(QMainWindow):
                 hint += " Save a model locally for faster loading."
             self.backend_hint.setText(hint)
             self.backend_hint.show()
+        elif is_mlx and self.model_input.text().strip() == "mlx-community/Lance-3B-AWQ-INT4":
+            hint = "💡 Lance-3B: Highly efficient multimodal model. Recommended size: 512x512 or 1024x1024."
+            self.backend_hint.setText(hint)
+            self.backend_hint.show()
         else:
             self.backend_hint.hide()
 
@@ -1236,8 +1240,12 @@ class MainWindow(QMainWindow):
 
         config = dict(self.config)
         config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
-
-        resolved_backend = self._resolved_backend()
+        config["height"] = height
+        config["width"] = width
+        config["num_inference_steps"] = self.steps_spin.value()
+        config["guidance_scale"] = self.guidance_spin.value()
+        config["backend"] = self.backend_combo.currentData()
+        config["mflux_quantize"] = self.quantize_combo.currentData()
 
         # Pass MFLUX saved model path through config
         model_path = self.model_path_input.text().strip()
@@ -1248,6 +1256,19 @@ class MainWindow(QMainWindow):
 
         # Pass HF cache dir through config (applies to all backends)
         config["hf_cache_dir"] = self.hf_cache_input.text().strip() or None
+
+        # Clean, validate, and cast variables using EyeGenConfig
+        try:
+            from core import EyeGenConfig
+            cfg_obj = EyeGenConfig.from_dict(config)
+            errors = cfg_obj.validate()
+            if errors:
+                self.status_label.setText(f"⚠ {errors[0]}")
+                self.status_label.setStyleSheet("color: red;")
+                return
+            config = cfg_obj.to_dict()
+        except Exception as e:
+            log.warning("Validation failed: %s", e)
 
         self.generate_btn.setText("⏹  Stop")
         self.generate_btn.setStyleSheet("background-color: #cc3333; color: white;")
@@ -1372,19 +1393,24 @@ class MainWindow(QMainWindow):
             self._start_generate()
 
     def _stop_generation(self):
-        """Cancel the running generation."""
+        """Cancel the running generation cooperatively without unsafe OS terminates."""
         if self.worker is None or not self.worker.isRunning():
             return
         log.info("User requested generation stop (backend=%s)", self.worker.backend)
         self.worker._cancelled.set()
-        self.status_label.setText("Cancelling…")
+        
+        self.status_label.setText("Cancelling… (cleaning up safely)")
         self.status_label.setStyleSheet("color: orange;")
-        if self.worker.backend != BACKEND_MLX:
-            # MFLUX/OllamaDiffuser: can't interrupt C-level code, force terminate
-            self.worker.terminate()
-            self.worker.wait(3000)
+        self.generate_btn.setEnabled(False)  # prevent double-clicks
+        
+        if self.worker.backend == BACKEND_MLX:
+            # MLX has cooperative step-level interrupts and stops instantly
+            pass
+        else:
+            # MFLUX / OllamaDiffuser run very quickly to completion in background.
+            # Discard results and reset UI state immediately to keep GUI responsive.
             _clear_pipeline_cache()
-            self._on_cancelled(force_terminated=True)
+            self._on_cancelled(force_terminated=False)
 
     def _on_cancelled(self, force_terminated=False):
         """Handle generation cancellation."""
@@ -1393,13 +1419,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.reset()
         self._reset_generate_btn()
         elapsed = f" ({self._elapsed_seconds}s)" if self._elapsed_seconds > 0 else ""
-        if force_terminated:
-            self.status_label.setText(
-                f"⏹ Stopped{elapsed} — restart app if issues occur")
-            self.status_label.setStyleSheet("color: orange;")
-        else:
-            self.status_label.setText(f"⏹ Cancelled{elapsed}")
-            self.status_label.setStyleSheet("color: gray;")
+        self.status_label.setText(f"⏹ Cancelled{elapsed}")
+        self.status_label.setStyleSheet("color: gray;")
 
     def _on_elapsed_tick(self):
         """Update status label with elapsed seconds."""

@@ -248,7 +248,14 @@ def pull(
 
 @app.command()
 def list_models():
-    """List available models for OllamaDiffuser (GGUF) and MFLUX backends."""
+    """List available models for MLX, OllamaDiffuser (GGUF), and MFLUX backends."""
+
+    # MLX Native models
+    typer.echo("🔷 MLX Native Models (diffusionkit):")
+    typer.echo("  • argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized  (Default, ~3GB)")
+    typer.echo("  • mlx-community/Lance-3B-AWQ-INT4                          (Multimodal Image Specialist)")
+    typer.echo("  (Downloads from HuggingFace on first use — cached locally)")
+    typer.echo()
 
     # MFLUX models
     try:
@@ -314,9 +321,16 @@ def config_set(
         parsed_value = value
 
     config[key] = parsed_value
-    save_config(config)
-    typer.echo(f"✓ Config saved to {CONFIG_FILE}")
-    typer.echo(f"✓ Set {key} = {parsed_value}")
+    try:
+        save_config(config)
+        typer.echo(f"✓ Config saved to {CONFIG_FILE}")
+        typer.echo(f"✓ Set {key} = {parsed_value}")
+    except ValueError as val_err:
+        typer.echo(f"❌ Configuration validation failed:\n   {val_err}", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"❌ Failed to save config: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()

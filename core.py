@@ -11,8 +11,10 @@ Supports three backends:
 import json
 import logging
 import sys
+import threading
+from dataclasses import dataclass, asdict, fields
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 log = logging.getLogger(__name__)
 
@@ -52,17 +54,63 @@ BACKEND_OLLAMA = "ollamadiffuser"
 BACKEND_MFLUX = "mflux"
 VALID_BACKENDS = (BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX)
 
-DEFAULT_CONFIG = {
-    "model": "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized",
-    "height": 1024,
-    "width": 1024,
-    "num_inference_steps": 30,
-    "guidance_scale": 7.5,
-    "backend": BACKEND_AUTO,
-    "mflux_quantize": 4,
-    "mflux_model_path": None,
-    "hf_cache_dir": None,
-}
+@dataclass
+class EyeGenConfig:
+    model: str = "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized"
+    height: int = 1024
+    width: int = 1024
+    num_inference_steps: int = 30
+    guidance_scale: float = 7.5
+    backend: str = BACKEND_AUTO
+    mflux_quantize: Optional[int] = 4
+    mflux_model_path: Optional[str] = None
+    hf_cache_dir: Optional[str] = None
+
+    def validate(self) -> list[str]:
+        """Validate settings and return a list of error messages (empty if valid)."""
+        errors = []
+        if self.backend not in VALID_BACKENDS:
+            errors.append(f"Invalid backend '{self.backend}'. Must be one of {VALID_BACKENDS}.")
+        if self.width % 8 != 0 or self.height % 8 != 0:
+            errors.append("Height and width must be multiples of 8.")
+        if self.mflux_quantize not in (4, 8, None):
+            errors.append("Quantization level must be 4, 8, or None.")
+        if self.model == "mlx-community/Lance-3B-AWQ-INT4":
+            if self.backend not in (BACKEND_AUTO, BACKEND_MLX):
+                errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
+        return errors
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "EyeGenConfig":
+        """Build config from dict, applying type casting and filtering unknown keys."""
+        valid_keys = {f.name for f in fields(cls)}
+        kwargs = {}
+        for k, v in data.items():
+            if k in valid_keys:
+                if v == "null" or v == "None":
+                    v = None
+                kwargs[k] = v
+        # Perform typing coercion
+        if "height" in kwargs and kwargs["height"] is not None:
+            kwargs["height"] = int(kwargs["height"])
+        if "width" in kwargs and kwargs["width"] is not None:
+            kwargs["width"] = int(kwargs["width"])
+        if "num_inference_steps" in kwargs and kwargs["num_inference_steps"] is not None:
+            kwargs["num_inference_steps"] = int(kwargs["num_inference_steps"])
+        if "guidance_scale" in kwargs and kwargs["guidance_scale"] is not None:
+            kwargs["guidance_scale"] = float(kwargs["guidance_scale"])
+        if "mflux_quantize" in kwargs and kwargs["mflux_quantize"] is not None:
+            if str(kwargs["mflux_quantize"]).strip().lower() in ("null", "none"):
+                kwargs["mflux_quantize"] = None
+            else:
+                kwargs["mflux_quantize"] = int(kwargs["mflux_quantize"])
+        return cls(**kwargs)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+# Backward-compatibility layer for other modules importing DEFAULT_CONFIG
+DEFAULT_CONFIG = EyeGenConfig().to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -156,49 +204,70 @@ def detect_backend(model: str, override: str = BACKEND_AUTO) -> str:
 # ---------------------------------------------------------------------------
 
 def load_config() -> dict:
-    """Load configuration from config.json or return defaults."""
+    """Load configuration from config.json or return defaults, using EyeGenConfig validation."""
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return dict(DEFAULT_CONFIG)
+            try:
+                data = json.load(f)
+                cfg = EyeGenConfig.from_dict(data)
+                return cfg.to_dict()
+            except Exception as e:
+                log.warning("Failed to load config.json, resetting to defaults: %s", e)
+    return EyeGenConfig().to_dict()
 
 
 def save_config(config: dict):
-    """Save configuration to config.json."""
+    """Save configuration to config.json after running EyeGenConfig validation."""
+    cfg = EyeGenConfig.from_dict(config)
+    errors = cfg.validate()
+    if errors:
+        raise ValueError("; ".join(errors))
     with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
+        json.dump(cfg.to_dict(), f, indent=2)
 
 
 # ---------------------------------------------------------------------------
 # MLX / diffusionkit backend
 # ---------------------------------------------------------------------------
 
+_patch_lock = threading.Lock()
+_patched_already = False
+
 def _patch_mlx_attention():
     """Compatibility shim: diffusionkit passes `memory_efficient_threshold` to
     scaled_dot_product_attention, but newer MLX dropped that parameter.
 
-    We blacklist only the removed kwarg rather than introspecting the signature —
-    inspect.signature() on MLX C extensions returns an incomplete result and
-    accidentally strips required args like `scale`."""
-    import mlx.core
-    import mlx.core.fast
+    Uses a thread lock to ensure this patch is safely applied exactly once.
+    """
+    global _patched_already
+    if _patched_already:
+        return
 
-    _REMOVED = {"memory_efficient_threshold"}
+    with _patch_lock:
+        if _patched_already:
+            return
 
-    def _make_patched(orig):
-        def _patched(*args, **kwargs):
-            return orig(*args, **{k: v for k, v in kwargs.items() if k not in _REMOVED})
-        return _patched
+        import mlx.core
+        import mlx.core.fast
 
-    if hasattr(mlx.core.fast, "scaled_dot_product_attention"):
-        mlx.core.fast.scaled_dot_product_attention = _make_patched(
-            mlx.core.fast.scaled_dot_product_attention
-        )
+        _REMOVED = {"memory_efficient_threshold"}
 
-    if hasattr(mlx.core, "scaled_dot_product_attention"):
-        mlx.core.scaled_dot_product_attention = _make_patched(
-            mlx.core.scaled_dot_product_attention
-        )
+        def _make_patched(orig):
+            def _patched(*args, **kwargs):
+                return orig(*args, **{k: v for k, v in kwargs.items() if k not in _REMOVED})
+            return _patched
+
+        if hasattr(mlx.core.fast, "scaled_dot_product_attention"):
+            mlx.core.fast.scaled_dot_product_attention = _make_patched(
+                mlx.core.fast.scaled_dot_product_attention
+            )
+
+        if hasattr(mlx.core, "scaled_dot_product_attention"):
+            mlx.core.scaled_dot_product_attention = _make_patched(
+                mlx.core.scaled_dot_product_attention
+            )
+
+        _patched_already = True
 
 
 def _apply_hf_cache(config: dict):
