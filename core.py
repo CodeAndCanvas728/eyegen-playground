@@ -10,8 +10,10 @@ Supports three backends:
 
 import json
 import logging
+import random
 import sys
 import threading
+import unicodedata
 from dataclasses import dataclass, asdict, fields
 from pathlib import Path
 from typing import Optional, Any
@@ -176,8 +178,8 @@ def _get_mflux_aliases() -> set:
         for cfg in AVAILABLE_MODELS.values():
             _mflux_aliases.update(cfg.aliases)
             _mflux_aliases.add(cfg.model_name)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Could not augment MFLUX aliases from live package: %s", exc)
 
     return _mflux_aliases
 
@@ -378,8 +380,8 @@ def _generate_image_ollama(engine, prompt: str, cfg_weight: float, num_steps: in
                 kwargs["generator"] = torch.Generator("cpu").manual_seed(seed)
             else:
                 kwargs["generator"] = torch.Generator(device=device).manual_seed(seed)
-        except Exception:
-            pass  # seed not supported — degrade gracefully
+        except Exception as exc:
+            log.debug("Seed not supported by engine, continuing: %s", exc)
 
     image = engine.generate_image(
         prompt=prompt,
@@ -475,7 +477,7 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
         return cls(
             model_config=model_config,
             model_path=str(p),
-            quantize=quantize,
+            quantize=None,  # saved model has baked-in quantization
         )
 
     return cls(
@@ -494,7 +496,6 @@ def _generate_image_mflux(model, prompt: str, cfg_weight: float, num_steps: int,
     Maps our parameter names to the MFLUX API.
     """
     if seed is None:
-        import random
         seed = random.randint(0, 2**32 - 1)
 
     kwargs = {
@@ -518,15 +519,15 @@ def _generate_image_mflux(model, prompt: str, cfg_weight: float, num_steps: int,
             sig = inspect.signature(model.generate_image)
             if "negative_prompt" in sig.parameters:
                 kwargs["negative_prompt"] = negative_prompt
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Could not check negative_prompt support: %s", exc)
 
     try:
         result = model.generate_image(**kwargs)
     except ValueError as exc:
         if _is_quantization_error(exc):
-            model_name = getattr(model, "model_config", None)
-            model_name = getattr(model_name, "model_name", "unknown") if model_name else "unknown"
+            model_config = getattr(model, "model_config", None)
+            model_name = getattr(model_config, "model_name", "unknown") if model_config else "unknown"
             raise QuantizationError(exc, model_name) from exc
         raise
 
@@ -544,8 +545,8 @@ def list_mflux_models() -> list[dict]:
             {"alias": alias, "model_name": cfg.model_name}
             for alias, cfg in sorted(AVAILABLE_MODELS.items(), key=lambda x: x[1].priority)
         ]
-    except Exception:
-        # Fall back to static list
+    except Exception as exc:
+        log.debug("Could not load MFLUX models from package, falling back to static list: %s", exc)
         aliases = sorted(_get_mflux_aliases())
         return [{"alias": a, "model_name": a} for a in aliases]
 
@@ -566,20 +567,26 @@ def clear_mflux_cache(model_alias: str | None = None) -> list[str]:
             from mflux.models.common.config.model_config import ModelConfig
             mc = ModelConfig.from_name(model_name=model_alias)
             repo_id = mc.model_name
-        except Exception:
+        except Exception as exc:
+            log.debug("Could not resolve model alias, using literal: %s", exc)
             repo_id = model_alias  # treat as literal HF repo-id
 
     cache_info = scan_cache_dir()
+    revision_hashes = []
     for repo in cache_info.repos:
         if repo_id and repo.repo_id != repo_id:
             continue
         if not repo_id and "flux" not in repo.repo_id.lower():
             continue
         for revision in repo.revisions:
-            strategy = cache_info.delete_revisions(revision.commit_hash)
-            log.info("Removing cached revision %s for %s", revision.commit_hash, repo.repo_id)
-            strategy.execute()
-            removed.append(f"{repo.repo_id} ({revision.commit_hash[:8]})")
+            revision_hashes.append((repo.repo_id, revision.commit_hash))
+
+    if revision_hashes:
+        strategy = cache_info.delete_revisions(*[h for _, h in revision_hashes])
+        strategy.execute()
+        for repo_id_entry, commit_hash in revision_hashes:
+            log.info("Removed cached revision %s for %s", commit_hash, repo_id_entry)
+            removed.append(f"{repo_id_entry} ({commit_hash[:8]})")
 
     return removed
 
@@ -638,46 +645,33 @@ def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
     if not p.is_dir():
         return False, None
 
-    # mflux save produces component subdirs with .safetensors files.
-    # The exact subdirectory names depend on the model family; check
-    # for the most common Flux1 layout first, then fall back to a
-    # generic "at least one subdir with safetensors" check.
-    _FLUX1_COMPONENTS = ("transformer", "vae")
-    has_components = False
-    for comp in _FLUX1_COMPONENTS:
-        comp_dir = p / comp
-        if comp_dir.is_dir() and list(comp_dir.glob("*.safetensors")):
-            has_components = True
-        else:
-            has_components = False
-            break
-
-    if not has_components:
-        # Fallback: any subdir with safetensors?
-        has_any = any(
-            sf for d in p.iterdir()
-            if d.is_dir()
-            for sf in d.glob("*.safetensors")
-        )
-        if not has_any:
-            return False, None
-
-    # Read metadata from the first safetensors shard we find
     meta: dict = {"quantization_level": None, "mflux_version": None}
+    found_safetensors = False
+
     try:
         from safetensors import safe_open
-        for subdir in sorted(p.iterdir()):
-            if not subdir.is_dir():
-                continue
-            for sf in sorted(subdir.glob("*.safetensors")):
+    except ImportError:
+        log.debug("safetensors not installed, cannot validate model")
+        return False, None
+
+    for subdir in sorted(p.iterdir()):
+        if not subdir.is_dir():
+            continue
+        for sf in sorted(subdir.glob("*.safetensors")):
+            found_safetensors = True
+            try:
                 with safe_open(str(sf), framework="mlx") as f:
                     m = f.metadata() or {}
                     ql = m.get("quantization_level")
                     meta["quantization_level"] = int(ql) if ql and ql != "None" else None
                     meta["mflux_version"] = m.get("mflux_version")
                 return True, meta
-    except Exception:
-        pass
+            except Exception as exc:
+                log.debug("Could not read safetensors metadata from %s: %s", sf, exc)
+                continue
+
+    if not found_safetensors:
+        return False, None
 
     return True, meta
 
@@ -687,7 +681,8 @@ def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
 # ---------------------------------------------------------------------------
 
 def sanitize_prompt(prompt: str) -> str:
-    """Replace Unicode punctuation with ASCII equivalents for the T5 tokenizer."""
+    """Normalize Unicode and replace non-ASCII punctuation for the T5 tokenizer."""
+    prompt = unicodedata.normalize("NFKC", prompt)
     return (
         prompt
         .replace("\u2014", "-")   # em dash

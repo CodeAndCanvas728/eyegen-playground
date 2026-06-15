@@ -9,6 +9,7 @@ import sys
 import io
 import logging
 import threading
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,10 @@ from core import (
 # ---------------------------------------------------------------------------
 
 LOG_FILE = CONFIG_DIR / "eyegen.log"
+
+# Cache for hf_status() to avoid repeated network calls
+_hf_status_cache: dict = {"result": None, "timestamp": 0.0}
+_HF_CACHE_TTL = 30.0  # seconds
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
@@ -59,6 +64,17 @@ log = logging.getLogger("eyegen")
 # ---------------------------------------------------------------------------
 
 GUI_STATE_FILE = CONFIG_DIR / "gui_state.json"
+
+
+def _cached_hf_status() -> Optional[dict]:
+    """Return cached hf_status, refreshing from network every _HF_CACHE_TTL seconds."""
+    now = time.time()
+    if now - _hf_status_cache["timestamp"] < _HF_CACHE_TTL and _hf_status_cache["result"] is not None:
+        return _hf_status_cache["result"]
+    result = hf_status()
+    _hf_status_cache["result"] = result
+    _hf_status_cache["timestamp"] = now
+    return result
 
 
 def load_gui_state() -> dict:
@@ -81,14 +97,22 @@ def save_gui_state(state: dict):
 # Monkeypatch: inject step-level progress callback into sample_euler
 # ---------------------------------------------------------------------------
 
+_sample_euler_patched = False
+# Mutable holder so re-patching can update callbacks without replacing the function
+_sample_euler_state = {"progress_callback": None, "cancel_event": None}
+
 def _patch_sample_euler(progress_callback, cancel_event=None):
-    """Replace diffusionkit's sample_euler with one that calls
-    progress_callback(step, total) after each denoising step.
-    If *cancel_event* is a set threading.Event, raises GenerationCancelled."""
+    """Replace diffusionkit's sample_euler with a step-reporting wrapper.
+    On subsequent calls, only the callback/cancel_event references are updated
+    without replacing the function again."""
+    global _sample_euler_patched
+    _sample_euler_state["progress_callback"] = progress_callback
+    _sample_euler_state["cancel_event"] = cancel_event
+    if _sample_euler_patched:
+        return
+
     import diffusionkit.mlx as dkmlx
     import mlx.core as mx
-
-    _orig_sample_euler = dkmlx.sample_euler
 
     def _patched_sample_euler(model, x, sigmas, extra_args=None):
         extra_args = {} if extra_args is None else extra_args
@@ -102,9 +126,10 @@ def _patch_sample_euler(progress_callback, cancel_event=None):
         )
 
         iter_time = []
-        import time
+        cancel = _sample_euler_state["cancel_event"]
+        cb = _sample_euler_state["progress_callback"]
         for i in range(total):
-            if cancel_event is not None and cancel_event.is_set():
+            if cancel is not None and cancel.is_set():
                 model.clear_cache()
                 raise GenerationCancelled("Cancelled by user")
             t0 = time.time()
@@ -114,14 +139,13 @@ def _patch_sample_euler(progress_callback, cancel_event=None):
             x = x + d * dt
             mx.eval(x)
             iter_time.append(round(time.time() - t0, 3))
-            progress_callback(i + 1, total)
+            cb(i + 1, total)
 
         model.clear_cache()
         return x, iter_time
 
     dkmlx.sample_euler = _patched_sample_euler
-    # Also patch the reference used by denoise_latents (module-level lookup)
-    dkmlx.DiffusionPipeline.__module_sample_euler_patched = True
+    _sample_euler_patched = True
 
 
 class GenerationCancelled(Exception):
@@ -133,11 +157,13 @@ class GenerationCancelled(Exception):
 # ---------------------------------------------------------------------------
 
 _pipeline_cache: dict = {"pipeline": None, "key": None}
+_pipeline_cache_lock = threading.Lock()
 
 
 def _clear_pipeline_cache():
-    _pipeline_cache["pipeline"] = None
-    _pipeline_cache["key"] = None
+    with _pipeline_cache_lock:
+        _pipeline_cache["pipeline"] = None
+        _pipeline_cache["key"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -177,9 +203,11 @@ class GenerationWorker(QThread):
             cache_key = (self.backend, self.config.get("model"),
                          self.mflux_quantize, self.use_t5,
                          self.config.get("mflux_model_path"))
-            if (_pipeline_cache["pipeline"] is not None
-                    and _pipeline_cache["key"] == cache_key):
-                pipeline = _pipeline_cache["pipeline"]
+            with _pipeline_cache_lock:
+                cached_pipeline = _pipeline_cache["pipeline"]
+                cached_key = _pipeline_cache["key"]
+            if cached_pipeline is not None and cached_key == cache_key:
+                pipeline = cached_pipeline
                 log.info("Using cached pipeline (backend=%s)", self.backend)
                 if self.backend == BACKEND_MLX:
                     _patch_sample_euler(
@@ -200,8 +228,9 @@ class GenerationWorker(QThread):
                     _patch_sample_euler(
                         lambda step, total: self.progress.emit(step, total),
                         self._cancelled)
-                _pipeline_cache["pipeline"] = pipeline
-                _pipeline_cache["key"] = cache_key
+                with _pipeline_cache_lock:
+                    _pipeline_cache["pipeline"] = pipeline
+                    _pipeline_cache["key"] = cache_key
 
             if self._cancelled.is_set():
                 self.cancelled.emit()
@@ -417,7 +446,7 @@ class HFLoginDialog(QDialog):
 
     def get_username(self) -> Optional[str]:
         """Return current HF username if logged in, else None."""
-        info = hf_status()
+        info = _cached_hf_status()
         return info.get("name") if info else None
 
 
@@ -1090,7 +1119,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_hf_button(self):
         """Update the HF button label to reflect login state."""
-        info = hf_status()
+        info = _cached_hf_status()
         if info:
             name = info.get("name", "unknown")
             self.hf_btn.setText(f"✅  HuggingFace: {name}")
@@ -1236,7 +1265,7 @@ class MainWindow(QMainWindow):
                 return
 
         seed_text = self.seed_input.text().strip()
-        seed = int(seed_text) if seed_text.isdigit() else None
+        seed = int(seed_text) if seed_text.lstrip('-').isdigit() else None
 
         config = dict(self.config)
         config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
@@ -1246,6 +1275,8 @@ class MainWindow(QMainWindow):
         config["guidance_scale"] = self.guidance_spin.value()
         config["backend"] = self.backend_combo.currentData()
         config["mflux_quantize"] = self.quantize_combo.currentData()
+
+        resolved_backend = self._resolved_backend()
 
         # Pass MFLUX saved model path through config
         model_path = self.model_path_input.text().strip()
@@ -1259,7 +1290,6 @@ class MainWindow(QMainWindow):
 
         # Clean, validate, and cast variables using EyeGenConfig
         try:
-            from core import EyeGenConfig
             cfg_obj = EyeGenConfig.from_dict(config)
             errors = cfg_obj.validate()
             if errors:
@@ -1339,7 +1369,8 @@ class MainWindow(QMainWindow):
         self._reset_generate_btn()
 
         # Short summary for the status bar
-        last_line = [l for l in full_traceback.strip().splitlines() if l.strip()][-1]
+        lines = [l for l in full_traceback.strip().splitlines() if l.strip()]
+        last_line = lines[-1] if lines else "Unknown error"
         self.status_label.setText(f"❌ Error — see details")
         self.status_label.setStyleSheet("color: red;")
 
@@ -1386,11 +1417,11 @@ class MainWindow(QMainWindow):
                 log.error("Cache clear failed: %s", exc)
             self.quantize_combo.setCurrentIndex(
                 self.quantize_combo.findData(0))  # "None (full precision)"
-            self._start_generate()
+            self._on_generate()
         elif clicked == retry_btn:
             self.quantize_combo.setCurrentIndex(
                 self.quantize_combo.findData(0))  # "None (full precision)"
-            self._start_generate()
+            self._on_generate()
 
     def _stop_generation(self):
         """Cancel the running generation cooperatively without unsafe OS terminates."""
