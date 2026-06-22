@@ -237,6 +237,15 @@ def _format_unsupported_error(model: str, attempted_backend: str) -> str:
         "For OllamaDiffuser (GGUF) models, pull one with "
         "`./generate.py pull <name>` first."
     )
+    parts.append(
+        "For Bonsai (PrismML), use a model name starting with 'bonsai-' "
+        "(e.g. bonsai-ternary-mlx) after running ./scripts/setup-bonsai.sh."
+    )
+    parts.append(
+        "For CoreML, use a known alias (sd-1-4, sd-1-5, sd-2-1-base, "
+        "sd-2-1-base-palettized) or a full HuggingFace repo id under "
+        "'apple/coreml-stable-diffusion-*' after running ./scripts/setup-coreml.sh."
+    )
     return " ".join(parts)
 
 

@@ -39,6 +39,7 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -123,7 +124,7 @@ def _sidecar_has_coreml() -> bool:
         return False
 
 
-def validate_coreml_install() -> CoreMLInstallStatus:
+def _validate_coreml_install_uncached() -> CoreMLInstallStatus:
     """Inspect the sidecar venv and model dir, return a status report."""
     py = _sidecar_python()
     has_coreml = _sidecar_has_coreml() if py else False
@@ -158,6 +159,16 @@ def validate_coreml_install() -> CoreMLInstallStatus:
         model_count=model_count,
         message=msg,
     )
+
+
+# Cached wrapper: the venv layout and model count only change when the
+# user runs setup/pull scripts, but the GUI calls this on every status
+# poll. The cache lives for the process lifetime; if the user runs
+# ``setup-coreml.sh`` mid-session and needs a fresh check, they must
+# relaunch the GUI.
+@lru_cache(maxsize=1)
+def validate_coreml_install() -> CoreMLInstallStatus:
+    return _validate_coreml_install_uncached()
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +300,8 @@ def convert_to_coreml(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, env=env,
     )
-    assert proc.stdout is not None
+    if proc.stdout is None:
+        raise RuntimeError("CoreML conversion stdout pipe was not created")
     for line in proc.stdout:
         line = line.rstrip()
         log.info("[coreml-convert] %s", line)
@@ -321,6 +333,8 @@ class CoreMLWrapper:
         self.model_path = self._resolve_model_path(config)
         self.compute_unit = self._resolve_compute_unit(config)
         self._validate()
+        self._proc: Optional[subprocess.Popen] = None
+        self._cancelled = False
 
     def _resolve_model_path(self, config: dict) -> Path:
         explicit = config.get("coreml_model_path")
@@ -416,11 +430,21 @@ class CoreMLWrapper:
         log.info("coreml-pipeline: %s", " ".join(cmd))
         env = os.environ.copy()
         env.pop("PYTHONHOME", None)
-        proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
-        if proc.returncode != 0:
-            log.error("coreml stderr: %s", proc.stderr[-2000:])
+        self._proc = subprocess.Popen(cmd, env=env,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       text=True)
+        try:
+            _stdout, stderr = self._proc.communicate()
+            returncode = self._proc.returncode
+        finally:
+            self._proc = None
+        if self._cancelled:
+            raise RuntimeError("CoreML generation was cancelled by the user.")
+        if returncode != 0:
+            log.error("coreml stderr: %s", (stderr or "")[-2000:])
             raise RuntimeError(
-                f"CoreML generation failed (exit {proc.returncode}). "
+                f"CoreML generation failed (exit {returncode}). "
                 "See eyegen.log for details."
             )
         if not out_path.is_file():
@@ -428,6 +452,30 @@ class CoreMLWrapper:
                 f"CoreML pipeline did not produce expected output: {out_path}"
             )
         return Image.open(out_path).convert("RGB")
+
+    def cancel(self) -> None:
+        """Terminate the running CoreML subprocess, if any.
+
+        Called by the GUI's ``Stop`` button. Tries ``terminate()`` (SIGTERM)
+        first; if the process has not exited after a short grace period,
+        escalates to ``kill()`` (SIGKILL). No-op when no generation is in
+        flight.
+        """
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return
+        log.info("coreml cancel: terminating pid=%s", proc.pid)
+        self._cancelled = True
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                log.warning("coreml cancel: terminate timed out, killing pid=%s", proc.pid)
+                proc.kill()
+                proc.wait(timeout=2.0)
+        except Exception as exc:
+            log.warning("coreml cancel: %s", exc)
 
 
 # ---------------------------------------------------------------------------

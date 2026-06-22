@@ -268,7 +268,7 @@ def pull(
 
 @app.command()
 def list_models():
-    """List available models for MLX, OllamaDiffuser (GGUF), and MFLUX backends."""
+    """List available models for MLX, MFLUX, OllamaDiffuser (GGUF), Bonsai, and CoreML backends."""
 
     # MLX Native models
     typer.echo("🔷 MLX Native Models (diffusionkit):")
@@ -753,7 +753,7 @@ def pull_coreml_cmd(
         "sd-2-1-base-palettized",
         help=(
             "Alias (sd-1-4, sd-1-5, sd-2-1-base, sd-2-1-base-palettized, "
-            "sdxl-base, sd-3-medium, ...) or a full HuggingFace repo id."
+            "sdxl-base, ...) or a full HuggingFace repo id."
         ),
     ),
 ):

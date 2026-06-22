@@ -201,6 +201,39 @@ def _run_bonsai_script(script_name: str, *args: str,
     return proc.returncode
 
 
+def _spawn_bonsai_subprocess(cmd: list[str]) -> subprocess.Popen:
+    """Spawn a bonsai-demo shell script and return the live Popen handle.
+
+    Used by ``BonsaiWrapper`` so the GUI's ``Stop`` button can terminate a
+    running generation. The caller is responsible for iterating the stdout
+    pipe and clearing the handle. Raises FileNotFoundError if the script
+    is missing, RuntimeError if the stdout pipe could not be created.
+    """
+    status = validate_bonsai_install()
+    script_path = status.bonsai_dir / "scripts" / cmd[0]
+    if not script_path.is_file():
+        raise FileNotFoundError(f"Bonsai script not found: {script_path}")
+
+    full_cmd = [str(script_path), *cmd[1:]]
+    log.info("Running bonsai script: %s", " ".join(full_cmd))
+
+    env = os.environ.copy()
+    env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
+
+    proc = subprocess.Popen(
+        full_cmd,
+        cwd=str(status.bonsai_dir),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    if proc.stdout is None:
+        raise RuntimeError("bonsai subprocess stdout pipe was not created")
+    return proc
+
+
 def download_bonsai_model(variant: str = DEFAULT_VARIANT,
                            progress_callback: Optional[Callable[[str], None]] = None
                            ) -> bool:
@@ -236,6 +269,7 @@ class BonsaiWrapper:
         self.config = config
         self.variant = self._resolve_variant(config)
         self._validate()
+        self._proc: Optional[subprocess.Popen] = None
 
     def _resolve_variant(self, config: dict) -> str:
         """Pick the bonsai variant from the config or the model name."""
@@ -316,7 +350,17 @@ class BonsaiWrapper:
             cmd.extend(["--seed", str(seed)])
 
         log.info("bonsai subprocess: %s", " ".join(cmd))
-        rc = _run_bonsai_script("generate.sh", *cmd)
+        self._proc = _spawn_bonsai_subprocess(["generate.sh", *cmd])
+        try:
+            if self._proc.stdout is None:
+                raise RuntimeError("bonsai subprocess stdout pipe was not created")
+            for line in self._proc.stdout:
+                line = line.rstrip()
+                log.info("[bonsai] %s", line)
+            self._proc.wait()
+            rc = self._proc.returncode
+        finally:
+            self._proc = None
         if rc != 0:
             raise RuntimeError(
                 f"Bonsai generation failed (exit {rc}). "
@@ -327,6 +371,29 @@ class BonsaiWrapper:
                 f"Bonsai generation did not produce expected output: {out_path}"
             )
         return Image.open(out_path).convert("RGB")
+
+    def cancel(self) -> None:
+        """Terminate the running bonsai subprocess, if any.
+
+        Called by the GUI's ``Stop`` button. Tries ``terminate()`` (SIGTERM)
+        first; if the process has not exited after a short grace period,
+        escalates to ``kill()`` (SIGKILL). No-op when no generation is in
+        flight.
+        """
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return
+        log.info("bonsai cancel: terminating pid=%s", proc.pid)
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                log.warning("bonsai cancel: terminate timed out, killing pid=%s", proc.pid)
+                proc.kill()
+                proc.wait(timeout=2.0)
+        except Exception as exc:
+            log.warning("bonsai cancel: %s", exc)
 
 
 # ---------------------------------------------------------------------------

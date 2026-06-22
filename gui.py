@@ -5,6 +5,7 @@ Native macOS desktop interface for image generation on Apple Silicon.
 """
 
 import json
+import subprocess
 import sys
 import io
 import logging
@@ -35,7 +36,7 @@ from core import (
     OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
     BACKEND_BONSAI, BACKEND_COREML,
-    QuantizationError,
+    EyeGenConfig, QuantizationError,
 )
 import core_bonsai
 import core_coreml
@@ -199,6 +200,7 @@ class GenerationWorker(QThread):
         self.denoise = denoise
         self.backend = backend
         self.mflux_quantize = mflux_quantize
+        self.pipeline = None
 
     def run(self):
         try:
@@ -244,6 +246,7 @@ class GenerationWorker(QThread):
                 with _pipeline_cache_lock:
                     _pipeline_cache["pipeline"] = pipeline
                     _pipeline_cache["key"] = cache_key
+            self.pipeline = pipeline
 
             if self._cancelled.is_set():
                 self.cancelled.emit()
@@ -286,6 +289,25 @@ class GenerationWorker(QThread):
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
+
+    def cancel(self) -> None:
+        """Forward cancellation to the active pipeline, if it supports it.
+
+        Called from the main thread by the ``Stop`` button. For MLX the
+        cooperative ``_cancelled`` event is enough; for bonsai/coreml
+        wrappers, this terminates the underlying subprocess so the user
+        does not have to wait minutes for a doomed generation to finish.
+        No-op for backends whose pipeline does not expose ``cancel()``.
+        """
+        pipeline = self.pipeline
+        if pipeline is None:
+            return
+        cancel_fn = getattr(pipeline, "cancel", None)
+        if callable(cancel_fn):
+            try:
+                cancel_fn()
+            except Exception as exc:
+                log.warning("pipeline.cancel() raised: %s", exc)
 
 
 class PullWorker(QThread):
@@ -1792,11 +1814,18 @@ class MainWindow(QMainWindow):
             return
         log.info("User requested generation stop (backend=%s)", self.worker.backend)
         self.worker._cancelled.set()
-        
+
         self.status_label.setText("Cancelling… (cleaning up safely)")
         self.status_label.setStyleSheet("color: orange;")
         self.generate_btn.setEnabled(False)  # prevent double-clicks
-        
+
+        # For backends that wrap a long-lived subprocess (bonsai/coreml),
+        # ask the pipeline to terminate the child so the user does not
+        # have to wait for it to finish naturally. No-op for backends
+        # whose pipeline does not expose cancel().
+        if self.worker.backend in (BACKEND_BONSAI, BACKEND_COREML):
+            self.worker.cancel()
+
         if self.worker.backend == BACKEND_MLX:
             # MLX has cooperative step-level interrupts and stops instantly
             pass
