@@ -2,10 +2,12 @@
 Shared logic for EyeGen — multi-backend image generation on Apple Silicon.
 Used by both the CLI (generate.py) and the GUI (gui.py).
 
-Supports three backends:
+Supports five backends:
   - MLX (diffusionkit) — Apple Silicon native, SD3.5 quantized
-  - OllamaDiffuser — GGUF-quantized models (FLUX, SDXL, SD1.5, SD3.5, etc.)
   - MFLUX — MLX-native FLUX, FLUX.2, Z-Image, FIBO, Qwen, SeedVR2 models
+  - OllamaDiffuser — GGUF-quantized models (FLUX, SDXL, SD1.5, SD3.5, etc.)
+  - Bonsai (PrismML) — 1.58-bit ternary + 1-bit binary FLUX.2 Klein 4B
+  - CoreML — Stable Diffusion 1.x/2.x via Apple Neural Engine
 """
 
 import json
@@ -25,26 +27,33 @@ log = logging.getLogger(__name__)
 # directory is read-only, so user data must go elsewhere.
 _BUNDLED = getattr(sys, "frozen", None) == "macosx_app"
 
+# All non-HF-cached model artifacts (saved MFLUX, downloaded Bonsai,
+# converted CoreML) live under a single tree at ~/models/eyegen/ regardless
+# of dev vs bundled mode. HF downloads themselves use ~/models/.hf-cache/hub/
+# by default (configurable via hf_cache_dir). This keeps every model artifact
+# the user owns under one parent directory, easy to back up or relocate.
+MODELS_DIR = Path.home() / "models" / "eyegen"
+HF_CACHE_DIR = Path.home() / "models" / ".hf-cache" / "hub"
+
 if _BUNDLED:
     # User-writable locations when running as a .app bundle
     _APP_SUPPORT = Path.home() / "Library" / "Application Support" / "EyeGen"
     CONFIG_DIR = _APP_SUPPORT
     CONFIG_FILE = _APP_SUPPORT / "config.json"
     OUTPUT_DIR = Path.home() / "Pictures" / "EyeGen"
-    MODELS_DIR = _APP_SUPPORT / "models"
     PROJECT_ROOT = Path.home()  # not meaningful in bundle context
 else:
-    # Development / CLI mode: use the project directory
+    # Development / CLI mode: config + outputs live in the project tree
     PROJECT_ROOT = Path(__file__).parent
     CONFIG_DIR = PROJECT_ROOT / "config"
     OUTPUT_DIR = PROJECT_ROOT / "outputs"
     CONFIG_FILE = CONFIG_DIR / "config.json"
-    MODELS_DIR = PROJECT_ROOT / "models"
 
 # Ensure directories exist
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+HF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Backend constants
@@ -54,7 +63,9 @@ BACKEND_AUTO = "auto"
 BACKEND_MLX = "mlx"
 BACKEND_OLLAMA = "ollamadiffuser"
 BACKEND_MFLUX = "mflux"
-VALID_BACKENDS = (BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX)
+BACKEND_BONSAI = "bonsai"
+BACKEND_COREML = "coreml"
+VALID_BACKENDS = (BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX, BACKEND_BONSAI, BACKEND_COREML)
 
 @dataclass
 class EyeGenConfig:
@@ -67,6 +78,9 @@ class EyeGenConfig:
     mflux_quantize: Optional[int] = 4
     mflux_model_path: Optional[str] = None
     hf_cache_dir: Optional[str] = None
+    bonsai_model_path: Optional[str] = None
+    coreml_model_path: Optional[str] = None
+    coreml_compute_unit: str = "CPU_AND_NE"
 
     def validate(self) -> list[str]:
         """Validate settings and return a list of error messages (empty if valid)."""
@@ -77,6 +91,11 @@ class EyeGenConfig:
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
+        if self.coreml_compute_unit not in ("CPU_ONLY", "CPU_AND_GPU", "CPU_AND_NE", "ALL"):
+            errors.append(
+                f"Invalid coreml_compute_unit '{self.coreml_compute_unit}'. "
+                "Must be one of: CPU_ONLY, CPU_AND_GPU, CPU_AND_NE, ALL."
+            )
         if self.model == "mlx-community/Lance-3B-AWQ-INT4":
             if self.backend not in (BACKEND_AUTO, BACKEND_MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
@@ -184,21 +203,117 @@ def _get_mflux_aliases() -> set:
     return _mflux_aliases
 
 
-def detect_backend(model: str, override: str = BACKEND_AUTO) -> str:
+def _get_mlx_supported_models() -> set | None:
+    """Return the set of model keys known to the MLX/diffusionkit backend.
+
+    Returns ``None`` if diffusionkit is not importable (don't block detection
+    in that case — the user will get the standard import error from
+    ``get_pipeline``).
+    """
+    try:
+        from diffusionkit.mlx import MMDIT_CKPT
+        return set(MMDIT_CKPT.keys())
+    except Exception as exc:
+        log.debug("Could not introspect diffusionkit MMDIT_CKPT: %s", exc)
+        return None
+
+
+def _format_unsupported_error(model: str, attempted_backend: str) -> str:
+    """Build a clear 'model not supported' message listing what *is* supported."""
+    mlx_keys = _get_mlx_supported_models() or set()
+    mflux_aliases = _get_mflux_aliases() - {""}
+    parts = [f"Model '{model}' is not supported by the {attempted_backend} backend."]
+    if mlx_keys:
+        mlx_list = ", ".join(sorted(mlx_keys))
+        parts.append(
+            f"MLX (diffusionkit) supports: {mlx_list}."
+        )
+    if mflux_aliases:
+        aliases_list = ", ".join(sorted(mflux_aliases))
+        parts.append(
+            f"MFLUX supports (use --backend mflux): {aliases_list}."
+        )
+    parts.append(
+        "For OllamaDiffuser (GGUF) models, pull one with "
+        "`./generate.py pull <name>` first."
+    )
+    parts.append(
+        "For Bonsai (PrismML), use a model name starting with 'bonsai-' "
+        "(e.g. bonsai-ternary-mlx) after running ./scripts/setup-bonsai.sh."
+    )
+    parts.append(
+        "For CoreML, use a known alias (sd-1-4, sd-1-5, sd-2-1-base, "
+        "sd-2-1-base-palettized) or a full HuggingFace repo id under "
+        "'apple/coreml-stable-diffusion-*' after running ./scripts/setup-coreml.sh."
+    )
+    return " ".join(parts)
+
+
+def _is_bonsai_model(model: str) -> bool:
+    """Return True if *model* looks like a bonsai (PrismML) identifier.
+
+    Accepts: ``bonsai-ternary-mlx``, ``bonsai-binary-mlx``, the full HF
+    repo names ``bonsai-image-4B-ternary-mlx`` etc., and the PrismML
+    ``prism-ml/bonsai-image-ternary-4B-mlx-2bit`` style identifiers.
+    """
+    m = model.lower()
+    return (
+        m.startswith("bonsai-")
+        or m.startswith("bonsai-image-4b-")
+        or m.startswith("prism-ml/bonsai-")
+        or "bonsai-image-4b" in m
+    )
+
+
+def _is_coreml_model(model: str, config: Optional[dict] = None) -> bool:
+    """Return True if *model* is a CoreML bundle or a known pre-converted HF id.
+
+    Triggers:
+      - ``coreml_model_path`` is set in *config* (any value, including paths
+        not yet on disk — the loader will surface the actual error)
+      - *model* matches a key in :data:`core_coreml.PRECONVERTED_HF_MODELS`
+      - *model* looks like a CoreML HF id (``apple/coreml-stable-diffusion-*``)
+    """
+    if config and config.get("coreml_model_path"):
+        return True
+    m = model.lower()
+    if m in {"sd-1-4", "sd-1-5", "sd-1-5-palettized",
+             "sd-2-base", "sd-2-1-base", "sd-2-1-base-palettized",
+             "sdxl-base", "sdxl-ios"}:
+        return True
+    if m.startswith("apple/coreml-stable-diffusion"):
+        return True
+    return False
+
+
+def detect_backend(model: str, override: str = BACKEND_AUTO,
+                   config: Optional[dict] = None) -> str:
     """Resolve which backend to use.
 
     If *override* is ``"auto"``:
       1. ``"gguf"`` in model name (case-insensitive) → ollamadiffuser
-      2. model name matches a known MFLUX alias → mflux
-      3. otherwise → mlx (diffusionkit)
+      2. bonsai (PrismML) identifier → bonsai
+      3. CoreML bundle / pre-converted HF id / coreml_model_path set → coreml
+      4. model name matches a known MFLUX alias → mflux
+      5. model name is registered in diffusionkit's MMDIT_CKPT → mlx
+      6. otherwise → raises ValueError with the list of supported models per backend
     """
     if override != BACKEND_AUTO:
         return override
     if "gguf" in model.lower():
         return BACKEND_OLLAMA
+    if _is_bonsai_model(model):
+        return BACKEND_BONSAI
+    if _is_coreml_model(model, config=config):
+        return BACKEND_COREML
     if model in _get_mflux_aliases():
         return BACKEND_MFLUX
-    return BACKEND_MLX
+    mlx_keys = _get_mlx_supported_models()
+    if mlx_keys is not None and model in mlx_keys:
+        return BACKEND_MLX
+    if mlx_keys is None:
+        return BACKEND_MLX
+    raise ValueError(_format_unsupported_error(model, "auto-detected"))
 
 
 # ---------------------------------------------------------------------------
@@ -278,14 +393,24 @@ def _apply_hf_cache(config: dict):
     HuggingFace hub reads this env var when downloading or locating cached
     models, so setting it before any pipeline load redirects all downloads
     and cache lookups to the specified directory.
+
+    Priority:
+      1. ``config["hf_cache_dir"]`` if set (explicit)
+      2. ``$HF_HUB_CACHE`` env var if already set in the shell (respect it)
+      3. ``~/models/.hf-cache/hub/`` (project default — all EyeGen HF
+         downloads land under one user-owned tree)
     """
     import os
     cache_dir = config.get("hf_cache_dir") if config else None
     if cache_dir:
         p = Path(cache_dir).expanduser()
-        p.mkdir(parents=True, exist_ok=True)
-        os.environ["HF_HUB_CACHE"] = str(p)
-        log.info("HF_HUB_CACHE set to %s", p)
+    elif os.environ.get("HF_HUB_CACHE"):
+        p = Path(os.environ["HF_HUB_CACHE"]).expanduser()
+    else:
+        p = HF_CACHE_DIR
+    p.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HUB_CACHE"] = str(p)
+    log.info("HF_HUB_CACHE set to %s", p)
 
 
 def get_pipeline(config: dict, use_t5: bool = True):
@@ -298,6 +423,9 @@ def get_pipeline(config: dict, use_t5: bool = True):
     from diffusionkit.mlx import DiffusionPipeline
 
     model_version = config.get("model", DEFAULT_CONFIG["model"])
+    mlx_keys = _get_mlx_supported_models()
+    if mlx_keys is not None and model_version not in mlx_keys:
+        raise ValueError(_format_unsupported_error(model_version, BACKEND_MLX))
     pipeline = DiffusionPipeline(
         model_version=model_version,
         shift=3.0,
@@ -460,9 +588,18 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
     """
     _apply_hf_cache(config)
     from mflux.models.common.config.model_config import ModelConfig
+    from mflux.utils.exceptions import ModelConfigError
 
     model_name = config.get("model", "dev")
-    model_config = ModelConfig.from_name(model_name=model_name)
+    try:
+        model_config = ModelConfig.from_name(model_name=model_name)
+    except ModelConfigError as exc:
+        aliases = ", ".join(sorted(_get_mflux_aliases()))
+        raise ValueError(
+            f"Model '{model_name}' is not recognized by MFLUX. "
+            f"Known aliases: {aliases}. "
+            f"Original error: {exc}"
+        ) from exc
     cls = _resolve_mflux_class(model_config)
 
     local_path = config.get("mflux_model_path")
@@ -725,7 +862,8 @@ def generate_image(pipeline, prompt: str, cfg_weight: float, num_steps: int,
     """Run the diffusion pipeline and return a PIL Image.
 
     *backend* should be a resolved backend (``"mlx"``, ``"ollamadiffuser"``,
-    or ``"mflux"``), not ``"auto"`` — call :func:`detect_backend` first.
+    ``"mflux"``, or ``"bonsai"``), not ``"auto"`` — call :func:`detect_backend`
+    first.
     """
     prompt = sanitize_prompt(prompt)
     negative_prompt = sanitize_prompt(negative_prompt) if negative_prompt else ""
@@ -742,6 +880,22 @@ def generate_image(pipeline, prompt: str, cfg_weight: float, num_steps: int,
             pipeline, prompt, cfg_weight, num_steps,
             width, height, seed, negative_prompt,
             image_path, denoise,
+        )
+
+    if backend == BACKEND_BONSAI:
+        return pipeline.generate_image(
+            prompt=prompt, cfg_weight=cfg_weight, num_steps=num_steps,
+            width=width, height=height, seed=seed,
+            negative_prompt=negative_prompt,
+            image_path=image_path, denoise=denoise,
+        )
+
+    if backend == BACKEND_COREML:
+        return pipeline.generate_image(
+            prompt=prompt, cfg_weight=cfg_weight, num_steps=num_steps,
+            width=width, height=height, seed=seed,
+            negative_prompt=negative_prompt,
+            image_path=image_path, denoise=denoise,
         )
 
     return _generate_image_mlx(

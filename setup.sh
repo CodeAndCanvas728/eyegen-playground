@@ -53,6 +53,19 @@ mkdir -p outputs
 mkdir -p config
 echo "✓ Directories ready"
 
+# Create the unified model artifact tree under ~/models/eyegen/
+EYEGEN_MODELS="$HOME/models/eyegen"
+echo ""
+echo "📁 Creating model artifact tree at $EYEGEN_MODELS ..."
+mkdir -p "$EYEGEN_MODELS/saved-mflux"
+mkdir -p "$EYEGEN_MODELS/coreml"
+echo "✓ Model tree ready"
+echo "  Saved MFLUX models  → $EYEGEN_MODELS/saved-mflux/"
+echo "  CoreML models       → $EYEGEN_MODELS/coreml/"
+echo "  Bonsai vendor       → $EYEGEN_MODELS/bonsai-demo/  (created by setup-bonsai)"
+echo "  CoreML sidecar venv → $EYEGEN_MODELS/.coreml-venv/ (created by setup-coreml)"
+echo "  HF download cache   → $HOME/models/.hf-cache/hub/  (EyeGen default)"
+
 # Check MLX
 echo ""
 echo "🔍 Checking MLX installation..."

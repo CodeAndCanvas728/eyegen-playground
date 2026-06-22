@@ -2,11 +2,13 @@
 """
 EyeGen — Multi-backend Image Generator CLI
 Command-line interface for quick image generation on Apple Silicon.
-Supports MLX (diffusionkit), OllamaDiffuser (GGUF), and MFLUX backends.
+Supports MLX (diffusionkit), OllamaDiffuser (GGUF), MFLUX, Bonsai (PrismML),
+and CoreML (Apple Neural Engine) backends.
 """
 
 import typer
 import json
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -21,12 +23,15 @@ from core import (
     hf_login, hf_status, hf_logout,
     PROJECT_ROOT, CONFIG_FILE, OUTPUT_DIR, MODELS_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
+    BACKEND_BONSAI, BACKEND_COREML,
     VALID_BACKENDS,
     QuantizationError,
 )
+import core_bonsai
+import core_coreml
 
 app = typer.Typer(
-    help="Generate images using MLX SD3.5, MFLUX (FLUX/FIBO/Z-Image), or OllamaDiffuser GGUF models",
+    help="Generate images using MLX SD3.5, MFLUX (FLUX/FIBO/Z-Image), OllamaDiffuser GGUF, Bonsai (PrismML ternary), or CoreML (Apple Neural Engine) backends",
     no_args_is_help=True
 )
 
@@ -78,7 +83,7 @@ def generate(
     backend: str = typer.Option(
         "auto",
         "--backend", "-b",
-        help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser",
+        help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser, bonsai, coreml",
     ),
     quantize: Optional[int] = typer.Option(
         None,
@@ -94,7 +99,7 @@ def generate(
     config = load_config()
 
     model = config.get("model", DEFAULT_CONFIG["model"])
-    resolved_backend = detect_backend(model, backend)
+    resolved_backend = detect_backend(model, backend, config=config)
 
     num_steps = steps or config.get("num_inference_steps", 30)
     guidance_scale = guidance or config.get("guidance_scale", 7.5)
@@ -135,6 +140,8 @@ def generate(
         BACKEND_MLX: "MLX (diffusionkit)",
         BACKEND_OLLAMA: "OllamaDiffuser (GGUF)",
         BACKEND_MFLUX: "MFLUX (MLX FLUX)",
+        BACKEND_BONSAI: "Bonsai (PrismML ternary 1.58-bit)",
+        BACKEND_COREML: "CoreML (Apple Neural Engine)",
     }
     backend_label = backend_labels.get(resolved_backend, resolved_backend)
     typer.echo(f"✨ Generating image...")
@@ -143,6 +150,15 @@ def generate(
     local_model = config.get("mflux_model_path")
     if local_model and resolved_backend == BACKEND_MFLUX:
         typer.echo(f"   Local model: {local_model}")
+    if resolved_backend == BACKEND_COREML:
+        coreml_path = config.get("coreml_model_path")
+        if coreml_path:
+            typer.echo(f"   CoreML model: {coreml_path}")
+        typer.echo(f"   Compute unit: {config.get('coreml_compute_unit', 'CPU_AND_NE')}")
+    if resolved_backend == BACKEND_BONSAI:
+        bonsai_path = config.get("bonsai_model_path")
+        if bonsai_path:
+            typer.echo(f"   Bonsai model: {bonsai_path}")
     typer.echo(f"   Prompt: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
     if image_path:
         typer.echo(f"   Mode: img2img | Denoise: {denoise_value:.2f} | Input: {image_path}")
@@ -158,6 +174,10 @@ def generate(
             if q is not None:
                 typer.echo(f"   Quantize: {q}-bit")
             pipeline = get_mflux_pipeline(config, quantize=q)
+        elif resolved_backend == BACKEND_BONSAI:
+            pipeline = core_bonsai.get_bonsai_pipeline(config)
+        elif resolved_backend == BACKEND_COREML:
+            pipeline = core_coreml.get_coreml_pipeline(config)
         else:
             pipeline = get_pipeline(config)
 
@@ -248,7 +268,7 @@ def pull(
 
 @app.command()
 def list_models():
-    """List available models for MLX, OllamaDiffuser (GGUF), and MFLUX backends."""
+    """List available models for MLX, MFLUX, OllamaDiffuser (GGUF), Bonsai, and CoreML backends."""
 
     # MLX Native models
     typer.echo("🔷 MLX Native Models (diffusionkit):")
@@ -296,6 +316,33 @@ def list_models():
             for m in sorted(not_installed):
                 typer.echo(f"  • {m}")
     typer.echo(f"\nPull a GGUF model:  ./generate.py pull <model-name>")
+
+    # Bonsai (PrismML)
+    typer.echo()
+    bonsai_status = core_bonsai.validate_bonsai_install()
+    if bonsai_status.installed:
+        bonsai_models = core_bonsai.list_bonsai_models()
+        typer.echo(f"🌳 Bonsai (PrismML) — installed ({len(bonsai_models)} model(s)):")
+        for m in bonsai_models:
+            typer.echo(f"  • {m['alias']:20s}  {m['path']}")
+    else:
+        typer.echo("🌳 Bonsai (PrismML) — not installed")
+        typer.echo("   Install:  ./generate.py setup-bonsai")
+        typer.echo("   Then:     ./generate.py pull-bonsai ternary-mlx")
+
+    # CoreML (Apple Neural Engine)
+    typer.echo()
+    coreml_status = core_coreml.validate_coreml_install()
+    if coreml_status.installed:
+        coreml_models = core_coreml.list_coreml_models()
+        typer.echo(f"🍎 CoreML (Apple Neural Engine) — installed ({len(coreml_models)} model(s)):")
+        for m in coreml_models:
+            typer.echo(f"  • {m['name']}")
+    else:
+        typer.echo("🍎 CoreML (Apple Neural Engine) — not installed")
+        typer.echo("   Install:  ./generate.py setup-coreml")
+        typer.echo("   Then:     ./generate.py pull-coreml sd-2-1-base-palettized")
+        typer.echo("   Or:       ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base")
 
 
 @app.command()
@@ -367,7 +414,7 @@ def status():
     config = load_config()
     model = config.get("model", "Not set")
     backend_setting = config.get("backend", BACKEND_AUTO)
-    resolved = detect_backend(model, backend_setting)
+    resolved = detect_backend(model, backend_setting, config=config)
 
     typer.echo(f"\n⚙️  Configuration:")
     typer.echo(f"  Model: {model}")
@@ -379,14 +426,24 @@ def status():
     # Check diffusionkit
     try:
         import diffusionkit
-        typer.echo(f"\n✅ diffusionkit: Installed (v{diffusionkit.__version__})")
+        from importlib.metadata import version as _pkg_version
+        try:
+            v = _pkg_version("diffusionkit")
+        except Exception:
+            v = "unknown"
+        typer.echo(f"\n✅ diffusionkit: Installed (v{v})")
     except ImportError:
         typer.echo(f"\n❌ diffusionkit: Not installed")
 
     # Check ollamadiffuser
     try:
         import ollamadiffuser
-        typer.echo(f"✅ ollamadiffuser: Installed (v{ollamadiffuser.__version__})")
+        from importlib.metadata import version as _pkg_version
+        try:
+            v = _pkg_version("ollamadiffuser")
+        except Exception:
+            v = "unknown"
+        typer.echo(f"✅ ollamadiffuser: Installed (v{v})")
         try:
             models = list_ollama_models()
             installed = models.get("installed", [])
@@ -412,6 +469,29 @@ def status():
             typer.echo(f"     ... and {len(mflux_models) - 5} more (run list-models to see all)")
     except ImportError:
         typer.echo(f"❌ mflux: Not installed")
+
+    # Check bonsai
+    bonsai_status = core_bonsai.validate_bonsai_install()
+    if bonsai_status.installed:
+        bonsai_models = core_bonsai.list_bonsai_models()
+        typer.echo(f"\n🌳 Bonsai (PrismML): Installed")
+        typer.echo(f"   Vendor: {bonsai_status.bonsai_dir}")
+        typer.echo(f"   Models: {len(bonsai_models)}")
+        for m in bonsai_models:
+            typer.echo(f"     • {m['alias']}")
+    else:
+        typer.echo(f"\n🌳 Bonsai (PrismML): Not installed (run setup-bonsai)")
+
+    # Check coreml
+    coreml_status = core_coreml.validate_coreml_install()
+    if coreml_status.installed:
+        coreml_models = core_coreml.list_coreml_models()
+        typer.echo(f"\n🍎 CoreML: Installed (venv={coreml_status.venv_python})")
+        typer.echo(f"   Models: {len(coreml_models)}")
+        for m in coreml_models:
+            typer.echo(f"     • {m['name']}")
+    else:
+        typer.echo(f"\n🍎 CoreML: Not installed (run setup-coreml)")
 
     # Count generated images
     images = list(OUTPUT_DIR.glob("*.png"))
@@ -534,13 +614,266 @@ def hf_status_cmd():
 
 @app.command(name="hf-logout")
 def hf_logout_cmd():
-    """Log out of HuggingFace."""
+    """Log out from HuggingFace."""
     try:
         hf_logout()
-        typer.echo("✅ Logged out of HuggingFace")
+        typer.echo("✅ Logged out from HuggingFace")
     except Exception as e:
         typer.echo(f"❌ Logout failed: {e}", err=True)
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Bonsai (PrismML) commands
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="setup-bonsai")
+def setup_bonsai_cmd():
+    """One-time install: clones the Bonsai-Image-Demo and runs its setup.sh.
+
+    Installs a dedicated Python 3.11 venv at ~/models/eyegen/bonsai-demo/.venv/
+    with the patched mflux + MLX kernels needed for the 1.58-bit ternary and
+    1-bit binary weight formats.
+
+    Re-run to update the bonsai vendor to the latest commit.
+    """
+    script = PROJECT_ROOT / "scripts" / "setup-bonsai.sh"
+    if not script.is_file():
+        typer.echo(f"❌ Setup script not found: {script}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("🌳 Setting up Bonsai backend (one-time install) ...")
+    typer.echo("   This clones the Bonsai-Image-Demo repo and creates a dedicated")
+    typer.echo("   Python 3.11 venv with the patched mflux + MLX kernels.")
+    typer.echo("   May take several minutes on first run.")
+    typer.echo()
+
+    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode
+    if rc != 0:
+        typer.echo(f"❌ Bonsai setup failed (exit {rc})", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="pull-bonsai")
+def pull_bonsai_cmd(
+    variant: str = typer.Option(
+        core_bonsai.DEFAULT_VARIANT,
+        "--variant", "-v",
+        help=f"Variant to download: {', '.join(core_bonsai.SUPPORTED_VARIANTS)}",
+    ),
+):
+    """Download a Bonsai (PrismML) model via the bonsai-demo's download script.
+
+    \b
+    Examples:
+      ./generate.py pull-bonsai                  # default: ternary-mlx
+      ./generate.py pull-bonsai --variant binary-mlx
+    """
+    if variant not in core_bonsai.SUPPORTED_VARIANTS:
+        typer.echo(
+            f"❌ Unknown variant '{variant}'. Supported: "
+            f"{', '.join(core_bonsai.SUPPORTED_VARIANTS)}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    status = core_bonsai.validate_bonsai_install()
+    if not status.installed:
+        typer.echo(f"❌ {status.message}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"📥 Downloading bonsai variant: {variant}")
+    ok = core_bonsai.download_bonsai_model(
+        variant, progress_callback=lambda m: typer.echo(f"   {m}"),
+    )
+    if ok:
+        typer.echo(f"✅ Bonsai variant '{variant}' is ready at {core_bonsai.get_bonsai_dir()}/models/")
+    else:
+        typer.echo(f"❌ Failed to download bonsai variant '{variant}'", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="list-bonsai-models")
+def list_bonsai_models_cmd():
+    """List installed Bonsai (PrismML) models."""
+    status = core_bonsai.validate_bonsai_install()
+    if not status.installed:
+        typer.echo(f"❌ {status.message}", err=True)
+        typer.echo("   Run: ./generate.py setup-bonsai", err=True)
+        raise typer.Exit(1)
+
+    models = core_bonsai.list_bonsai_models()
+    if not models:
+        typer.echo("📦 No bonsai models installed yet.")
+        typer.echo(f"   Available variants: {', '.join(core_bonsai.SUPPORTED_VARIANTS)}")
+        typer.echo("   Run: ./generate.py pull-bonsai")
+    else:
+        typer.echo(f"🌳 Installed bonsai models ({len(models)}):")
+        for m in models:
+            typer.echo(f"  • {m['alias']:20s}  {m['path']}")
+
+
+# ---------------------------------------------------------------------------
+# CoreML (Apple Neural Engine) commands
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="setup-coreml")
+def setup_coreml_cmd():
+    """One-time install: creates the CoreML sidecar Python 3.11 venv.
+
+    Installs Apple's ``python_coreml_stable_diffusion`` and its pinned deps
+    in a sidecar venv at ``~/models/eyegen/.coreml-venv/`` so it does not
+    conflict with EyeGen's main Python 3.14 venv.
+
+    Requires ``/opt/homebrew/bin/python3.11`` (or set ``PYTHON_BIN`` to
+    another 3.11 interpreter).
+    """
+    script = PROJECT_ROOT / "scripts" / "setup-coreml.sh"
+    if not script.is_file():
+        typer.echo(f"❌ Setup script not found: {script}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("🍎 Setting up CoreML backend (one-time install) ...")
+    typer.echo("   This creates a sidecar Python 3.11 venv and installs Apple's")
+    typer.echo("   python_coreml_stable_diffusion + its pinned dependencies.")
+    typer.echo("   May take several minutes on first run.")
+    typer.echo()
+
+    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode
+    if rc != 0:
+        typer.echo(f"❌ CoreML setup failed (exit {rc})", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="pull-coreml")
+def pull_coreml_cmd(
+    alias: str = typer.Argument(
+        "sd-2-1-base-palettized",
+        help=(
+            "Alias (sd-1-4, sd-1-5, sd-2-1-base, sd-2-1-base-palettized, "
+            "sdxl-base, ...) or a full HuggingFace repo id."
+        ),
+    ),
+):
+    """Download a pre-converted CoreML model from Hugging Face.
+
+    \b
+    Examples:
+      ./generate.py pull-coreml                                # default
+      ./generate.py pull-coreml sd-2-1-base-palettized
+      ./generate.py pull-coreml apple/coreml-stable-diffusion-v1-5
+    """
+    status = core_coreml.validate_coreml_install()
+    if not status.installed:
+        typer.echo(f"❌ {status.message}", err=True)
+        typer.echo("   Run: ./generate.py setup-coreml", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"📥 Downloading pre-converted CoreML model: {alias}")
+    target = core_coreml.pull_preconverted_coreml_model(
+        alias, progress_callback=lambda m: typer.echo(f"   {m}"),
+    )
+    if target:
+        typer.echo(f"✅ CoreML model downloaded to {target}")
+        typer.echo(f"   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
+        typer.echo(f"       --model {alias}")
+    else:
+        typer.echo(f"❌ Failed to download CoreML model '{alias}'", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="convert-coreml")
+def convert_coreml_cmd(
+    hf_model_id: str = typer.Argument(
+        "stabilityai/stable-diffusion-2-1-base",
+        help="HuggingFace model id of the PyTorch model to convert (e.g. stabilityai/stable-diffusion-2-1-base)",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output", "-o",
+        help="Output directory (default: ~/models/eyegen/coreml/<name>)",
+    ),
+    compute_unit: str = typer.Option(
+        "CPU_AND_NE",
+        "--compute-unit", "-c",
+        help="CoreML compute unit: CPU_AND_NE (mobile), CPU_AND_GPU (Mac), CPU_ONLY, ALL",
+    ),
+    quantize_nbits: Optional[int] = typer.Option(
+        None,
+        "--quantize-nbits", "-q",
+        help="Palettization bit-width: 2, 4, 6, or 8 (reduces size; quality may drop)",
+    ),
+    attention: str = typer.Option(
+        "SPLIT_EINSUM",
+        "--attention", "-a",
+        help="Attention implementation: SPLIT_EINSUM (NE), SPLIT_EINSUM_V2 (NE, slower compile), ORIGINAL (CPU/GPU)",
+    ),
+):
+    """Convert a PyTorch Stable Diffusion model to CoreML (15-20 min on M1 Pro).
+
+    \b
+    Examples:
+      ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base
+      ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base --quantize-nbits 6
+      ./generate.py convert-coreml stabilityai/stable-diffusion-xl-base-1.0 --compute-unit CPU_AND_GPU
+    """
+    if output is None:
+        output = core_coreml.get_coreml_models_dir() / hf_model_id.split("/")[-1]
+    output = output.expanduser()
+
+    status = core_coreml.validate_coreml_install()
+    if not status.installed:
+        typer.echo(f"❌ {status.message}", err=True)
+        typer.echo("   Run: ./generate.py setup-coreml", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"🔄 Converting {hf_model_id} → CoreML at {output}")
+    typer.echo(f"   compute-unit: {compute_unit}")
+    typer.echo(f"   attention:    {attention}")
+    if quantize_nbits:
+        typer.echo(f"   quantize:     {quantize_nbits}-bit (palettization)")
+    typer.echo("   This may take 15-20 minutes on first run.")
+    typer.echo()
+
+    ok = core_coreml.convert_to_coreml(
+        hf_model_id=hf_model_id,
+        output_dir=output,
+        compute_unit=compute_unit,
+        attention_implementation=attention,
+        quantize_nbits=quantize_nbits,
+        progress_callback=lambda m: typer.echo(f"   {m}"),
+    )
+    if ok:
+        typer.echo(f"\n✅ Converted model at {output}")
+        typer.echo(f"   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
+        typer.echo(f"       --model {output.name}")
+    else:
+        typer.echo(f"\n❌ Conversion failed. See eyegen.log for details.", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="list-coreml-models")
+def list_coreml_models_cmd():
+    """List installed CoreML model bundles."""
+    status = core_coreml.validate_coreml_install()
+    if not status.installed:
+        typer.echo(f"❌ {status.message}", err=True)
+        typer.echo("   Run: ./generate.py setup-coreml", err=True)
+        raise typer.Exit(1)
+
+    models = core_coreml.list_coreml_models()
+    if not models:
+        typer.echo("📦 No CoreML models installed yet.")
+        typer.echo("   Pre-converted (fast):  ./generate.py pull-coreml sd-2-1-base-palettized")
+        typer.echo("   Convert from PyTorch:  ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base")
+    else:
+        typer.echo(f"🍎 Installed CoreML models ({len(models)}):")
+        for m in models:
+            typer.echo(f"  • {m['name']:30s}  {m['path']}")
+            typer.echo(f"      model_version: {m['model_version']}")
+            typer.echo(f"      compute_unit: {m['compute_unit']}  format: {m['format']}")
 
 
 if __name__ == "__main__":
