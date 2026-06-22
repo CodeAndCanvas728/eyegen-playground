@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer
-from PySide6.QtGui import QPixmap, QImage, QIcon
+from PySide6.QtGui import QPixmap, QImage, QIcon, QFont, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QSlider, QComboBox, QLineEdit,
@@ -367,6 +367,7 @@ class HFLoginDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("HuggingFace Login")
         self.setMinimumWidth(400)
+        self._has_unsaved_token = False
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -381,6 +382,7 @@ class HFLoginDialog(QDialog):
         self.token_input = QLineEdit()
         self.token_input.setEchoMode(QLineEdit.Password)
         self.token_input.setPlaceholderText("hf_...")
+        self.token_input.textChanged.connect(self._on_token_changed)
         layout.addWidget(self.token_input)
 
         hint = QLabel(
@@ -388,7 +390,7 @@ class HFLoginDialog(QDialog):
             'Get a token at huggingface.co/settings/tokens</a>'
         )
         hint.setOpenExternalLinks(True)
-        hint.setStyleSheet("font-size: 11px;")
+        hint.setProperty("class", "hint")
         layout.addWidget(hint)
 
         # Buttons
@@ -402,11 +404,45 @@ class HFLoginDialog(QDialog):
         btn_row.addWidget(self.logout_btn)
 
         close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
+        close_btn.clicked.connect(self._on_close_clicked)
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
         self._refresh_status()
+
+    def _on_token_changed(self, text: str):
+        self._has_unsaved_token = bool(text.strip())
+
+    def _on_close_clicked(self):
+        if self._confirm_discard_token():
+            self.accept()
+
+    def _confirm_discard_token(self) -> bool:
+        if not self._has_unsaved_token:
+            return True
+        reply = QMessageBox.question(
+            self,
+            "Discard token?",
+            "A token was entered but not submitted. Discard it?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return reply == QMessageBox.Yes
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            if self._confirm_discard_token():
+                self.reject()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        if self._confirm_discard_token():
+            self._has_unsaved_token = False
+            event.accept()
+        else:
+            event.ignore()
 
     def _refresh_status(self):
         info = hf_status()
@@ -432,6 +468,7 @@ class HFLoginDialog(QDialog):
             self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
             self.status_label.setStyleSheet("color: green;")
             self.token_input.clear()
+            self._has_unsaved_token = False
             self.logout_btn.setEnabled(True)
         except Exception as e:
             self.status_label.setText(f"❌ Login failed: {e}")
@@ -472,6 +509,10 @@ class MainWindow(QMainWindow):
         self._restoring_state = False
         self._elapsed_seconds = 0
         self._current_phase = ""
+        self._status_clear_timer = QTimer(self)
+        self._status_clear_timer.setSingleShot(True)
+        self._status_clear_timer.setInterval(5000)
+        self._status_clear_timer.timeout.connect(self._clear_status)
 
         self._build_ui()
 
@@ -497,7 +538,7 @@ class MainWindow(QMainWindow):
         controls.setMinimumWidth(300)
         ctrl_layout = QVBoxLayout(controls)
         ctrl_layout.setContentsMargins(8, 8, 8, 8)
-        ctrl_layout.setSpacing(6)
+        ctrl_layout.setSpacing(8)
 
         # Mode tab bar
         self.mode_tabs = QTabBar()
@@ -510,7 +551,7 @@ class MainWindow(QMainWindow):
         self.img2img_controls = QWidget()
         img2img_layout = QVBoxLayout(self.img2img_controls)
         img2img_layout.setContentsMargins(0, 0, 0, 0)
-        img2img_layout.setSpacing(4)
+        img2img_layout.setSpacing(8)
 
         img2img_layout.addWidget(QLabel("Input Image"))
         image_row = QHBoxLayout()
@@ -536,7 +577,8 @@ class MainWindow(QMainWindow):
             "identical to the input (denoise has no effect)."
         )
         self.img2img_warning.setWordWrap(True)
-        self.img2img_warning.setStyleSheet("color: #cc8800; font-size: 11px;")
+        self.img2img_warning.setProperty("class", "hint")
+        self.img2img_warning.setStyleSheet("color: #cc8800;")
         img2img_layout.addWidget(self.img2img_warning)
 
         denoise_row = QHBoxLayout()
@@ -576,8 +618,10 @@ class MainWindow(QMainWindow):
 
         # Generate button
         self.generate_btn = QPushButton("✨  Generate")
-        self.generate_btn.setMinimumHeight(36)
+        self.generate_btn.setMinimumHeight(40)
+        self.generate_btn.setToolTip("Generate (⌘↩ / Ctrl+↩)")
         self.generate_btn.clicked.connect(self._on_generate)
+        self.generate_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self, self._on_generate)
         ctrl_layout.addWidget(self.generate_btn)
 
         # Status
@@ -587,7 +631,7 @@ class MainWindow(QMainWindow):
 
         # Progress bar
         self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumHeight(6)
+        self.progress_bar.setMaximumHeight(8)
         self.progress_bar.hide()
         ctrl_layout.addWidget(self.progress_bar)
 
@@ -731,7 +775,7 @@ class MainWindow(QMainWindow):
         # Status label + Save Model button on second row
         mp_bottom = QHBoxLayout()
         self.model_path_status = QLabel()
-        self.model_path_status.setStyleSheet("color: #888; font-size: 11px;")
+        self.model_path_status.setProperty("class", "hint")
         self.model_path_status.setWordWrap(True)
         mp_bottom.addWidget(self.model_path_status, 1)
         self.save_model_btn = QPushButton("Save Model…")
@@ -749,7 +793,7 @@ class MainWindow(QMainWindow):
         # Backend hint label (shown for MFLUX with recommended settings)
         self.backend_hint = QLabel()
         self.backend_hint.setWordWrap(True)
-        self.backend_hint.setStyleSheet("color: #888; font-size: 11px;")
+        self.backend_hint.setProperty("class", "hint")
         self.backend_hint.hide()
         settings_layout.addWidget(self.backend_hint)
 
@@ -784,7 +828,8 @@ class MainWindow(QMainWindow):
         # Output path label
         self.output_label = QLabel("")
         self.output_label.setWordWrap(True)
-        self.output_label.setStyleSheet("color: gray; font-size: 11px;")
+        self.output_label.setProperty("class", "hint")
+        self.output_label.setStyleSheet("color: gray;")
         ctrl_layout.addWidget(self.output_label)
 
         splitter.addWidget(controls)
@@ -798,8 +843,9 @@ class MainWindow(QMainWindow):
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.image_label.setProperty("class", "display")
         self.image_label.setStyleSheet(
-            "background-color: #1e1e1e; color: #888; font-size: 14px; border-radius: 6px;")
+            "background-color: #1e1e1e; color: #888; border-radius: 8px;")
         preview_layout.addWidget(self.image_label)
 
         splitter.addWidget(preview)
@@ -985,13 +1031,13 @@ class MainWindow(QMainWindow):
             q_str = f"{ql}-bit" if ql else "full precision"
             ver = meta.get("mflux_version") or "unknown"
             self.model_path_status.setText(f"✅ Valid model — {q_str} (mflux {ver})")
-            self.model_path_status.setStyleSheet("color: green; font-size: 11px;")
+            self.model_path_status.setStyleSheet("color: green;")
         elif valid:
             self.model_path_status.setText("✅ Model directory found (no metadata)")
-            self.model_path_status.setStyleSheet("color: #888; font-size: 11px;")
+            self.model_path_status.setStyleSheet("color: #666;")
         else:
             self.model_path_status.setText("⚠ Not a valid saved model directory")
-            self.model_path_status.setStyleSheet("color: orange; font-size: 11px;")
+            self.model_path_status.setStyleSheet("color: orange;")
 
         # Grey out Model + Quantize when a valid saved model is active
         saved_model_active = valid
@@ -1068,7 +1114,7 @@ class MainWindow(QMainWindow):
             "several minutes and use significant disk space."
         )
         note.setWordWrap(True)
-        note.setStyleSheet("color: #888; font-size: 11px;")
+        note.setProperty("class", "hint")
         layout.addWidget(note)
 
         from PySide6.QtWidgets import QDialogButtonBox
@@ -1307,7 +1353,7 @@ class MainWindow(QMainWindow):
         self._elapsed_seconds = 0
         self._current_phase = "Starting…"
         self.status_label.setText("Starting…")
-        self.status_label.setStyleSheet("color: #4a9eff;")
+        self.status_label.setStyleSheet("color: #853D4F;")
         self._elapsed_timer.start()
 
         # Resolve MFLUX quantize
@@ -1361,6 +1407,7 @@ class MainWindow(QMainWindow):
 
         self._current_pixmap = pil_to_pixmap(pil_image)
         self._scale_preview()
+        self._arm_status_autoclear()
 
     def _on_error(self, full_traceback: str):
         self._elapsed_timer.stop()
@@ -1382,6 +1429,7 @@ class MainWindow(QMainWindow):
         dlg.setDetailedText(full_traceback)
         dlg.setInformativeText(f"Full log: {LOG_FILE}")
         dlg.exec()
+        self._arm_status_autoclear()
 
     def _on_quantize_failed(self, model_name: str):
         """Handle QuantizationError — offer retry without quantization."""
@@ -1452,12 +1500,24 @@ class MainWindow(QMainWindow):
         elapsed = f" ({self._elapsed_seconds}s)" if self._elapsed_seconds > 0 else ""
         self.status_label.setText(f"⏹ Cancelled{elapsed}")
         self.status_label.setStyleSheet("color: gray;")
+        self._arm_status_autoclear()
 
     def _on_elapsed_tick(self):
         """Update status label with elapsed seconds."""
         self._elapsed_seconds += 1
         elapsed = f" ({self._elapsed_seconds}s)"
         self.status_label.setText(f"{self._current_phase}{elapsed}")
+
+    def _arm_status_autoclear(self):
+        """Start a 5s timer to reset the status label to 'Ready'."""
+        self._status_clear_timer.start()
+
+    def _clear_status(self):
+        """Reset status to 'Ready' unless a new generation is in progress."""
+        if self.worker is not None and self.worker.isRunning():
+            return
+        self.status_label.setText("Ready")
+        self.status_label.setStyleSheet("color: gray;")
 
     def _reset_generate_btn(self):
         """Reset the generate button to its default state."""
@@ -1475,6 +1535,36 @@ def main():
              sys.version.split()[0], __import__("platform").machine())
     app = QApplication(sys.argv)
     app.setApplicationName("EyeGen")
+    app.setFont(QFont(".AppleSystemUIFont", 13))
+    app.setStyleSheet("""
+        [class="hint"]    { font-size: 11px; color: #666666; }
+        [class="display"] { font-size: 16px; }
+
+        /* Accent: oxblood #4A1F2A (session palette, 600 step) */
+        QPushButton {
+            background-color: #853D4F;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+        QPushButton:hover    { background-color: #AC4962; }
+        QPushButton:pressed  { background-color: #5D2D39; }
+        QPushButton:disabled { background-color: #BCB5AE; color: #6B6157; }
+
+        QTabBar::tab:selected   { background-color: #853D4F; color: white; }
+        QTabBar::tab:!selected  { background-color: transparent; color: #4A1F2A; }
+
+        QProgressBar {
+            background-color: #EAE8E6;
+            border: none;
+            border-radius: 8px;
+        }
+        QProgressBar::chunk {
+            background-color: #853D4F;
+            border-radius: 8px;
+        }
+    """)
 
     # Set app icon from icon.png (next to this script)
     icon_path = Path(__file__).resolve().parent / "icon.png"

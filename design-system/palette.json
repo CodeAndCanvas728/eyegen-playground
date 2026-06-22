@@ -1,0 +1,64 @@
+{
+  "input": "#4A1F2A",
+  "neutral_temperature": "warm",
+  "accent_ramp": {
+    "50": "#F9F5F6",
+    "100": "#EFE1E5",
+    "200": "#E0C3CA",
+    "300": "#CF9BA8",
+    "400": "#BD6A80",
+    "500": "#AC4962",
+    "600": "#853D4F",
+    "700": "#5D2D39",
+    "900": "#361C23",
+    "base": "#4A1F2A"
+  },
+  "neutral_ramp": {
+    "50": "#F8F7F7",
+    "100": "#EAE8E6",
+    "200": "#D6D1CD",
+    "300": "#BCB5AE",
+    "400": "#9F9489",
+    "500": "#877A6E",
+    "600": "#6B6157",
+    "700": "#4C453E",
+    "900": "#2D2925"
+  },
+  "surfaces": {
+    "light": {
+      "ground": "#F8F7F7",
+      "card": "#EAE8E6",
+      "elevated": "#D6D1CD",
+      "overlay": "#BCB5AE"
+    },
+    "dark": {
+      "ground": "#2D2925",
+      "card": "#4C453E",
+      "elevated": "#6B6157",
+      "overlay": "#877A6E"
+    }
+  },
+  "text_contrast": {
+    "ground": {
+      "surface": "#2D2925",
+      "recommended_text": "#F7F3EE",
+      "contrast_ratio": 13.06
+    },
+    "card": {
+      "surface": "#4C453E",
+      "recommended_text": "#F7F3EE",
+      "contrast_ratio": 8.53
+    },
+    "elevated": {
+      "surface": "#6B6157",
+      "recommended_text": "#F7F3EE",
+      "contrast_ratio": 5.47
+    },
+    "overlay": {
+      "surface": "#877A6E",
+      "recommended_text": "#141210",
+      "contrast_ratio": 4.48
+    }
+  },
+  "rule_reminder": "One hue, fully committed (\u00a72F). This palette uses ONE accent hue and ONE neutral temperature. Do not introduce a second accent."
+}
