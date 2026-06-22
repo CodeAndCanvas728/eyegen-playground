@@ -35,12 +35,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import subprocess
-import sys
-import threading
 import time
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -67,7 +65,6 @@ PRECONVERTED_HF_MODELS = {
     "sd-2-1-base-palettized": "apple/coreml-stable-diffusion-2-1-base-palettized",
     "sdxl-base": "apple/coreml-stable-diffusion-xl-base",
     "sdxl-ios": "apple/coreml-stable-diffusion-xl-base-ios",
-    "sd-3-medium": "stabilityai/stable-diffusion-3-medium",
 }
 
 VALID_COMPUTE_UNITS = ("CPU_ONLY", "CPU_AND_GPU", "CPU_AND_NE", "ALL")
@@ -395,10 +392,11 @@ class CoreMLWrapper:
 
         from core import OUTPUT_DIR
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = OUTPUT_DIR / f"coreml_{seed or 'auto'}.png"
+        out_path = OUTPUT_DIR / f"coreml_{seed or uuid.uuid4().hex[:8]}.png"
 
         py = _sidecar_python()
-        assert py is not None
+        if py is None:
+            raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
         cmd = [
             str(py), "-m", "python_coreml_stable_diffusion.pipeline",
             "--prompt", prompt,

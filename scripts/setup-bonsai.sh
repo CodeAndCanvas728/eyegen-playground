@@ -10,7 +10,7 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EYEGEN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BONSAI_DIR="${BONSAI_DIR:-$HOME/models/eyegen/bonsai-demo}"

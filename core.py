@@ -2,10 +2,12 @@
 Shared logic for EyeGen — multi-backend image generation on Apple Silicon.
 Used by both the CLI (generate.py) and the GUI (gui.py).
 
-Supports three backends:
+Supports five backends:
   - MLX (diffusionkit) — Apple Silicon native, SD3.5 quantized
-  - OllamaDiffuser — GGUF-quantized models (FLUX, SDXL, SD1.5, SD3.5, etc.)
   - MFLUX — MLX-native FLUX, FLUX.2, Z-Image, FIBO, Qwen, SeedVR2 models
+  - OllamaDiffuser — GGUF-quantized models (FLUX, SDXL, SD1.5, SD3.5, etc.)
+  - Bonsai (PrismML) — 1.58-bit ternary + 1-bit binary FLUX.2 Klein 4B
+  - CoreML — Stable Diffusion 1.x/2.x via Apple Neural Engine
 """
 
 import json

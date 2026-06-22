@@ -35,12 +35,8 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-import shutil
 import subprocess
-import sys
-import tempfile
-import threading
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -190,7 +186,8 @@ def _run_bonsai_script(script_name: str, *args: str,
         text=True,
         bufsize=1,
     )
-    assert proc.stdout is not None
+    if proc.stdout is None:
+        raise RuntimeError("bonsai subprocess stdout pipe was not created")
     try:
         for line in proc.stdout:
             line = line.rstrip()
@@ -306,7 +303,7 @@ class BonsaiWrapper:
         # goes wrong.
         from core import OUTPUT_DIR
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed or 'auto'}.png"
+        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed or uuid.uuid4().hex[:8]}.png"
 
         cmd = [
             "--model", self.variant,

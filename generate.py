@@ -83,7 +83,7 @@ def generate(
     backend: str = typer.Option(
         "auto",
         "--backend", "-b",
-        help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser",
+        help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser, bonsai, coreml",
     ),
     quantize: Optional[int] = typer.Option(
         None,

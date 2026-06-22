@@ -325,6 +325,29 @@ class SaveModelWorker(QThread):
     finished = Signal(bool, str, str)  # (success, message, saved_path)
     status = Signal(str)
 
+    def __init__(self, model_alias: str, quantize: int | None, output_path: str,
+                 hf_cache_dir: str | None = None):
+        super().__init__()
+        self.model_alias = model_alias
+        self.quantize = quantize
+        self.output_path = output_path
+        self.hf_cache_dir = hf_cache_dir
+
+    def run(self):
+        try:
+            result = save_mflux_model(
+                model_alias=self.model_alias,
+                quantize=self.quantize,
+                output_path=self.output_path,
+                progress_callback=lambda msg: self.status.emit(msg),
+                hf_cache_dir=self.hf_cache_dir,
+            )
+            self.finished.emit(True, "Model saved successfully", str(result))
+        except Exception as exc:
+            full = traceback.format_exc()
+            log.error("Save model failed:\n%s", full)
+            self.finished.emit(False, str(exc), "")
+
 
 class BonsaiSetupWorker(QThread):
     """Runs scripts/setup-bonsai.sh in a subprocess."""
@@ -410,29 +433,6 @@ class CoreMLDownloadWorker(QThread):
                 self.finished.emit(False, f"Failed to download CoreML model '{self.alias}'")
         except Exception as exc:
             self.finished.emit(False, f"Download error: {exc}")
-
-    def __init__(self, model_alias: str, quantize: int | None, output_path: str,
-                 hf_cache_dir: str | None = None):
-        super().__init__()
-        self.model_alias = model_alias
-        self.quantize = quantize
-        self.output_path = output_path
-        self.hf_cache_dir = hf_cache_dir
-
-    def run(self):
-        try:
-            result = save_mflux_model(
-                model_alias=self.model_alias,
-                quantize=self.quantize,
-                output_path=self.output_path,
-                progress_callback=lambda msg: self.status.emit(msg),
-                hf_cache_dir=self.hf_cache_dir,
-            )
-            self.finished.emit(True, "Model saved successfully", str(result))
-        except Exception as exc:
-            full = traceback.format_exc()
-            log.error("Save model failed:\n%s", full)
-            self.finished.emit(False, str(exc), "")
 
 
 # ---------------------------------------------------------------------------
@@ -991,11 +991,12 @@ class MainWindow(QMainWindow):
         """Return the concrete backend for the current model + dropdown."""
         override = self.backend_combo.currentData()
         model = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
-        # Pass the GUI's current coreml_model_path so coreml routing works
-        config = {
-            "model": model,
-            "coreml_model_path": self.model_input.text().strip() or None,
-        }
+        config = {"model": model}
+        # Only inject coreml_model_path when the user has explicitly chosen CoreML;
+        # otherwise arbitrary text in the Model field would short-circuit to coreml
+        # in detect_backend (see _is_coreml_model).
+        if override == BACKEND_COREML:
+            config["coreml_model_path"] = model
         return detect_backend(model, override, config=config)
 
     def _update_backend_dependent_controls(self):
@@ -1531,7 +1532,7 @@ class MainWindow(QMainWindow):
             "hf_cache_dir": self.hf_cache_input.text(),
             "bonsai_model_path": self.model_input.text() if self._resolved_backend() == BACKEND_BONSAI else "",
             "coreml_model_path": self.model_input.text() if self._resolved_backend() == BACKEND_COREML else "",
-            "coreml_compute_unit": "CPU_AND_NE",
+            "coreml_compute_unit": self.config.get("coreml_compute_unit", "CPU_AND_NE"),
         }
 
     def _restore_state(self):
