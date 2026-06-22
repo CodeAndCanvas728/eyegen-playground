@@ -215,7 +215,7 @@ def generate(
             typer.echo("\n💡 Tip: To avoid this warning, set quantize to None:")
             typer.echo("   ./generate.py config-set mflux_quantize null")
             typer.echo("   Or clear the model cache: ./generate.py clear-cache")
-        except Exception as retry_err:
+        except (OSError, ValueError, QuantizationError, RuntimeError) as retry_err:
             typer.echo(f"\n❌ Retry also failed: {retry_err}", err=True)
             raise typer.Exit(1)
     except Exception as e:
@@ -241,7 +241,7 @@ def pull(
         else:
             typer.echo(f"❌ Failed to pull model '{model_name}'", err=True)
             raise typer.Exit(1)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         typer.echo(f"❌ Pull failed: {e}", err=True)
         raise typer.Exit(1)
 
@@ -267,7 +267,7 @@ def list_models():
             else:
                 typer.echo(f"  • {m['alias']}")
         typer.echo("  (Auto-download from HuggingFace on first use — no pull needed)")
-    except Exception as e:
+    except (OSError, ValueError, ImportError, AttributeError) as e:
         typer.echo(f"❌ Failed to list MFLUX models: {e}", err=True)
 
     typer.echo()
@@ -275,7 +275,7 @@ def list_models():
     # OllamaDiffuser models
     try:
         models = list_ollama_models()
-    except Exception as e:
+    except (OSError, ValueError, ImportError, AttributeError) as e:
         typer.echo(f"❌ Failed to list OllamaDiffuser models: {e}", err=True)
         raise typer.Exit(1)
 
@@ -317,7 +317,7 @@ def config_set(
     # Try to parse as JSON (for numbers, booleans, etc.)
     try:
         parsed_value = json.loads(value)
-    except:
+    except json.JSONDecodeError:
         parsed_value = value
 
     config[key] = parsed_value
@@ -328,7 +328,7 @@ def config_set(
     except ValueError as val_err:
         typer.echo(f"❌ Configuration validation failed:\n   {val_err}", err=True)
         raise typer.Exit(1)
-    except Exception as e:
+    except OSError as e:
         typer.echo(f"❌ Failed to save config: {e}", err=True)
         raise typer.Exit(1)
 
@@ -395,7 +395,7 @@ def status():
                 typer.echo(f"     • {m}")
             if len(installed) > 5:
                 typer.echo(f"     ... and {len(installed) - 5} more")
-        except Exception:
+        except (OSError, ValueError, ImportError, AttributeError):
             pass
     except ImportError:
         typer.echo(f"❌ ollamadiffuser: Not installed")
@@ -442,7 +442,7 @@ def clear_cache(
             typer.echo(f"✅ Cleared {len(removed)} cached revision(s). Models will re-download on next use.")
         else:
             typer.echo("ℹ  No matching cached models found.")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         typer.echo(f"❌ Cache clear failed: {e}", err=True)
         raise typer.Exit(1)
 

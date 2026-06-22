@@ -178,7 +178,7 @@ def _get_mflux_aliases() -> set:
         for cfg in AVAILABLE_MODELS.values():
             _mflux_aliases.update(cfg.aliases)
             _mflux_aliases.add(cfg.model_name)
-    except Exception as exc:
+    except (ImportError, AttributeError) as exc:
         log.debug("Could not augment MFLUX aliases from live package: %s", exc)
 
     return _mflux_aliases
@@ -213,7 +213,7 @@ def load_config() -> dict:
                 data = json.load(f)
                 cfg = EyeGenConfig.from_dict(data)
                 return cfg.to_dict()
-            except Exception as e:
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
                 log.warning("Failed to load config.json, resetting to defaults: %s", e)
     return EyeGenConfig().to_dict()
 
@@ -769,12 +769,14 @@ def hf_login(token: str) -> dict:
 
 def hf_status() -> Optional[dict]:
     """Return HuggingFace user info if logged in, or None."""
-    from huggingface_hub import get_token, whoami
+    from huggingface_hub import get_token, whoami, errors as hf_errors
     if get_token() is None:
         return None
     try:
         return whoami()
-    except Exception:
+    except (hf_errors.LocalTokenNotFoundError, hf_errors.HTTPError,
+            hf_errors.OfflineModeIsEnabled, ValueError) as exc:
+        log.debug("HF status check failed: %s", exc)
         return None
 
 

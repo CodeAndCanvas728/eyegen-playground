@@ -35,6 +35,7 @@ from core import (
     OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
     QuantizationError,
+    EyeGenConfig,
 )
 
 # ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ def load_gui_state() -> dict:
         try:
             with open(GUI_STATE_FILE, "r") as f:
                 return json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
     return {}
 
@@ -470,14 +471,14 @@ class HFLoginDialog(QDialog):
             self.token_input.clear()
             self._has_unsaved_token = False
             self.logout_btn.setEnabled(True)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             self.status_label.setText(f"❌ Login failed: {e}")
             self.status_label.setStyleSheet("color: red;")
 
     def _on_logout(self):
         try:
             hf_logout()
-        except Exception:
+        except (OSError, ValueError):
             pass
         self._refresh_status()
 
@@ -1071,7 +1072,7 @@ class MainWindow(QMainWindow):
             for m in models:
                 alias_combo.addItem(
                     f"{m['alias']}  ({m['model_name']})", m["alias"])
-        except Exception:
+        except (OSError, ValueError, ImportError, AttributeError):
             for a in ("dev", "schnell", "fibo", "z-image"):
                 alias_combo.addItem(a, a)
         # Pre-select current model if it's in the list
@@ -1343,8 +1344,11 @@ class MainWindow(QMainWindow):
                 self.status_label.setStyleSheet("color: red;")
                 return
             config = cfg_obj.to_dict()
-        except Exception as e:
-            log.warning("Validation failed: %s", e)
+        except (ValueError, TypeError) as e:
+            log.warning("Config cast failed: %s", e)
+            self.status_label.setText(f"⚠ Invalid config: {e}")
+            self.status_label.setStyleSheet("color: red;")
+            return
 
         self.generate_btn.setText("⏹  Stop")
         self.generate_btn.setStyleSheet("background-color: #cc3333; color: white;")
@@ -1461,7 +1465,7 @@ class MainWindow(QMainWindow):
             try:
                 removed = clear_mflux_cache()
                 log.info("Cleared %d cached revision(s)", len(removed))
-            except Exception as exc:
+            except (OSError, ValueError) as exc:
                 log.error("Cache clear failed: %s", exc)
             self.quantize_combo.setCurrentIndex(
                 self.quantize_combo.findData(0))  # "None (full precision)"
