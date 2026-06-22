@@ -34,8 +34,11 @@ from core import (
     hf_login, hf_status, hf_logout,
     OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, DEFAULT_CONFIG,
     BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
+    BACKEND_BONSAI, BACKEND_COREML,
     QuantizationError,
 )
+import core_bonsai
+import core_coreml
 
 # ---------------------------------------------------------------------------
 # Logging — always write to ~/Library/Logs/EyeGen.log so errors are
@@ -199,10 +202,14 @@ class GenerationWorker(QThread):
 
     def run(self):
         try:
-            # Check pipeline cache
+            # Check pipeline cache (includes the new bonsai/coreml config
+            # fields so model_path or compute_unit changes invalidate the cache)
             cache_key = (self.backend, self.config.get("model"),
                          self.mflux_quantize, self.use_t5,
-                         self.config.get("mflux_model_path"))
+                         self.config.get("mflux_model_path"),
+                         self.config.get("bonsai_model_path"),
+                         self.config.get("coreml_model_path"),
+                         self.config.get("coreml_compute_unit"))
             with _pipeline_cache_lock:
                 cached_pipeline = _pipeline_cache["pipeline"]
                 cached_key = _pipeline_cache["key"]
@@ -223,6 +230,12 @@ class GenerationWorker(QThread):
                 elif self.backend == BACKEND_MFLUX:
                     pipeline = get_mflux_pipeline(self.config,
                                                   quantize=self.mflux_quantize)
+                elif self.backend == BACKEND_BONSAI:
+                    import core_bonsai
+                    pipeline = core_bonsai.get_bonsai_pipeline(self.config)
+                elif self.backend == BACKEND_COREML:
+                    import core_coreml
+                    pipeline = core_coreml.get_coreml_pipeline(self.config)
                 else:
                     pipeline = get_pipeline(self.config, use_t5=self.use_t5)
                     _patch_sample_euler(
@@ -311,6 +324,92 @@ class SaveModelWorker(QThread):
     """Downloads, quantizes, and saves an MFLUX model in a background thread."""
     finished = Signal(bool, str, str)  # (success, message, saved_path)
     status = Signal(str)
+
+
+class BonsaiSetupWorker(QThread):
+    """Runs scripts/setup-bonsai.sh in a subprocess."""
+    finished = Signal(bool, str)  # (success, message)
+
+    def __init__(self, script_path: str):
+        super().__init__()
+        self.script_path = script_path
+
+    def run(self):
+        try:
+            r = subprocess.run([self.script_path], capture_output=True, text=True)
+            if r.returncode == 0:
+                self.finished.emit(True, "Bonsai installed successfully")
+            else:
+                msg = (r.stderr or r.stdout or "Unknown error").strip().splitlines()[-5:]
+                self.finished.emit(False, f"Setup failed (exit {r.returncode}): " + "\n".join(msg))
+        except Exception as exc:
+            self.finished.emit(False, f"Setup error: {exc}")
+
+
+class BonsaiDownloadWorker(QThread):
+    """Downloads a bonsai model via core_bonsai.download_bonsai_model()."""
+    finished = Signal(bool, str)
+    status = Signal(str)
+
+    def __init__(self, variant: str):
+        super().__init__()
+        self.variant = variant
+
+    def run(self):
+        try:
+            ok = core_bonsai.download_bonsai_model(
+                self.variant,
+                progress_callback=lambda m: self.status.emit(m),
+            )
+            if ok:
+                self.finished.emit(True, f"Bonsai model '{self.variant}' is ready")
+            else:
+                self.finished.emit(False, f"Failed to download bonsai variant '{self.variant}'")
+        except Exception as exc:
+            self.finished.emit(False, f"Download error: {exc}")
+
+
+class CoreMLSetupWorker(QThread):
+    """Runs scripts/setup-coreml.sh in a subprocess."""
+    finished = Signal(bool, str)
+
+    def __init__(self, script_path: str):
+        super().__init__()
+        self.script_path = script_path
+
+    def run(self):
+        try:
+            r = subprocess.run([self.script_path], capture_output=True, text=True)
+            if r.returncode == 0:
+                self.finished.emit(True, "CoreML sidecar venv installed")
+            else:
+                msg = (r.stderr or r.stdout or "Unknown error").strip().splitlines()[-5:]
+                self.finished.emit(False, f"Setup failed (exit {r.returncode}): " + "\n".join(msg))
+        except Exception as exc:
+            self.finished.emit(False, f"Setup error: {exc}")
+
+
+class CoreMLDownloadWorker(QThread):
+    """Downloads a pre-converted CoreML model from Hugging Face."""
+    finished = Signal(bool, str)
+    status = Signal(str)
+
+    def __init__(self, alias: str):
+        super().__init__()
+        self.alias = alias
+
+    def run(self):
+        try:
+            target = core_coreml.pull_preconverted_coreml_model(
+                self.alias,
+                progress_callback=lambda m: self.status.emit(m),
+            )
+            if target:
+                self.finished.emit(True, f"CoreML model downloaded to {target}")
+            else:
+                self.finished.emit(False, f"Failed to download CoreML model '{self.alias}'")
+        except Exception as exc:
+            self.finished.emit(False, f"Download error: {exc}")
 
     def __init__(self, model_alias: str, quantize: int | None, output_path: str,
                  hf_cache_dir: str | None = None):
@@ -691,6 +790,8 @@ class MainWindow(QMainWindow):
         self.backend_combo.addItem("MLX (diffusionkit)", BACKEND_MLX)
         self.backend_combo.addItem("MFLUX (FLUX/FIBO/Z-Image)", BACKEND_MFLUX)
         self.backend_combo.addItem("OllamaDiffuser (GGUF)", BACKEND_OLLAMA)
+        self.backend_combo.addItem("Bonsai (PrismML ternary 1.58-bit)", BACKEND_BONSAI)
+        self.backend_combo.addItem("CoreML (Apple Neural Engine)", BACKEND_COREML)
         self.backend_combo.currentIndexChanged.connect(self._on_backend_changed)
         row.addWidget(self.backend_combo)
         settings_layout.addLayout(row)
@@ -752,6 +853,58 @@ class MainWindow(QMainWindow):
         self.backend_hint.setStyleSheet("color: #888; font-size: 11px;")
         self.backend_hint.hide()
         settings_layout.addWidget(self.backend_hint)
+
+        # Bonsai setup row (visible only when bonsai is the resolved backend)
+        self.bonsai_row = QWidget()
+        bonsai_layout = QHBoxLayout(self.bonsai_row)
+        bonsai_layout.setContentsMargins(0, 0, 0, 0)
+        self.bonsai_status_label = QLabel()
+        self.bonsai_status_label.setStyleSheet("color: #888; font-size: 11px;")
+        self.bonsai_status_label.setWordWrap(True)
+        bonsai_layout.addWidget(self.bonsai_status_label, 1)
+        self.bonsai_setup_btn = QPushButton("Setup Bonsai…")
+        self.bonsai_setup_btn.setFixedWidth(130)
+        self.bonsai_setup_btn.setToolTip(
+            "One-time install: clones the Bonsai-Image-Demo repo and runs its\n"
+            "setup.sh, which creates a dedicated Python 3.11 venv with the\n"
+            "patched mflux + MLX kernels needed for ternary 1.58-bit weights."
+        )
+        self.bonsai_setup_btn.clicked.connect(self._on_bonsai_setup)
+        bonsai_layout.addWidget(self.bonsai_setup_btn)
+        self.bonsai_pull_btn = QPushButton("Download Model…")
+        self.bonsai_pull_btn.setFixedWidth(140)
+        self.bonsai_pull_btn.setToolTip("Download a bonsai model via the bonsai-demo's download script.")
+        self.bonsai_pull_btn.clicked.connect(self._on_bonsai_pull)
+        bonsai_layout.addWidget(self.bonsai_pull_btn)
+        self.bonsai_row.hide()
+        settings_layout.addWidget(self.bonsai_row)
+
+        # CoreML setup row (visible only when coreml is the resolved backend)
+        self.coreml_row = QWidget()
+        coreml_layout = QHBoxLayout(self.coreml_row)
+        coreml_layout.setContentsMargins(0, 0, 0, 0)
+        self.coreml_status_label = QLabel()
+        self.coreml_status_label.setStyleSheet("color: #888; font-size: 11px;")
+        self.coreml_status_label.setWordWrap(True)
+        coreml_layout.addWidget(self.coreml_status_label, 1)
+        self.coreml_setup_btn = QPushButton("Setup CoreML…")
+        self.coreml_setup_btn.setFixedWidth(130)
+        self.coreml_setup_btn.setToolTip(
+            "One-time install: creates a sidecar Python 3.11 venv at\n"
+            "~/models/eyegen/.coreml-venv/ with Apple's python_coreml_stable_diffusion."
+        )
+        self.coreml_setup_btn.clicked.connect(self._on_coreml_setup)
+        coreml_layout.addWidget(self.coreml_setup_btn)
+        self.coreml_pull_btn = QPushButton("Download Model…")
+        self.coreml_pull_btn.setFixedWidth(140)
+        self.coreml_pull_btn.setToolTip(
+            "Download a pre-converted CoreML model from Hugging Face.\n"
+            "Or use ./generate.py convert-coreml to convert a PyTorch model from scratch."
+        )
+        self.coreml_pull_btn.clicked.connect(self._on_coreml_pull)
+        coreml_layout.addWidget(self.coreml_pull_btn)
+        self.coreml_row.hide()
+        settings_layout.addWidget(self.coreml_row)
 
         # HF Cache Directory (all backends)
         settings_layout.addWidget(QLabel("HF Cache Dir"))
@@ -838,7 +991,12 @@ class MainWindow(QMainWindow):
         """Return the concrete backend for the current model + dropdown."""
         override = self.backend_combo.currentData()
         model = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
-        return detect_backend(model, override)
+        # Pass the GUI's current coreml_model_path so coreml routing works
+        config = {
+            "model": model,
+            "coreml_model_path": self.model_input.text().strip() or None,
+        }
+        return detect_backend(model, override, config=config)
 
     def _update_backend_dependent_controls(self):
         """Show/hide/enable controls based on the resolved backend."""
@@ -846,6 +1004,8 @@ class MainWindow(QMainWindow):
         is_mlx = (backend == BACKEND_MLX)
         is_mflux = (backend == BACKEND_MFLUX)
         is_ollama = (backend == BACKEND_OLLAMA)
+        is_bonsai = (backend == BACKEND_BONSAI)
+        is_coreml = (backend == BACKEND_COREML)
 
         # T5 only applies to MLX
         self.t5_check.setEnabled(is_mlx)
@@ -853,12 +1013,21 @@ class MainWindow(QMainWindow):
             self.t5_check.setToolTip("T5 is not applicable for GGUF models")
         elif is_mflux:
             self.t5_check.setToolTip("T5 is not applicable for MFLUX models")
+        elif is_bonsai:
+            self.t5_check.setToolTip("T5 is not applicable for Bonsai (uses Qwen3-4B internally)")
+        elif is_coreml:
+            self.t5_check.setToolTip("T5 is not applicable for CoreML SD 1.x/2.x models")
         else:
             self.t5_check.setToolTip("")
 
         # Img2img quantization warning only for MLX
         is_img2img = (self.mode_tabs.currentIndex() == 1)
         self.img2img_warning.setVisible(is_img2img and is_mlx)
+
+        # Bonsai + CoreML don't support img2img — switch back to txt2img if needed
+        if (is_bonsai or is_coreml) and is_img2img:
+            self.mode_tabs.setCurrentIndex(0)
+            is_img2img = False
 
         # Quantize dropdown only for MFLUX
         self.quantize_row.setVisible(is_mflux)
@@ -877,6 +1046,14 @@ class MainWindow(QMainWindow):
         # Pull button only for OllamaDiffuser
         self.pull_btn.setVisible(is_ollama)
 
+        # Bonsai + CoreML setup rows
+        self.bonsai_row.setVisible(is_bonsai)
+        if is_bonsai:
+            self._refresh_bonsai_status()
+        self.coreml_row.setVisible(is_coreml)
+        if is_coreml:
+            self._refresh_coreml_status()
+
         # Backend hint label
         if is_mflux:
             hint = "💡 FLUX models: ~4 steps, 3.5–4.0 guidance."
@@ -886,6 +1063,14 @@ class MainWindow(QMainWindow):
             self.backend_hint.show()
         elif is_mlx and self.model_input.text().strip() == "mlx-community/Lance-3B-AWQ-INT4":
             hint = "💡 Lance-3B: Highly efficient multimodal model. Recommended size: 512x512 or 1024x1024."
+            self.backend_hint.setText(hint)
+            self.backend_hint.show()
+        elif is_bonsai:
+            hint = "💡 Bonsai: 4 steps, guidance 1.0, no CFG, no negative prompt, no img2img. Image dimensions must be multiples of 32."
+            self.backend_hint.setText(hint)
+            self.backend_hint.show()
+        elif is_coreml:
+            hint = "💡 CoreML: SD 1.x/2.x model. Image dimensions should be 512x512 and multiples of 8. First call pays CoreML compile cost; subsequent calls are fast."
             self.backend_hint.setText(hint)
             self.backend_hint.show()
         else:
@@ -938,6 +1123,180 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"❌ {message}")
             self.status_label.setStyleSheet("color: red;")
+
+    # -- Bonsai (PrismML) backend ----------------------------------------
+
+    def _refresh_bonsai_status(self):
+        """Show the current bonsai install state in the status label."""
+        try:
+            import core_bonsai
+            status = core_bonsai.validate_bonsai_install()
+            self.bonsai_status_label.setText(status.message)
+            # Pull enabled once install is ready (whether or not models are present)
+            self.bonsai_pull_btn.setEnabled(status.installed)
+        except Exception as exc:
+            self.bonsai_status_label.setText(f"⚠ {exc}")
+
+    def _on_bonsai_setup(self):
+        """Run scripts/setup-bonsai.sh in a subprocess thread."""
+        from core_bonsai import get_bonsai_dir
+        script = PROJECT_ROOT / "scripts" / "setup-bonsai.sh"
+        if not script.is_file():
+            self.status_label.setText(f"❌ Setup script not found: {script}")
+            self.status_label.setStyleSheet("color: red;")
+            return
+        self.bonsai_setup_btn.setEnabled(False)
+        self.bonsai_pull_btn.setEnabled(False)
+        self.generate_btn.setEnabled(False)
+        self.status_label.setText("🌳 Setting up Bonsai (one-time install, may take a few minutes)…")
+        self.status_label.setStyleSheet("color: blue;")
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+
+        self.bonsai_setup_worker = BonsaiSetupWorker(str(script))
+        self.bonsai_setup_worker.finished.connect(self._on_bonsai_setup_finished)
+        self.bonsai_setup_worker.start()
+
+    def _on_bonsai_setup_finished(self, success: bool, message: str):
+        self.bonsai_setup_btn.setEnabled(True)
+        self.bonsai_pull_btn.setEnabled(True)
+        self.generate_btn.setEnabled(True)
+        self.progress_bar.hide()
+        self.progress_bar.reset()
+        if success:
+            self.status_label.setText(f"✅ {message}")
+            self.status_label.setStyleSheet("color: green;")
+        else:
+            self.status_label.setText(f"❌ {message}")
+            self.status_label.setStyleSheet("color: red;")
+        self._refresh_bonsai_status()
+
+    def _on_bonsai_pull(self):
+        """Download a bonsai model in a thread."""
+        import core_bonsai
+        status = core_bonsai.validate_bonsai_install()
+        if not status.installed:
+            self.status_label.setText("⚠ Bonsai not installed. Click 'Setup Bonsai…' first.")
+            self.status_label.setStyleSheet("color: orange;")
+            return
+        self.bonsai_setup_btn.setEnabled(False)
+        self.bonsai_pull_btn.setEnabled(False)
+        self.generate_btn.setEnabled(False)
+        self.status_label.setText("📥 Downloading bonsai model…")
+        self.status_label.setStyleSheet("color: blue;")
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+
+        self.bonsai_pull_worker = BonsaiDownloadWorker(variant=core_bonsai.DEFAULT_VARIANT)
+        self.bonsai_pull_worker.status.connect(self._on_status)
+        self.bonsai_pull_worker.finished.connect(self._on_bonsai_pull_finished)
+        self.bonsai_pull_worker.start()
+
+    def _on_bonsai_pull_finished(self, success: bool, message: str):
+        self.bonsai_setup_btn.setEnabled(True)
+        self.bonsai_pull_btn.setEnabled(True)
+        self.generate_btn.setEnabled(True)
+        self.progress_bar.hide()
+        self.progress_bar.reset()
+        if success:
+            self.status_label.setText(f"✅ {message}")
+            self.status_label.setStyleSheet("color: green;")
+        else:
+            self.status_label.setText(f"❌ {message}")
+            self.status_label.setStyleSheet("color: red;")
+        self._refresh_bonsai_status()
+
+    # -- CoreML (Apple Neural Engine) backend ---------------------------
+
+    def _refresh_coreml_status(self):
+        """Show the current CoreML install state in the status label."""
+        try:
+            import core_coreml
+            status = core_coreml.validate_coreml_install()
+            self.coreml_status_label.setText(status.message)
+            self.coreml_pull_btn.setEnabled(status.installed)
+        except Exception as exc:
+            self.coreml_status_label.setText(f"⚠ {exc}")
+
+    def _on_coreml_setup(self):
+        """Run scripts/setup-coreml.sh in a subprocess thread."""
+        script = PROJECT_ROOT / "scripts" / "setup-coreml.sh"
+        if not script.is_file():
+            self.status_label.setText(f"❌ Setup script not found: {script}")
+            self.status_label.setStyleSheet("color: red;")
+            return
+        self.coreml_setup_btn.setEnabled(False)
+        self.coreml_pull_btn.setEnabled(False)
+        self.generate_btn.setEnabled(False)
+        self.status_label.setText("🍎 Setting up CoreML (one-time install, may take a few minutes)…")
+        self.status_label.setStyleSheet("color: blue;")
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+
+        self.coreml_setup_worker = CoreMLSetupWorker(str(script))
+        self.coreml_setup_worker.finished.connect(self._on_coreml_setup_finished)
+        self.coreml_setup_worker.start()
+
+    def _on_coreml_setup_finished(self, success: bool, message: str):
+        self.coreml_setup_btn.setEnabled(True)
+        self.coreml_pull_btn.setEnabled(True)
+        self.generate_btn.setEnabled(True)
+        self.progress_bar.hide()
+        self.progress_bar.reset()
+        if success:
+            self.status_label.setText(f"✅ {message}")
+            self.status_label.setStyleSheet("color: green;")
+        else:
+            self.status_label.setText(f"❌ {message}")
+            self.status_label.setStyleSheet("color: red;")
+        self._refresh_coreml_status()
+
+    def _on_coreml_pull(self):
+        """Open a small dialog to pick an alias, then download."""
+        import core_coreml
+        status = core_coreml.validate_coreml_install()
+        if not status.installed:
+            self.status_label.setText("⚠ CoreML not installed. Click 'Setup CoreML…' first.")
+            self.status_label.setStyleSheet("color: orange;")
+            return
+
+        from PySide6.QtWidgets import QInputDialog
+        alias, ok = QInputDialog.getItem(
+            self, "Download CoreML model",
+            "Pre-converted CoreML models on Hugging Face:",
+            list(core_coreml.PRECONVERTED_HF_MODELS.keys()),
+            3,  # default to sd-2-1-base-palettized
+            False,
+        )
+        if not ok or not alias:
+            return
+
+        self.coreml_setup_btn.setEnabled(False)
+        self.coreml_pull_btn.setEnabled(False)
+        self.generate_btn.setEnabled(False)
+        self.status_label.setText(f"📥 Downloading {alias}…")
+        self.status_label.setStyleSheet("color: blue;")
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+
+        self.coreml_pull_worker = CoreMLDownloadWorker(alias=alias)
+        self.coreml_pull_worker.status.connect(self._on_status)
+        self.coreml_pull_worker.finished.connect(self._on_coreml_pull_finished)
+        self.coreml_pull_worker.start()
+
+    def _on_coreml_pull_finished(self, success: bool, message: str):
+        self.coreml_setup_btn.setEnabled(True)
+        self.coreml_pull_btn.setEnabled(True)
+        self.generate_btn.setEnabled(True)
+        self.progress_bar.hide()
+        self.progress_bar.reset()
+        if success:
+            self.status_label.setText(f"✅ {message}")
+            self.status_label.setStyleSheet("color: green;")
+        else:
+            self.status_label.setText(f"❌ {message}")
+            self.status_label.setStyleSheet("color: red;")
+        self._refresh_coreml_status()
 
     # -- MFLUX model path & save -----------------------------------------
 
@@ -1170,6 +1529,9 @@ class MainWindow(QMainWindow):
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
+            "bonsai_model_path": self.model_input.text() if self._resolved_backend() == BACKEND_BONSAI else "",
+            "coreml_model_path": self.model_input.text() if self._resolved_backend() == BACKEND_COREML else "",
+            "coreml_compute_unit": "CPU_AND_NE",
         }
 
     def _restore_state(self):
