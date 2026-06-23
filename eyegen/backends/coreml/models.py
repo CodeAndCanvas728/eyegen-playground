@@ -94,6 +94,7 @@ def convert_to_coreml(
     attention_implementation: str = "SPLIT_EINSUM",
     quantize_nbits: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
+    timeout: Optional[float] = None,
 ) -> bool:
     if compute_unit not in VALID_COMPUTE_UNITS:
         raise ValueError(
@@ -125,11 +126,15 @@ def convert_to_coreml(
     if quantize_nbits is not None:
         cmd.extend(["--quantize-nbits", str(quantize_nbits)])
 
+    if timeout is None:
+        from eyegen.config import load_config
+        timeout = float(load_config().get("convert_timeout", 1800.0))
+
     log.info("coreml-convert: %s", " ".join(cmd))
-    returncode, timed_out = _run_conversion(cmd, progress_callback)
+    returncode, timed_out = _run_conversion(cmd, progress_callback, timeout=timeout)
 
     if timed_out:
-        raise subprocess.TimeoutExpired(cmd, 1800.0)
+        raise subprocess.TimeoutExpired(cmd, timeout)
 
     if returncode == 0:
         meta = {
@@ -145,8 +150,9 @@ def convert_to_coreml(
 def _run_conversion(
     cmd: list[str],
     progress_callback: Optional[Callable[[str], None]] = None,
+    timeout: Optional[float] = None,
 ) -> tuple[int, bool]:
-    """Run the CoreML conversion subprocess with a 30-minute hard timeout.
+    """Run the CoreML conversion subprocess.
 
     Streams combined stdout/stderr to the log and *progress_callback*. Returns
     ``(returncode, timed_out)``.
@@ -154,8 +160,10 @@ def _run_conversion(
     from eyegen.backends.runner import BaseSubprocessRunner
     from eyegen.config import load_config
 
-    runner = BaseSubprocessRunner(load_config())
+    cfg = load_config()
+    runner = BaseSubprocessRunner(cfg)
     timed_out = False
+    run_timeout = timeout if timeout is not None else float(cfg.get("convert_timeout", 1800.0))
     try:
         returncode, _, _ = runner._execute_subprocess(
             cmd,
@@ -163,7 +171,7 @@ def _run_conversion(
             stream_stderr=True,
             log_prefix="coreml-convert",
             progress_callback=progress_callback,
-            timeout=runner.config.get("subprocess_timeout", 1800.0),
+            timeout=run_timeout,
         )
     except RuntimeError as exc:
         if "timed out" in str(exc):

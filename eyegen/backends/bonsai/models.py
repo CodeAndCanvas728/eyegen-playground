@@ -27,7 +27,10 @@ def list_bonsai_models() -> list[dict]:
 
 
 def _run_bonsai_script(
-    script_name: str, *args: str, progress_callback: Optional[Callable[[str], None]] = None
+    script_name: str,
+    *args: str,
+    progress_callback: Optional[Callable[[str], None]] = None,
+    timeout: Optional[float] = None,
 ) -> int:
     status = validate_bonsai_install()
     script_path = status.bonsai_dir / "scripts" / script_name
@@ -43,9 +46,10 @@ def _run_bonsai_script(
     from eyegen.backends.runner import BaseSubprocessRunner
     from eyegen.config import load_config
 
-    runner = BaseSubprocessRunner(load_config())
+    cfg = load_config()
+    runner = BaseSubprocessRunner(cfg)
+    run_timeout = timeout if timeout is not None else float(cfg.get("download_timeout", 1800.0))
     try:
-        timeout = runner.config.get("subprocess_timeout", 1800.0)
         returncode, _, _ = runner._execute_subprocess(
             cmd,
             cwd=str(status.bonsai_dir),
@@ -54,23 +58,25 @@ def _run_bonsai_script(
             stream_stderr=True,
             log_prefix="bonsai",
             progress_callback=progress_callback,
-            timeout=timeout,
+            timeout=run_timeout,
         )
     except RuntimeError as exc:
         if "timed out" in str(exc):
-            raise RuntimeError("Bonsai subprocess timed out after 30 minutes") from exc
+            raise RuntimeError(f"Bonsai subprocess timed out after {run_timeout} seconds") from exc
         raise
     return returncode
 
 
 def download_bonsai_model(
-    variant: str = DEFAULT_VARIANT, progress_callback: Optional[Callable[[str], None]] = None
+    variant: str = DEFAULT_VARIANT,
+    progress_callback: Optional[Callable[[str], None]] = None,
+    timeout: Optional[float] = None,
 ) -> bool:
     if variant not in SUPPORTED_VARIANTS:
         raise ValueError(
             f"Unknown bonsai variant {variant!r}. Supported: {', '.join(SUPPORTED_VARIANTS)}"
         )
     rc = _run_bonsai_script(
-        "download_model.sh", "--model", variant, progress_callback=progress_callback
+        "download_model.sh", "--model", variant, progress_callback=progress_callback, timeout=timeout
     )
     return rc == 0

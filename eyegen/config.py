@@ -77,6 +77,8 @@ class EyeGenConfig:
     coreml_model_path: Optional[str] = None
     coreml_compute_unit: str = "CPU_AND_NE"
     subprocess_timeout: int = 300
+    download_timeout: int = 1800
+    convert_timeout: int = 1800
 
     def validate(self) -> list[str]:  # noqa: C901
         """Validate settings and return a list of error messages (empty if valid)."""
@@ -99,6 +101,10 @@ class EyeGenConfig:
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
         if self.subprocess_timeout <= 0:
             errors.append("Subprocess timeout must be greater than 0.")
+        if self.download_timeout <= 0:
+            errors.append("Download timeout must be greater than 0.")
+        if self.convert_timeout <= 0:
+            errors.append("Convert timeout must be greater than 0.")
 
         from eyegen.validation import validate_safe_path
 
@@ -135,6 +141,8 @@ class EyeGenConfig:
         cls._coerce_float(kwargs, "guidance_scale")
         cls._coerce_optional_int(kwargs, "mflux_quantize")
         cls._coerce_int(kwargs, "subprocess_timeout")
+        cls._coerce_int(kwargs, "download_timeout")
+        cls._coerce_int(kwargs, "convert_timeout")
         cls._coerce_backend(kwargs)
         return cls(**kwargs)
 

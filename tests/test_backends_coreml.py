@@ -194,6 +194,75 @@ class TestCoreMLWrapper:
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
 
-        # Inject dangerous characters in model name
         with pytest.raises(ValueError, match="Invalid characters in CoreML model name"):
             CoreMLWrapper({"model": "sd-2-1-base; rm -rf /"})
+
+
+class TestCoreMLSubprocessIntegration:
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_coreml_subprocess_integration(self, mock_validate, tmp_path):
+        import sys
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+
+        model_dir = tmp_path / "sd-2-1-base"
+        model_dir.mkdir()
+
+        wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
+
+        returncode, stdout, stderr = wrapper._execute_subprocess(
+            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"],
+            timeout=2.0
+        )
+        assert returncode == 0
+        assert any("ok" in line for line in stdout)
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_coreml_subprocess_timeout(self, mock_validate, tmp_path):
+        import sys
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+
+        model_dir = tmp_path / "sd-2-1-base"
+        model_dir.mkdir()
+
+        wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            wrapper._execute_subprocess(
+                [sys.executable, "-c", "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)"],
+                timeout=0.5
+            )
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_coreml_subprocess_cancellation(self, mock_validate, tmp_path):
+        import sys
+        import threading
+        import time
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+
+        model_dir = tmp_path / "sd-2-1-base"
+        model_dir.mkdir()
+
+        wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
+
+        def cancel_after_delay():
+            time.sleep(0.2)
+            wrapper.cancel()
+
+        t = threading.Thread(target=cancel_after_delay)
+        t.start()
+
+        with pytest.raises(RuntimeError, match="cancelled"):
+            wrapper._execute_subprocess(
+                [sys.executable, "-c", "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)"],
+                timeout=3.0
+            )
+        t.join()
