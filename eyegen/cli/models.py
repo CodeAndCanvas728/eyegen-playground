@@ -1,7 +1,7 @@
 """Model management CLI commands."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 
@@ -38,7 +38,7 @@ def pull(
             raise typer.Exit(1)
     except (OSError, ValueError) as e:
         typer.echo(f"❌ Pull failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def list_models():
@@ -69,7 +69,7 @@ def list_models():
         models = list_ollama_models()
     except (OSError, ValueError, ImportError, AttributeError) as e:
         typer.echo(f"❌ Failed to list OllamaDiffuser models: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     installed = models.get("installed", [])
     available = models.get("available", [])
@@ -101,12 +101,10 @@ def save_model_cmd(
         "-q",
         help="Quantization bits: 4 (default), 8, or omit for full precision",
     ),
-    path: Optional[Path] = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Output directory (default: models/<alias>-<q>bit)",
-    ),
+    path: Annotated[
+        Optional[Path],
+        typer.Option("--path", "-p", help="Output directory (default: models/<alias>-<q>bit)"),
+    ] = None,
 ):
     """Save a pre-quantized MFLUX model to disk for fast local loading."""
     if path is None:
@@ -134,7 +132,7 @@ def save_model_cmd(
         typer.echo(f"   ./generate.py config-set mflux_model_path {result_path}")
     except (OSError, ValueError, RuntimeError) as e:
         typer.echo(f"\n❌ Save failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def clear_cache(
@@ -158,4 +156,4 @@ def clear_cache(
             typer.echo("ℹ  No matching cached models found.")
     except (OSError, ValueError) as e:
         typer.echo(f"❌ Cache clear failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e

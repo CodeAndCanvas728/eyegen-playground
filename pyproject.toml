@@ -43,8 +43,3 @@ max-statements = 40
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
-"generate.py" = ["B008", "PLR0915", "C901", "E501", "B904"]
-"gui.py" = ["PLR0915", "C901", "E501"]
-"core.py" = ["PLR0915", "C901", "E501"]
-"eyegen/cli/*.py" = ["B008", "B904"]
-"eyegen/gui/*.py" = ["PLR0915", "C901", "E501"]

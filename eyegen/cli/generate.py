@@ -1,7 +1,7 @@
 """The `generate` command."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 
@@ -18,9 +18,10 @@ from eyegen.cli._generate_helpers import (
 
 def generate(
     prompt: str = typer.Argument(..., help="Image description"),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file path (default: outputs/timestamp.png)"
-    ),
+    output: Annotated[
+        Optional[Path],
+        typer.Option("--output", "-o", help="Output file path (default: outputs/timestamp.png)"),
+    ] = None,
     steps: Optional[int] = typer.Option(
         None, "--steps", help="Number of inference steps (default: 30, faster: 20, better: 40)"
     ),
@@ -36,12 +37,12 @@ def generate(
         None, "--width", help="Image width in pixels (default: 1024, must be multiple of 8)"
     ),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for reproducibility"),
-    image: Optional[Path] = typer.Option(
-        None,
-        "--image",
-        "-i",
-        help="Input image for img2img mode (PNG/JPG/JPEG/BMP/WEBP/TIFF)",
-    ),
+    image: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--image", "-i", help="Input image for img2img mode (PNG/JPG/JPEG/BMP/WEBP/TIFF)"
+        ),
+    ] = None,
     denoise: Optional[float] = typer.Option(
         None,
         "--denoise",
@@ -54,7 +55,10 @@ def generate(
         Backend.AUTO.value,
         "--backend",
         "-b",
-        help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser, bonsai, coreml",
+        help=(
+            "Generation backend: auto (detect by model name), mlx, mflux,"
+            " ollamadiffuser, bonsai, coreml"
+        ),
     ),
     quantize: Optional[int] = typer.Option(
         None,
@@ -136,4 +140,4 @@ def generate(
         )
     except (OSError, ValueError, RuntimeError) as e:
         typer.echo(f"\n❌ Generation failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e

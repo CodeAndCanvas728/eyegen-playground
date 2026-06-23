@@ -2,7 +2,7 @@
 
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 
@@ -64,12 +64,12 @@ def convert_coreml_cmd(
         "stabilityai/stable-diffusion-2-1-base",
         help="HuggingFace model id of the PyTorch model to convert",
     ),
-    output: Optional[Path] = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Output directory (default: ~/models/eyegen/coreml/<name>)",
-    ),
+    output: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--output", "-o", help="Output directory (default: ~/models/eyegen/coreml/<name>)"
+        ),
+    ] = None,
     compute_unit: str = typer.Option(
         "CPU_AND_NE",
         "--compute-unit",

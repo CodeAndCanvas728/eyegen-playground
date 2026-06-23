@@ -3,27 +3,27 @@ from unittest import mock
 
 import pytest
 
-pytest.importorskip("PySide6")
 
+def test_script_worker_timeout():
+    try:
+        from eyegen.gui.backend_workers import BonsaiSetupWorker
+    except ImportError:
+        pytest.skip("PySide6 not available")
 
-from eyegen.gui.backend_workers import BonsaiSetupWorker
+    with mock.patch("eyegen.gui.backend_workers.subprocess.run") as mock_run:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="setup-bonsai.sh", timeout=600.0)
 
+        worker = BonsaiSetupWorker("/path/to/setup-bonsai.sh")
 
-@mock.patch("eyegen.gui.backend_workers.subprocess.run")
-def test_script_worker_timeout(mock_run):
-    mock_run.side_effect = subprocess.TimeoutExpired(cmd="setup-bonsai.sh", timeout=600.0)
+        finished_called = []
 
-    worker = BonsaiSetupWorker("/path/to/setup-bonsai.sh")
+        def on_finished(success, message):
+            finished_called.append((success, message))
 
-    finished_called = []
+        worker.finished.connect(on_finished)
+        worker.run()
 
-    def on_finished(success, message):
-        finished_called.append((success, message))
-
-    worker.finished.connect(on_finished)
-    worker.run()
-
-    assert len(finished_called) == 1
-    success, message = finished_called[0]
-    assert not success
-    assert "timed out after 10 minutes" in message
+        assert len(finished_called) == 1
+        success, message = finished_called[0]
+        assert not success
+        assert "timed out after 10 minutes" in message
