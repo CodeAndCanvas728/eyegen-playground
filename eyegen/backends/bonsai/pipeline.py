@@ -66,18 +66,13 @@ class BonsaiWrapper(BaseSubprocessRunner):
                 f"Run: ./generate.py pull-bonsai {self.variant}"
             )
 
-    def generate_image(
+    def _check_log_warnings(
         self,
-        prompt: str,
         cfg_weight: float,
-        num_steps: int,
-        width: int,
-        height: int,
-        seed: Optional[int] = None,
-        negative_prompt: str = "",
-        image_path: Optional[str] = None,
-        denoise: float = 1.0,
-    ) -> Image.Image:
+        negative_prompt: str,
+        image_path: Optional[str],
+        denoise: float,
+    ) -> None:
         if cfg_weight not in (None, BONSAI_DEFAULT_GUIDANCE):
             log.warning(
                 "Bonsai backend ignores cfg_weight=%.2f; using fixed guidance=%.1f. "
@@ -93,6 +88,20 @@ class BonsaiWrapper(BaseSubprocessRunner):
             )
         if denoise != 1.0:
             log.warning("Bonsai backend does not support img2img; ignoring denoise=%.2f", denoise)
+
+    def generate_image(
+        self,
+        prompt: str,
+        cfg_weight: float,
+        num_steps: int,
+        width: int,
+        height: int,
+        seed: Optional[int] = None,
+        negative_prompt: str = "",
+        image_path: Optional[str] = None,
+        denoise: float = 1.0,
+    ) -> Image.Image:
+        self._check_log_warnings(cfg_weight, negative_prompt, image_path, denoise)
 
         # Auto-adjust width and height to nearest multiple of 32
         adjusted_width = max(32, ((width + 16) // 32) * 32)
@@ -150,7 +159,8 @@ class BonsaiWrapper(BaseSubprocessRunner):
 
         if returncode != 0:
             raise RuntimeError(
-                f"Bonsai generation failed (exit {returncode}). Inspect logs at {get_bonsai_dir()}/outputs/"
+                f"Bonsai generation failed (exit {returncode}). "
+                f"Inspect logs at {get_bonsai_dir()}/outputs/"
             )
         if not out_path.is_file():
             raise RuntimeError(f"Bonsai generation did not produce expected output: {out_path}")

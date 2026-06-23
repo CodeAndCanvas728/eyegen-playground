@@ -177,7 +177,9 @@ class TestBonsaiWrapper:
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
     @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
     @mock.patch("eyegen.backends.bonsai.pipeline.Image.open")
-    def test_dimensions_auto_adjust(self, mock_image_open, mock_execute, mock_validate, tmp_path, monkeypatch):
+    def test_dimensions_auto_adjust(
+        self, mock_image_open, mock_execute, mock_validate, tmp_path, monkeypatch
+    ):
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_status.has_models = True

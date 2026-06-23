@@ -41,39 +41,24 @@ def _run_bonsai_script(
     env = os.environ.copy()
     env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
 
-    proc = subprocess.Popen(  # noqa: S603
-        cmd,
-        cwd=str(status.bonsai_dir),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    if proc.stdout is None:
-        raise RuntimeError("bonsai subprocess stdout pipe was not created")
+    from eyegen.backends.runner import BaseSubprocessRunner
+    runner = BaseSubprocessRunner({})
     try:
-        for line in proc.stdout:
-            line = line.rstrip()
-            log.info("[bonsai] %s", line)
-            if progress_callback is not None:
-                progress_callback(line)
-        try:
-            proc.wait(timeout=1800.0)
-        except subprocess.TimeoutExpired as exc:
-            log.warning("Bonsai subprocess timed out, terminating pid=%s", proc.pid)
-            proc.terminate()
-            try:
-                proc.wait(timeout=5.0)
-            except subprocess.TimeoutExpired:
-                log.warning("Bonsai subprocess did not terminate, killing pid=%s", proc.pid)
-                proc.kill()
-                proc.wait(timeout=5.0)
+        returncode, _, _ = runner._execute_subprocess(
+            cmd,
+            cwd=str(status.bonsai_dir),
+            env=env,
+            stream_stdout=True,
+            stream_stderr=True,
+            log_prefix="bonsai",
+            progress_callback=progress_callback,
+            timeout=1800.0,
+        )
+    except RuntimeError as exc:
+        if "timed out" in str(exc):
             raise RuntimeError("Bonsai subprocess timed out after 30 minutes") from exc
-    except KeyboardInterrupt:
-        proc.terminate()
         raise
-    return proc.returncode
+    return returncode
 
 
 def _spawn_bonsai_subprocess(cmd: list[str]) -> subprocess.Popen:

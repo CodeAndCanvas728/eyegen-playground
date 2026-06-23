@@ -45,12 +45,12 @@ mock_mflux.FIBO = type("FIBO", (), {})
 mock_mflux.QwenImage = type("QwenImage", (), {})
 mock_mflux.SeedVR2 = type("SeedVR2", (), {})
 
-from eyegen._mflux import (
+from eyegen._mflux import (  # noqa: E402
     _format_mflux_model_error,
     _get_mflux_aliases,
     _resolve_mflux_class,
 )
-from eyegen._mlx import (
+from eyegen._mlx import (  # noqa: E402
     _make_patched,
     _patch_mlx_attention,
 )
@@ -141,4 +141,7 @@ def test_patch_mlx_attention():
         patch("eyegen._mlx._patched_already", False)
     ):
         _patch_mlx_attention()
-        assert mock_mlx_core.scaled_dot_product_attention != mock_mlx_core_fast.scaled_dot_product_attention
+        assert (
+            mock_mlx_core.scaled_dot_product_attention
+            != mock_mlx_core_fast.scaled_dot_product_attention
+        )

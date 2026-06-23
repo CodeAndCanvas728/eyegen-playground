@@ -186,7 +186,12 @@ class TestCoreMLWrapper:
         # 2. Reject img2img (non-None image_path)
         with pytest.raises(ValueError, match="does not support img2img"):
             wrapper.generate_image(
-                prompt="test", cfg_weight=7.5, num_steps=10, width=512, height=512, image_path="dummy.png"
+                prompt="test",
+                cfg_weight=7.5,
+                num_steps=10,
+                width=512,
+                height=512,
+                image_path="dummy.png",
             )
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")

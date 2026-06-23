@@ -19,7 +19,7 @@ from eyegen import (
     save_mflux_model,
 )
 from eyegen.backends import bonsai, coreml
-from eyegen.gui.cache import _pipeline_cache, _pipeline_cache_lock
+from eyegen.gui.cache import _clear_pipeline_cache, _pipeline_cache, _pipeline_cache_lock
 from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 
 log = logging.getLogger("eyegen")
@@ -136,17 +136,22 @@ class GenerationWorker(QThread):
                 except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
                     log.warning("pipeline.cancel() raised: %s", exc)
 
+    def _handle_cancel(self):
+        _clear_pipeline_cache()
+        self.pipeline = None
+        self.cancelled.emit(False)
+
     def run(self):
         try:
             if self._cancelled.is_set():
-                self.cancelled.emit(False)
+                self._handle_cancel()
                 return
 
             pipeline = _load_pipeline_for_worker(self)
             self.pipeline = pipeline
 
             if self._cancelled.is_set() or pipeline is None:
-                self.cancelled.emit(False)
+                self._handle_cancel()
                 return
 
             self.status.emit("Generating…")
@@ -174,7 +179,7 @@ class GenerationWorker(QThread):
             )
 
             if self._cancelled.is_set():
-                self.cancelled.emit(False)
+                self._handle_cancel()
                 return
 
             self.status.emit("Saving…")
@@ -187,11 +192,11 @@ class GenerationWorker(QThread):
             self.finished.emit(image, str(out_path))
         except GenerationCancelled:
             log.info("Generation cancelled by user")
-            self.cancelled.emit(False)
+            self._handle_cancel()
         except (OSError, RuntimeError) as exc:
             if self._cancelled.is_set():
                 log.info("Generation cancelled by user: %s", exc)
-                self.cancelled.emit(False)
+                self._handle_cancel()
             else:
                 full = traceback.format_exc()
                 log.error("Generation failed:\n%s", full)

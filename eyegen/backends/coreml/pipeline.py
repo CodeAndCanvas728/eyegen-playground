@@ -61,8 +61,9 @@ class CoreMLWrapper(BaseSubprocessRunner):
     def _resolve_compute_unit(self, config: dict) -> str:
         cu = config.get("coreml_compute_unit", "CPU_AND_NE")
         if cu not in VALID_COMPUTE_UNITS:
-            log.warning("Unknown coreml_compute_unit %r; falling back to CPU_AND_NE", cu)
-            return "CPU_AND_NE"
+            raise ValueError(
+                f"Unsupported CoreML compute unit: {cu!r}. Must be one of {VALID_COMPUTE_UNITS}."
+            )
         return cu
 
     def _validate(self) -> None:
@@ -150,7 +151,8 @@ class CoreMLWrapper(BaseSubprocessRunner):
             )
         if width != 512 or height != 512:
             raise ValueError(
-                f"CoreML SD 1.x/2.x models only support a fixed 512x512 resolution (got {width}x{height})."
+                "CoreML SD 1.x/2.x models only support a fixed 512x512 resolution "
+                f"(got {width}x{height})."
             )
         if width % 8 or height % 8:
             raise ValueError(

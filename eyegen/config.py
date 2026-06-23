@@ -149,33 +149,38 @@ class EyeGenConfig:
 
     @classmethod
     def _coerce_backend(cls, kwargs: dict):
-        if "backend" in kwargs and kwargs["backend"] is not None:
-            val = kwargs["backend"]
-            if isinstance(val, Backend):
-                return
-            if isinstance(val, str):
-                val_clean = val.strip().lower()
-                if val_clean in ("auto", ""):
-                    kwargs["backend"] = Backend.AUTO
-                elif val_clean in ("mlx",):
-                    kwargs["backend"] = Backend.MLX
-                elif val_clean in ("ollama", "ollamadiffuser"):
-                    kwargs["backend"] = Backend.OLLAMA
-                elif val_clean in ("mflux",):
-                    kwargs["backend"] = Backend.MFLUX
-                elif val_clean in ("bonsai", "prism", "prismml"):
-                    kwargs["backend"] = Backend.BONSAI
-                elif val_clean in ("coreml",):
-                    kwargs["backend"] = Backend.COREML
-                else:
-                    try:
-                        kwargs["backend"] = Backend(val)
-                    except ValueError:
-                        log.warning("Unknown backend value %r, migrating to AUTO", val)
-                        kwargs["backend"] = Backend.AUTO
-            else:
-                log.warning("Invalid backend type %r, migrating to AUTO", type(val))
-                kwargs["backend"] = Backend.AUTO
+        if "backend" not in kwargs or kwargs["backend"] is None:
+            return
+        val = kwargs["backend"]
+        if isinstance(val, Backend):
+            return
+        if not isinstance(val, str):
+            log.warning("Invalid backend type %r, migrating to AUTO", type(val))
+            kwargs["backend"] = Backend.AUTO
+            return
+
+        val_clean = val.strip().lower()
+        mapping = {
+            "auto": Backend.AUTO,
+            "": Backend.AUTO,
+            "mlx": Backend.MLX,
+            "ollama": Backend.OLLAMA,
+            "ollamadiffuser": Backend.OLLAMA,
+            "mflux": Backend.MFLUX,
+            "bonsai": Backend.BONSAI,
+            "prism": Backend.BONSAI,
+            "prismml": Backend.BONSAI,
+            "coreml": Backend.COREML,
+        }
+        if val_clean in mapping:
+            kwargs["backend"] = mapping[val_clean]
+            return
+
+        try:
+            kwargs["backend"] = Backend(val)
+        except ValueError:
+            log.warning("Unknown backend value %r, migrating to AUTO", val)
+            kwargs["backend"] = Backend.AUTO
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -186,17 +191,64 @@ class EyeGenConfig:
 DEFAULT_CONFIG = EyeGenConfig().to_dict()
 
 
+def _backup_corrupted_config(exc: Exception) -> None:
+    backup_file = CONFIG_FILE.with_suffix(".json.bak")
+    log.error(
+        "Invalid JSON in config.json: %s. Backing up to %s and resetting to defaults.",
+        exc,
+        backup_file,
+        exc_info=True,
+    )
+    try:
+        if CONFIG_FILE.exists():
+            CONFIG_FILE.replace(backup_file)
+        save_config(EyeGenConfig().to_dict())
+    except Exception as write_err:
+        log.error("Failed to write default config: %s", write_err)
+
+
+def _handle_parse_error(exc: Exception) -> None:
+    log.error(
+        "Failed to parse config.json, resetting to defaults: %s",
+        exc,
+        exc_info=True,
+    )
+    try:
+        save_config(EyeGenConfig().to_dict())
+    except Exception as write_err:
+        log.error("Failed to write default config: %s", write_err)
+
+
 def load_config() -> dict:
-    """Load configuration from config.json or return defaults."""
-    if CONFIG_FILE.exists():
+    """Load configuration from config.json, migrate/normalize it, or return defaults."""
+    if not CONFIG_FILE.exists():
+        return EyeGenConfig().to_dict()
+
+    try:
         with open(CONFIG_FILE, "r") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        _backup_corrupted_config(e)
+        return EyeGenConfig().to_dict()
+
+    if not isinstance(data, dict):
+        log.warning("config.json root is not a dictionary. Resetting to defaults.")
+        _handle_parse_error(ValueError("Root is not a dictionary"))
+        return EyeGenConfig().to_dict()
+
+    try:
+        cfg = EyeGenConfig.from_dict(data)
+        normalized = cfg.to_dict()
+        if normalized != data:
+            log.warning("Config required migration/normalization; saving config.")
             try:
-                data = json.load(f)
-                cfg = EyeGenConfig.from_dict(data)
-                return cfg.to_dict()
-            except (json.JSONDecodeError, ValueError, TypeError) as e:
-                log.error("Failed to load config.json, resetting to defaults: %s", e, exc_info=True)
-    return EyeGenConfig().to_dict()
+                save_config(normalized)
+            except Exception as save_err:
+                log.error("Failed to save migrated config: %s", save_err)
+        return normalized
+    except (ValueError, TypeError) as e:
+        _handle_parse_error(e)
+        return EyeGenConfig().to_dict()
 
 
 def save_config(config: dict):

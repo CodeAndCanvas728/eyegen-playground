@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import time
 from functools import lru_cache
@@ -152,51 +151,23 @@ def _run_conversion(
     Streams combined stdout/stderr to the log and *progress_callback*. Returns
     ``(returncode, timed_out)``.
     """
-    import threading
+    from eyegen.backends.runner import BaseSubprocessRunner
 
-    env = os.environ.copy()
-    env.pop("PYTHONHOME", None)
-    proc = subprocess.Popen(  # noqa: S603
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        env=env,
-    )
-    if proc.stdout is None:
-        raise RuntimeError("CoreML conversion stdout pipe was not created")
+    runner = BaseSubprocessRunner({})
     timed_out = False
-
-    def target_timeout():
-        nonlocal timed_out
-        timed_out = True
-        log.error("CoreML conversion timed out after 1800 seconds. Terminating...")
-        _terminate(proc)
-
-    timer = threading.Timer(1800.0, target_timeout)
-    timer.start()
     try:
-        for line in proc.stdout:
-            line = line.rstrip()
-            log.info("[coreml-convert] %s", line)
-            if progress_callback:
-                progress_callback(line)
-        proc.wait()
-    except Exception:
-        _terminate(proc)
-        raise
-    finally:
-        timer.cancel()
-    return proc.returncode, timed_out
-
-
-def _terminate(proc: subprocess.Popen, grace: float = 10.0) -> None:
-    """Terminate *proc*, escalating to kill if it does not exit within *grace*."""
-    proc.terminate()
-    try:
-        proc.wait(timeout=grace)
-    except subprocess.TimeoutExpired:
-        log.error("CoreML conversion terminate timed out. Killing...")
-        proc.kill()
-        proc.wait()
+        returncode, _, _ = runner._execute_subprocess(
+            cmd,
+            stream_stdout=True,
+            stream_stderr=True,
+            log_prefix="coreml-convert",
+            progress_callback=progress_callback,
+            timeout=1800.0,
+        )
+    except RuntimeError as exc:
+        if "timed out" in str(exc):
+            timed_out = True
+            returncode = -1
+        else:
+            raise
+    return returncode, timed_out

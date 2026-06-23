@@ -39,6 +39,21 @@ class MainWindow(
     MainWindowLifecycleMixin,
     MainWindowStateMixin,
 ):
+    """Main window class for the EyeGen GUI.
+
+    This class coordinates the application's main interface by composing the
+    following mixin classes:
+    - MainWindowUIMixin: Builds and sets up UI components/layouts.
+    - MainWindowSettingsMixin: Manages inputs and updates configuration properties.
+    - MainWindowImg2ImgMixin: Validates and manages inputs for Image-to-Image mode.
+    - MainWindowControlsMixin: Populates combo-boxes and initializes controls values.
+    - MainWindowHandlersMixin: Triggers backend changes, prompts checks, and UI resets.
+    - MainWindowBackendHandlersMixin: Installs backends and triggers model download workers.
+    - MainWindowSaveModelMixin: Connects GUI actions to MFLUX local model saving logic.
+    - MainWindowLifecycleMixin: Handles elapsed time and state updates during generation.
+    - MainWindowStateMixin: Restores and saves UI state history.
+    """
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("EyeGen")

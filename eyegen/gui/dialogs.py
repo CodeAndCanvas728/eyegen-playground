@@ -13,8 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from eyegen import hf_login, hf_logout
-from eyegen.gui.utils import _cached_hf_status
+from eyegen import hf_login, hf_logout, hf_status
 
 log = logging.getLogger("eyegen")
 
@@ -107,7 +106,7 @@ class HFLoginDialog(QDialog):
         super().done(r)
 
     def _refresh_status(self):
-        info = _cached_hf_status()
+        info = hf_status()
         if info:
             name = info.get("name", "unknown")
             self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
@@ -146,5 +145,5 @@ class HFLoginDialog(QDialog):
 
     def get_username(self) -> Optional[str]:
         """Return current HF username if logged in, else None."""
-        info = _cached_hf_status()
+        info = hf_status()
         return info.get("name") if info else None

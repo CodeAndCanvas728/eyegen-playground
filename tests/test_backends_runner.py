@@ -62,3 +62,70 @@ def test_runner_cancel():
         with pytest.raises(RuntimeError, match="generation was cancelled by the user"):
             runner._execute_subprocess(["dummy_cmd"])
         assert mock_proc.terminate.called
+
+
+def test_runner_integration_real_process():
+    import sys
+    runner = DummyRunner({"subprocess_timeout": 5})
+    cmd = [
+        sys.executable,
+        "-c",
+        "import sys; print('hello from stdout'); print('hello from stderr', file=sys.stderr)",
+    ]
+    rc, out, err = runner._execute_subprocess(
+        cmd,
+        stream_stdout=True,
+        stream_stderr=True,
+        log_prefix="test-integration",
+    )
+    assert rc == 0
+    assert any("hello from stdout" in line for line in out)
+    assert any("hello from stderr" in line for line in err)
+
+
+def test_runner_integration_timeout():
+    import sys
+    runner = DummyRunner({"subprocess_timeout": 0.5})
+    cmd = [
+        sys.executable,
+        "-c",
+        "import time; time.sleep(10)",
+    ]
+    with pytest.raises(RuntimeError, match="subprocess timed out after 0.5 seconds"):
+        runner._execute_subprocess(cmd, log_prefix="test-timeout")
+
+
+def test_runner_integration_cancel():
+    import sys
+    import threading
+    import time
+    runner = DummyRunner({"subprocess_timeout": 5})
+    cmd = [
+        sys.executable,
+        "-c",
+        "import time; time.sleep(10)",
+    ]
+
+    def trigger_cancel():
+        time.sleep(0.2)
+        runner.cancel()
+
+    t = threading.Thread(target=trigger_cancel)
+    t.start()
+    try:
+        with pytest.raises(RuntimeError, match="generation was cancelled by the user"):
+            runner._execute_subprocess(cmd, log_prefix="test-cancel")
+    finally:
+        t.join()
+
+
+def test_runner_integration_injection_rejection():
+    import sys
+    runner = DummyRunner({"subprocess_timeout": 5})
+    cmd = [
+        sys.executable,
+        "--unsafe-flag",
+    ]
+    with pytest.raises(ValueError, match="Unsafe subprocess flag detected"):
+        runner._execute_subprocess(cmd)
+
