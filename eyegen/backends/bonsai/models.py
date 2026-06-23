@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 from typing import Callable, Optional
 
 from .constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
@@ -42,9 +41,11 @@ def _run_bonsai_script(
     env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
 
     from eyegen.backends.runner import BaseSubprocessRunner
+    from eyegen.config import load_config
 
-    runner = BaseSubprocessRunner({})
+    runner = BaseSubprocessRunner(load_config())
     try:
+        timeout = runner.config.get("subprocess_timeout", 1800.0)
         returncode, _, _ = runner._execute_subprocess(
             cmd,
             cwd=str(status.bonsai_dir),
@@ -53,39 +54,13 @@ def _run_bonsai_script(
             stream_stderr=True,
             log_prefix="bonsai",
             progress_callback=progress_callback,
-            timeout=1800.0,
+            timeout=timeout,
         )
     except RuntimeError as exc:
         if "timed out" in str(exc):
             raise RuntimeError("Bonsai subprocess timed out after 30 minutes") from exc
         raise
     return returncode
-
-
-def _spawn_bonsai_subprocess(cmd: list[str]) -> subprocess.Popen:
-    status = validate_bonsai_install()
-    script_path = status.bonsai_dir / "scripts" / cmd[0]
-    if not script_path.is_file():
-        raise FileNotFoundError(f"Bonsai script not found: {script_path}")
-
-    full_cmd = [str(script_path), *cmd[1:]]
-    log.info("Running bonsai script: %s", " ".join(full_cmd))
-
-    env = os.environ.copy()
-    env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
-
-    proc = subprocess.Popen(  # noqa: S603
-        full_cmd,
-        cwd=str(status.bonsai_dir),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    if proc.stdout is None:
-        raise RuntimeError("bonsai subprocess stdout pipe was not created")
-    return proc
 
 
 def download_bonsai_model(

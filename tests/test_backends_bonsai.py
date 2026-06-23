@@ -81,9 +81,10 @@ class TestDownloadBonsaiModel:
         model_dir.mkdir(parents=True)
         (model_dir / "model.safetensors").write_text("dummy")
 
-        with mock.patch("eyegen.backends.bonsai.models.subprocess.Popen") as popen_mock:
-            popen_mock.return_value.stdout = []
-            popen_mock.return_value.returncode = 0
+        with mock.patch(
+            "eyegen.backends.runner.BaseSubprocessRunner._execute_subprocess"
+        ) as exec_mock:
+            exec_mock.return_value = (0, ["ok\n"], [])
             assert bonsai.download_bonsai_model("ternary-mlx") is True
 
     def test_download_timeout(self, monkeypatch, tmp_path):
@@ -99,21 +100,13 @@ class TestDownloadBonsaiModel:
         model_dir.mkdir(parents=True)
         (model_dir / "model.safetensors").write_text("dummy")
 
-        with mock.patch("eyegen.backends.bonsai.models.subprocess.Popen") as popen_mock:
-            import subprocess
-
-            mock_proc = mock.Mock()
-            mock_proc.stdout = []
-            mock_proc.wait.side_effect = [
-                subprocess.TimeoutExpired(cmd="download_model.sh", timeout=1800.0),
-                subprocess.TimeoutExpired(cmd="download_model.sh", timeout=5.0),
-                0,
-            ]
-            popen_mock.return_value = mock_proc
+        with mock.patch(
+            "eyegen.backends.runner.BaseSubprocessRunner._execute_subprocess"
+        ) as exec_mock:
+            exec_mock.side_effect = RuntimeError("bonsai subprocess timed out after 1800 seconds")
             with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
                 bonsai.download_bonsai_model("ternary-mlx")
-            assert mock_proc.terminate.called
-            assert mock_proc.kill.called
+            assert exec_mock.called
 
 
 class TestBonsaiWrapper:

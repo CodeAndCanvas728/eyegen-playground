@@ -30,12 +30,8 @@ class MainWindowStateMixin:
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
-            "bonsai_model_path": self.model_input.text()
-            if self._resolved_backend() == Backend.BONSAI and Path(self.model_input.text()).is_dir()
-            else self.config.get("bonsai_model_path", ""),
-            "coreml_model_path": self.model_input.text()
-            if self._resolved_backend() == Backend.COREML and Path(self.model_input.text()).is_dir()
-            else self.config.get("coreml_model_path", ""),
+            "bonsai_model_path": self.config.get("bonsai_model_path", ""),
+            "coreml_model_path": self.config.get("coreml_model_path", ""),
             "coreml_compute_unit": self.config.get("coreml_compute_unit", "CPU_AND_NE"),
         }
 

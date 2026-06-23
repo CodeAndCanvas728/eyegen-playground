@@ -152,8 +152,9 @@ def _run_conversion(
     ``(returncode, timed_out)``.
     """
     from eyegen.backends.runner import BaseSubprocessRunner
+    from eyegen.config import load_config
 
-    runner = BaseSubprocessRunner({})
+    runner = BaseSubprocessRunner(load_config())
     timed_out = False
     try:
         returncode, _, _ = runner._execute_subprocess(
@@ -162,7 +163,7 @@ def _run_conversion(
             stream_stderr=True,
             log_prefix="coreml-convert",
             progress_callback=progress_callback,
-            timeout=1800.0,
+            timeout=runner.config.get("subprocess_timeout", 1800.0),
         )
     except RuntimeError as exc:
         if "timed out" in str(exc):

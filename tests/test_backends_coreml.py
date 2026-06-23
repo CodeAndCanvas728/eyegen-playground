@@ -84,25 +84,16 @@ class TestConvertToCoreml:
 
     @mock.patch("eyegen.backends.coreml.models._sidecar_has_coreml")
     @mock.patch("eyegen.backends.coreml.models._sidecar_python")
-    @mock.patch("eyegen.backends.coreml.models.subprocess.Popen")
-    def test_convert_to_coreml_timeout(self, mock_popen, mock_sidecar, mock_has_coreml, tmp_path):
+    @mock.patch("eyegen.backends.runner.BaseSubprocessRunner._execute_subprocess")
+    def test_convert_to_coreml_timeout(self, mock_exec, mock_sidecar, mock_has_coreml, tmp_path):
         mock_has_coreml.return_value = True
         mock_sidecar.return_value = Path("/fake/python")
-        mock_proc = mock.Mock()
-        mock_proc.pid = 9999
-        mock_proc.stdout = ["converting model...\n"]
-        mock_proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="convert", timeout=1800.0),
-            subprocess.TimeoutExpired(cmd="convert", timeout=5.0),
-            0,
-        ]
-        mock_popen.return_value = mock_proc
+        mock_exec.side_effect = RuntimeError("coreml-convert subprocess timed out after 1800 seconds")
 
         with pytest.raises(subprocess.TimeoutExpired):
             coreml.convert_to_coreml("foo/bar", tmp_path, compute_unit="CPU_AND_NE")
 
-        assert mock_proc.terminate.called
-        assert mock_proc.kill.called
+        assert mock_exec.called
 
 
 class TestCoreMLWrapper:

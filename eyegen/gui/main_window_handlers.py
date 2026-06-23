@@ -21,7 +21,6 @@ class MainWindowHandlersMixin:
         self._elapsed_timer.stop()
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
-            self.worker.terminate()
             self.worker.wait(2000)
         from eyegen.gui.state import save_gui_state
 

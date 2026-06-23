@@ -201,7 +201,7 @@ class GenerationWorker(QThread):
                 full = traceback.format_exc()
                 log.error("Generation failed:\n%s", full)
                 self.error.emit(full)
-        except Exception:  # noqa: BLE001
+        except (ValueError, TypeError):
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
