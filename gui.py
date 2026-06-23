@@ -4,10 +4,10 @@ EyeGen — PySide6 GUI
 Native macOS desktop interface for image generation on Apple Silicon.
 """
 
-import json
-import sys
 import io
+import json
 import logging
+import sys
 import threading
 import time
 import traceback
@@ -15,28 +15,59 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer
-from PySide6.QtGui import QPixmap, QImage, QIcon, QFont, QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFont, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QTextEdit, QSlider, QComboBox, QLineEdit,
-    QCheckBox, QGroupBox, QSplitter, QFrame, QSizePolicy, QSpinBox,
-    QDoubleSpinBox, QProgressBar, QMessageBox, QFileDialog, QTabBar,
+    QApplication,
+    QCheckBox,
+    QComboBox,
     QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QTabBar,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from core import (
-    load_config, get_pipeline, get_ollama_pipeline, get_mflux_pipeline,
-    generate_image, clear_mflux_cache,
-    save_mflux_model, validate_saved_model,
-    validate_dimensions, validate_image_path, detect_backend,
-    pull_model, list_ollama_models, list_mflux_models,
-    hf_login, hf_status, hf_logout,
-    OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, DEFAULT_CONFIG,
-    BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
-    QuantizationError,
+    BACKEND_AUTO,
+    BACKEND_MFLUX,
+    BACKEND_MLX,
+    BACKEND_OLLAMA,
+    CONFIG_DIR,
+    DEFAULT_CONFIG,
+    MODELS_DIR,
+    OUTPUT_DIR,
     EyeGenConfig,
+    QuantizationError,
+    clear_mflux_cache,
+    detect_backend,
+    generate_image,
+    get_mflux_pipeline,
+    get_ollama_pipeline,
+    get_pipeline,
+    list_mflux_models,
+    load_config,
+    pull_model,
+    save_mflux_model,
+    validate_dimensions,
+    validate_image_path,
+    validate_saved_model,
 )
+from gui_hf_login import HFLoginDialog, _cached_hf_status
 
 # ---------------------------------------------------------------------------
 # Logging — always write to ~/Library/Logs/EyeGen.log so errors are
@@ -45,9 +76,6 @@ from core import (
 
 LOG_FILE = CONFIG_DIR / "eyegen.log"
 
-# Cache for hf_status() to avoid repeated network calls
-_hf_status_cache: dict = {"result": None, "timestamp": 0.0}
-_HF_CACHE_TTL = 30.0  # seconds
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
@@ -60,22 +88,12 @@ logging.basicConfig(
 log = logging.getLogger("eyegen")
 
 
+
 # ---------------------------------------------------------------------------
 # GUI state persistence
 # ---------------------------------------------------------------------------
 
 GUI_STATE_FILE = CONFIG_DIR / "gui_state.json"
-
-
-def _cached_hf_status() -> Optional[dict]:
-    """Return cached hf_status, refreshing from network every _HF_CACHE_TTL seconds."""
-    now = time.time()
-    if now - _hf_status_cache["timestamp"] < _HF_CACHE_TTL and _hf_status_cache["result"] is not None:
-        return _hf_status_cache["result"]
-    result = hf_status()
-    _hf_status_cache["result"] = result
-    _hf_status_cache["timestamp"] = now
-    return result
 
 
 def load_gui_state() -> dict:
@@ -270,7 +288,7 @@ class GenerationWorker(QThread):
             _pipeline_cache["pipeline"] = None
             _pipeline_cache["key"] = None
             self.quantize_failed.emit(qe.model_name)
-        except Exception as exc:
+        except Exception:
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
@@ -357,135 +375,6 @@ def pil_to_pixmap(pil_image) -> QPixmap:
 DIMENSION_PRESETS = [512, 640, 768, 896, 1024]
 
 
-# ---------------------------------------------------------------------------
-# HuggingFace login dialog
-# ---------------------------------------------------------------------------
-
-class HFLoginDialog(QDialog):
-    """Modal dialog for HuggingFace authentication."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("HuggingFace Login")
-        self.setMinimumWidth(400)
-        self._has_unsaved_token = False
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-
-        # Status
-        self.status_label = QLabel("Checking login status…")
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
-
-        # Token input
-        layout.addWidget(QLabel("Access Token"))
-        self.token_input = QLineEdit()
-        self.token_input.setEchoMode(QLineEdit.Password)
-        self.token_input.setPlaceholderText("hf_...")
-        self.token_input.textChanged.connect(self._on_token_changed)
-        layout.addWidget(self.token_input)
-
-        hint = QLabel(
-            '<a href="https://huggingface.co/settings/tokens">'
-            'Get a token at huggingface.co/settings/tokens</a>'
-        )
-        hint.setOpenExternalLinks(True)
-        hint.setProperty("class", "hint")
-        layout.addWidget(hint)
-
-        # Buttons
-        btn_row = QHBoxLayout()
-        self.login_btn = QPushButton("Login")
-        self.login_btn.clicked.connect(self._on_login)
-        btn_row.addWidget(self.login_btn)
-
-        self.logout_btn = QPushButton("Logout")
-        self.logout_btn.clicked.connect(self._on_logout)
-        btn_row.addWidget(self.logout_btn)
-
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self._on_close_clicked)
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
-
-        self._refresh_status()
-
-    def _on_token_changed(self, text: str):
-        self._has_unsaved_token = bool(text.strip())
-
-    def _on_close_clicked(self):
-        if self._confirm_discard_token():
-            self.accept()
-
-    def _confirm_discard_token(self) -> bool:
-        if not self._has_unsaved_token:
-            return True
-        reply = QMessageBox.question(
-            self,
-            "Discard token?",
-            "A token was entered but not submitted. Discard it?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        return reply == QMessageBox.Yes
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
-            if self._confirm_discard_token():
-                self.reject()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-    def closeEvent(self, event):
-        if self._confirm_discard_token():
-            self._has_unsaved_token = False
-            event.accept()
-        else:
-            event.ignore()
-
-    def _refresh_status(self):
-        info = hf_status()
-        if info:
-            name = info.get("name", "unknown")
-            self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
-            self.status_label.setStyleSheet("color: green;")
-            self.logout_btn.setEnabled(True)
-        else:
-            self.status_label.setText("Not logged in — enter a token to access gated models")
-            self.status_label.setStyleSheet("color: gray;")
-            self.logout_btn.setEnabled(False)
-
-    def _on_login(self):
-        token = self.token_input.text().strip()
-        if not token:
-            self.status_label.setText("⚠ Enter a token first")
-            self.status_label.setStyleSheet("color: orange;")
-            return
-        try:
-            info = hf_login(token)
-            name = info.get("name", "unknown")
-            self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
-            self.status_label.setStyleSheet("color: green;")
-            self.token_input.clear()
-            self._has_unsaved_token = False
-            self.logout_btn.setEnabled(True)
-        except (OSError, ValueError) as e:
-            self.status_label.setText(f"❌ Login failed: {e}")
-            self.status_label.setStyleSheet("color: red;")
-
-    def _on_logout(self):
-        try:
-            hf_logout()
-        except (OSError, ValueError):
-            pass
-        self._refresh_status()
-
-    def get_username(self) -> Optional[str]:
-        """Return current HF username if logged in, else None."""
-        info = _cached_hf_status()
-        return info.get("name") if info else None
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +399,8 @@ class MainWindow(QMainWindow):
         self._restoring_state = False
         self._elapsed_seconds = 0
         self._current_phase = ""
+        self._generation_id = 0
+        self._autoclear_generation_id = 0
         self._status_clear_timer = QTimer(self)
         self._status_clear_timer.setSingleShot(True)
         self._status_clear_timer.setInterval(5000)
@@ -622,7 +513,14 @@ class MainWindow(QMainWindow):
         self.generate_btn.setMinimumHeight(40)
         self.generate_btn.setToolTip("Generate (⌘↩ / Ctrl+↩)")
         self.generate_btn.clicked.connect(self._on_generate)
-        self.generate_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self, self._on_generate)
+        self.generate_shortcut = QShortcut(
+            QKeySequence("Ctrl+Return"), self.prompt_input, self._on_generate
+        )
+        self.generate_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.generate_shortcut_neg = QShortcut(
+            QKeySequence("Ctrl+Return"), self.negative_prompt_input, self._on_generate
+        )
+        self.generate_shortcut_neg.setContext(Qt.WidgetWithChildrenShortcut)
         ctrl_layout.addWidget(self.generate_btn)
 
         # Status
@@ -803,7 +701,7 @@ class MainWindow(QMainWindow):
         hf_cache_row = QHBoxLayout()
         self.hf_cache_input = QLineEdit()
         self.hf_cache_input.setPlaceholderText(
-            f"Default (~/.cache/huggingface/hub)")
+            "Default (~/.cache/huggingface/hub)")
         self.hf_cache_input.setToolTip(
             "Directory where HuggingFace caches downloaded model weights.\n"
             "Leave blank to use the default (~/.cache/huggingface/hub)."
@@ -1350,6 +1248,9 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet("color: red;")
             return
 
+        self._status_clear_timer.stop()
+        self._generation_id += 1
+
         self.generate_btn.setText("⏹  Stop")
         self.generate_btn.setStyleSheet("background-color: #cc3333; color: white;")
         self.progress_bar.setRange(0, 0)  # indeterminate until step info arrives
@@ -1422,7 +1323,7 @@ class MainWindow(QMainWindow):
         # Short summary for the status bar
         lines = [l for l in full_traceback.strip().splitlines() if l.strip()]
         last_line = lines[-1] if lines else "Unknown error"
-        self.status_label.setText(f"❌ Error — see details")
+        self.status_label.setText("❌ Error — see details")
         self.status_label.setStyleSheet("color: red;")
 
         # Full traceback in a scrollable dialog
@@ -1481,11 +1382,11 @@ class MainWindow(QMainWindow):
             return
         log.info("User requested generation stop (backend=%s)", self.worker.backend)
         self.worker._cancelled.set()
-        
+
         self.status_label.setText("Cancelling… (cleaning up safely)")
         self.status_label.setStyleSheet("color: orange;")
         self.generate_btn.setEnabled(False)  # prevent double-clicks
-        
+
         if self.worker.backend == BACKEND_MLX:
             # MLX has cooperative step-level interrupts and stops instantly
             pass
@@ -1514,10 +1415,13 @@ class MainWindow(QMainWindow):
 
     def _arm_status_autoclear(self):
         """Start a 5s timer to reset the status label to 'Ready'."""
+        self._autoclear_generation_id = self._generation_id
         self._status_clear_timer.start()
 
     def _clear_status(self):
         """Reset status to 'Ready' unless a new generation is in progress."""
+        if self._generation_id != self._autoclear_generation_id:
+            return
         if self.worker is not None and self.worker.isRunning():
             return
         self.status_label.setText("Ready")
@@ -1539,7 +1443,8 @@ def main():
              sys.version.split()[0], __import__("platform").machine())
     app = QApplication(sys.argv)
     app.setApplicationName("EyeGen")
-    app.setFont(QFont(".AppleSystemUIFont", 13))
+    if sys.platform == "darwin":
+        app.setFont(QFont(".AppleSystemUIFont", 13))
     app.setStyleSheet("""
         [class="hint"]    { font-size: 11px; color: #666666; }
         [class="display"] { font-size: 16px; }

@@ -88,3 +88,5 @@ Three generation backends are supported:
 - img2img with MLX 4-bit quantized models is known to produce output identical to the input; MFLUX and GGUF models are not affected
 - Gated models (e.g. FLUX.1-Kontext) require HuggingFace login: `./generate.py hf-login` or the GUI login button. Uses `huggingface_hub.login()` to store token in `~/.cache/huggingface/token`.
 - GUI errors write full tracebacks to `~/Library/Logs/EyeGen.log`
+
+@AGENTS.md

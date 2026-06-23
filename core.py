@@ -14,9 +14,9 @@ import random
 import sys
 import threading
 import unicodedata
-from dataclasses import dataclass, asdict, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -769,13 +769,23 @@ def hf_login(token: str) -> dict:
 
 def hf_status() -> Optional[dict]:
     """Return HuggingFace user info if logged in, or None."""
-    from huggingface_hub import get_token, whoami, errors as hf_errors
+    from huggingface_hub import errors as hf_errors
+    from huggingface_hub import get_token, whoami
     if get_token() is None:
         return None
+    import requests
+    catch_types = [
+        hf_errors.LocalTokenNotFoundError,
+        hf_errors.HTTPError,
+        ValueError,
+        requests.exceptions.RequestException,
+    ]
+    offline_err = getattr(hf_errors, "OfflineModeIsEnabled", None)
+    if offline_err is not None:
+        catch_types.append(offline_err)
     try:
         return whoami()
-    except (hf_errors.LocalTokenNotFoundError, hf_errors.HTTPError,
-            hf_errors.OfflineModeIsEnabled, ValueError) as exc:
+    except tuple(catch_types) as exc:
         log.debug("HF status check failed: %s", exc)
         return None
 
