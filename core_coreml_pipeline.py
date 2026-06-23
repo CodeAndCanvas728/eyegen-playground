@@ -1,0 +1,186 @@
+"""CoreML pipeline wrapper and factory."""
+
+from __future__ import annotations
+
+import logging
+import os
+import subprocess
+import uuid
+from pathlib import Path
+from typing import Optional
+
+from PIL import Image
+
+from core_coreml_constants import VALID_COMPUTE_UNITS
+from core_coreml_install import (
+    _sidecar_python,
+    get_coreml_models_dir,
+    validate_coreml_install,
+)
+
+log = logging.getLogger(__name__)
+
+
+class CoreMLWrapper:
+    """Adapter that runs Apple's Stable Diffusion pipeline via subprocess."""
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.model_path = self._resolve_model_path(config)
+        self.compute_unit = self._resolve_compute_unit(config)
+        self._validate()
+        self._proc: Optional[subprocess.Popen] = None
+        self._cancelled = False
+
+    def _resolve_model_path(self, config: dict) -> Path:
+        explicit = config.get("coreml_model_path")
+        if explicit:
+            p = Path(explicit).expanduser()
+            if not p.is_dir():
+                raise FileNotFoundError(
+                    f"coreml_model_path {p} is not a directory. "
+                    "Run: ./generate.py pull-coreml <alias>, "
+                    "or ./generate.py convert-coreml <hf-model> --output <dir>."
+                )
+            return p
+        model_name = config.get("model", "")
+        if model_name:
+            candidate = get_coreml_models_dir() / model_name
+            if candidate.is_dir():
+                return candidate
+        raise RuntimeError(
+            "No coreml_model_path set and no CoreML model found at "
+            f"{get_coreml_models_dir() / '<model-name>'}. "
+            "Set coreml_model_path in config or run "
+            "./generate.py pull-coreml <alias>."
+        )
+
+    def _resolve_compute_unit(self, config: dict) -> str:
+        cu = config.get("coreml_compute_unit", "CPU_AND_NE")
+        if cu not in VALID_COMPUTE_UNITS:
+            log.warning("Unknown coreml_compute_unit %r; falling back to CPU_AND_NE", cu)
+            return "CPU_AND_NE"
+        return cu
+
+    def _validate(self) -> None:
+        status = validate_coreml_install()
+        if not status.installed:
+            raise RuntimeError(
+                f"{status.message} "
+                "Run ./scripts/setup-coreml.sh, then ./generate.py pull-coreml <alias>."
+            )
+        if not self.model_path.exists():
+            raise RuntimeError(f"CoreML model dir does not exist: {self.model_path}")
+
+    def generate_image(
+        self,
+        prompt: str,
+        cfg_weight: float,
+        num_steps: int,
+        width: int,
+        height: int,
+        seed: Optional[int] = None,
+        negative_prompt: str = "",
+        image_path: Optional[str] = None,
+        denoise: float = 1.0,
+    ) -> Image.Image:
+        if image_path:
+            log.warning(
+                "CoreML backend's SD 1.x/2.x pipeline does not support img2img in this "
+                "wrapper. Ignoring image_path=%r. (Re-convert with --convert-vae-encoder "
+                "and add an img2img wrapper to enable.)",
+                image_path,
+            )
+        if width != 512 or height != 512:
+            log.warning(
+                "CoreML SD 1.x/2.x models are converted at a fixed 512x512. "
+                "Requested %dx%d may produce odd results.",
+                width,
+                height,
+            )
+        if width % 8 or height % 8:
+            raise ValueError(
+                f"CoreML requires width and height to be multiples of 8 (got {width}x{height})."
+            )
+
+        from core import OUTPUT_DIR
+
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = OUTPUT_DIR / f"coreml_{seed or uuid.uuid4().hex[:8]}.png"
+
+        py = _sidecar_python()
+        if py is None:
+            raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
+        cmd = [
+            str(py),
+            "-m",
+            "python_coreml_stable_diffusion.pipeline",
+            "--prompt",
+            prompt,
+            "--compute-unit",
+            self.compute_unit,
+            "--num-inference-steps",
+            str(num_steps),
+            "--guidance-scale",
+            str(cfg_weight),
+            "--image-height",
+            str(height),
+            "--image-width",
+            str(width),
+            "-i",
+            str(self.model_path),
+            "-o",
+            str(out_path),
+        ]
+        if seed is not None:
+            cmd.extend(["--seed", str(seed)])
+        if negative_prompt:
+            cmd.extend(["--negative-prompt", negative_prompt])
+
+        log.info("coreml-pipeline: %s", " ".join(cmd))
+        env = os.environ.copy()
+        env.pop("PYTHONHOME", None)
+        self._proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            _stdout, stderr = self._proc.communicate()
+            returncode = self._proc.returncode
+        finally:
+            self._proc = None
+        if self._cancelled:
+            raise RuntimeError("CoreML generation was cancelled by the user.")
+        if returncode != 0:
+            log.error("coreml stderr: %s", (stderr or "")[-2000:])
+            raise RuntimeError(
+                f"CoreML generation failed (exit {returncode}). See eyegen.log for details."
+            )
+        if not out_path.is_file():
+            raise RuntimeError(f"CoreML pipeline did not produce expected output: {out_path}")
+        return Image.open(out_path).convert("RGB")
+
+    def cancel(self) -> None:
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return
+        log.info("coreml cancel: terminating pid=%s", proc.pid)
+        self._cancelled = True
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                log.warning("coreml cancel: terminate timed out, killing pid=%s", proc.pid)
+                proc.kill()
+                proc.wait(timeout=2.0)
+        except Exception as exc:
+            log.warning("coreml cancel: %s", exc)
+
+
+def get_coreml_pipeline(config: dict) -> CoreMLWrapper:
+    """Build a CoreMLWrapper. The subprocess runs lazily on first generate call."""
+    return CoreMLWrapper(config)

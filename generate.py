@@ -227,18 +227,17 @@ def generate(
     except ImportError:
         if resolved_backend == BACKEND_OLLAMA:
             typer.echo(
-                "❌ ollamadiffuser not installed. Install with:\n" "  pip install ollamadiffuser",
+                "❌ ollamadiffuser not installed. Install with:\n  pip install ollamadiffuser",
                 err=True,
             )
         elif resolved_backend == BACKEND_MFLUX:
             typer.echo(
-                "❌ mflux not installed. Install with:\n" "  pip install mflux",
+                "❌ mflux not installed. Install with:\n  pip install mflux",
                 err=True,
             )
         else:
             typer.echo(
-                "❌ diffusionkit not installed. Install with:\n"
-                "  pip install -r requirements.txt",
+                "❌ diffusionkit not installed. Install with:\n  pip install -r requirements.txt",
                 err=True,
             )
         raise typer.Exit(1)
@@ -378,7 +377,9 @@ def list_models():
         typer.echo("🍎 CoreML (Apple Neural Engine) — not installed")
         typer.echo("   Install:  ./generate.py setup-coreml")
         typer.echo("   Then:     ./generate.py pull-coreml sd-2-1-base-palettized")
-        typer.echo("   Or:       ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base")
+        typer.echo(
+            "   Or:       ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base"
+        )
 
 
 @app.command()
@@ -463,6 +464,7 @@ def status():
     if importlib.util.find_spec("diffusionkit") is not None:
         try:
             from importlib.metadata import version as _pkg_version
+
             v = _pkg_version("diffusionkit")
         except Exception:
             v = "unknown"
@@ -474,6 +476,7 @@ def status():
     if importlib.util.find_spec("ollamadiffuser") is not None:
         try:
             from importlib.metadata import version as _pkg_version
+
             v = _pkg_version("ollamadiffuser")
         except Exception:
             v = "unknown"
@@ -701,7 +704,8 @@ def setup_bonsai_cmd():
 def pull_bonsai_cmd(
     variant: str = typer.Option(
         core_bonsai.DEFAULT_VARIANT,
-        "--variant", "-v",
+        "--variant",
+        "-v",
         help=f"Variant to download: {', '.join(core_bonsai.SUPPORTED_VARIANTS)}",
     ),
 ):
@@ -727,10 +731,13 @@ def pull_bonsai_cmd(
 
     typer.echo(f"📥 Downloading bonsai variant: {variant}")
     ok = core_bonsai.download_bonsai_model(
-        variant, progress_callback=lambda m: typer.echo(f"   {m}"),
+        variant,
+        progress_callback=lambda m: typer.echo(f"   {m}"),
     )
     if ok:
-        typer.echo(f"✅ Bonsai variant '{variant}' is ready at {core_bonsai.get_bonsai_dir()}/models/")
+        typer.echo(
+            f"✅ Bonsai variant '{variant}' is ready at {core_bonsai.get_bonsai_dir()}/models/"
+        )
     else:
         typer.echo(f"❌ Failed to download bonsai variant '{variant}'", err=True)
         raise typer.Exit(1)
@@ -815,7 +822,8 @@ def pull_coreml_cmd(
 
     typer.echo(f"📥 Downloading pre-converted CoreML model: {alias}")
     target = core_coreml.pull_preconverted_coreml_model(
-        alias, progress_callback=lambda m: typer.echo(f"   {m}"),
+        alias,
+        progress_callback=lambda m: typer.echo(f"   {m}"),
     )
     if target:
         typer.echo(f"✅ CoreML model downloaded to {target}")
@@ -834,22 +842,26 @@ def convert_coreml_cmd(
     ),
     output: Optional[Path] = typer.Option(
         None,
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output directory (default: ~/models/eyegen/coreml/<name>)",
     ),
     compute_unit: str = typer.Option(
         "CPU_AND_NE",
-        "--compute-unit", "-c",
+        "--compute-unit",
+        "-c",
         help="CoreML compute unit: CPU_AND_NE (mobile), CPU_AND_GPU (Mac), CPU_ONLY, ALL",
     ),
     quantize_nbits: Optional[int] = typer.Option(
         None,
-        "--quantize-nbits", "-q",
+        "--quantize-nbits",
+        "-q",
         help="Palettization bit-width: 2, 4, 6, or 8 (reduces size; quality may drop)",
     ),
     attention: str = typer.Option(
         "SPLIT_EINSUM",
-        "--attention", "-a",
+        "--attention",
+        "-a",
         help="Attention implementation: SPLIT_EINSUM (NE), SPLIT_EINSUM_V2 (NE, slower compile), ORIGINAL (CPU/GPU)",
     ),
 ):
@@ -909,7 +921,9 @@ def list_coreml_models_cmd():
     if not models:
         typer.echo("📦 No CoreML models installed yet.")
         typer.echo("   Pre-converted (fast):  ./generate.py pull-coreml sd-2-1-base-palettized")
-        typer.echo("   Convert from PyTorch:  ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base")
+        typer.echo(
+            "   Convert from PyTorch:  ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base"
+        )
     else:
         typer.echo(f"🍎 Installed CoreML models ({len(models)}):")
         for m in models:

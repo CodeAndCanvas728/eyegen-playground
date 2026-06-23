@@ -65,7 +65,14 @@ BACKEND_OLLAMA = "ollamadiffuser"
 BACKEND_MFLUX = "mflux"
 BACKEND_BONSAI = "bonsai"
 BACKEND_COREML = "coreml"
-VALID_BACKENDS = (BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX, BACKEND_BONSAI, BACKEND_COREML)
+VALID_BACKENDS = (
+    BACKEND_AUTO,
+    BACKEND_MLX,
+    BACKEND_OLLAMA,
+    BACKEND_MFLUX,
+    BACKEND_BONSAI,
+    BACKEND_COREML,
+)
 
 
 @dataclass
@@ -242,6 +249,7 @@ def _get_mlx_supported_models() -> set | None:
     """
     try:
         from diffusionkit.mlx import MMDIT_CKPT
+
         return set(MMDIT_CKPT.keys())
     except Exception as exc:
         log.debug("Could not introspect diffusionkit MMDIT_CKPT: %s", exc)
@@ -255,17 +263,12 @@ def _format_unsupported_error(model: str, attempted_backend: str) -> str:
     parts = [f"Model '{model}' is not supported by the {attempted_backend} backend."]
     if mlx_keys:
         mlx_list = ", ".join(sorted(mlx_keys))
-        parts.append(
-            f"MLX (diffusionkit) supports: {mlx_list}."
-        )
+        parts.append(f"MLX (diffusionkit) supports: {mlx_list}.")
     if mflux_aliases:
         aliases_list = ", ".join(sorted(mflux_aliases))
-        parts.append(
-            f"MFLUX supports (use --backend mflux): {aliases_list}."
-        )
+        parts.append(f"MFLUX supports (use --backend mflux): {aliases_list}.")
     parts.append(
-        "For OllamaDiffuser (GGUF) models, pull one with "
-        "`./generate.py pull <name>` first."
+        "For OllamaDiffuser (GGUF) models, pull one with `./generate.py pull <name>` first."
     )
     parts.append(
         "For Bonsai (PrismML), use a model name starting with 'bonsai-' "
@@ -307,17 +310,23 @@ def _is_coreml_model(model: str, config: Optional[dict] = None) -> bool:
     if config and config.get("coreml_model_path"):
         return True
     m = model.lower()
-    if m in {"sd-1-4", "sd-1-5", "sd-1-5-palettized",
-             "sd-2-base", "sd-2-1-base", "sd-2-1-base-palettized",
-             "sdxl-base", "sdxl-ios"}:
+    if m in {
+        "sd-1-4",
+        "sd-1-5",
+        "sd-1-5-palettized",
+        "sd-2-base",
+        "sd-2-1-base",
+        "sd-2-1-base-palettized",
+        "sdxl-base",
+        "sdxl-ios",
+    }:
         return True
     if m.startswith("apple/coreml-stable-diffusion"):
         return True
     return False
 
 
-def detect_backend(model: str, override: str = BACKEND_AUTO,
-                   config: Optional[dict] = None) -> str:
+def detect_backend(model: str, override: str = BACKEND_AUTO, config: Optional[dict] = None) -> str:
     """Resolve which backend to use.
 
     If *override* is ``"auto"``:
@@ -979,18 +988,28 @@ def generate_image(
 
     if backend == BACKEND_BONSAI:
         return pipeline.generate_image(
-            prompt=prompt, cfg_weight=cfg_weight, num_steps=num_steps,
-            width=width, height=height, seed=seed,
+            prompt=prompt,
+            cfg_weight=cfg_weight,
+            num_steps=num_steps,
+            width=width,
+            height=height,
+            seed=seed,
             negative_prompt=negative_prompt,
-            image_path=image_path, denoise=denoise,
+            image_path=image_path,
+            denoise=denoise,
         )
 
     if backend == BACKEND_COREML:
         return pipeline.generate_image(
-            prompt=prompt, cfg_weight=cfg_weight, num_steps=num_steps,
-            width=width, height=height, seed=seed,
+            prompt=prompt,
+            cfg_weight=cfg_weight,
+            num_steps=num_steps,
+            width=width,
+            height=height,
+            seed=seed,
             negative_prompt=negative_prompt,
-            image_path=image_path, denoise=denoise,
+            image_path=image_path,
+            denoise=denoise,
         )
 
     return _generate_image_mlx(
