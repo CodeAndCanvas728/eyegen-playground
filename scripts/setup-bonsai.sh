@@ -31,28 +31,16 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 # Clone or update the bonsai-demo repo
-<<<<<<< Updated upstream
 BONSAI_COMMIT="9cf9d6ee209a5c251ef7d3252c4f568efeaa08b7"
-=======
-PINNED_COMMIT="9cf9d6ee209a5c251ef7d3252c4f568efeaa08b7"
->>>>>>> Stashed changes
 if [ ! -d "$BONSAI_DIR" ]; then
     echo "Cloning Bonsai-Image-Demo ..."
     mkdir -p "$(dirname "$BONSAI_DIR")"
     git clone "$BONSAI_REPO" "$BONSAI_DIR"
-<<<<<<< Updated upstream
     (cd "$BONSAI_DIR" && git checkout "$BONSAI_COMMIT")
     echo "Cloned and checked out commit $BONSAI_COMMIT."
 elif [ -d "$BONSAI_DIR/.git" ]; then
     echo "Bonsai-Image-Demo already cloned. Fetching and checking out pinned commit $BONSAI_COMMIT ..."
     (cd "$BONSAI_DIR" && git fetch origin && git checkout "$BONSAI_COMMIT" || echo "  (fetch/checkout skipped — no network or local changes)")
-=======
-    (cd "$BONSAI_DIR" && git checkout "$PINNED_COMMIT")
-    echo "Cloned and checked out pinned commit $PINNED_COMMIT."
-elif [ -d "$BONSAI_DIR/.git" ]; then
-    echo "Bonsai-Image-Demo already cloned. Checking out pinned commit ..."
-    (cd "$BONSAI_DIR" && git fetch origin && git checkout "$PINNED_COMMIT" || echo "  (checkout skipped — local changes or no network)")
->>>>>>> Stashed changes
 else
     echo "ERROR: $BONSAI_DIR exists but is not a git repo."
     echo "Move it aside and re-run this script."
