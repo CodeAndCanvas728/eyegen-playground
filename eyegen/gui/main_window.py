@@ -96,6 +96,9 @@ class MainWindow(
             return
 
         resolved_backend = self._resolved_backend()
+        if resolved_backend is None:
+            self._set_status("⚠ Unrecognized model for the selected backend", "red")
+            return
         self._start_generation(
             prompt, config, width, height, seed, image_path, denoise, resolved_backend
         )

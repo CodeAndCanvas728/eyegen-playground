@@ -15,18 +15,34 @@ class MainWindowControlsMixin:
     def _on_backend_changed(self, _index: int):
         self._update_backend_dependent_controls()
 
-    def _resolved_backend(self) -> Backend:
-        """Return the concrete backend for the current model + dropdown."""
+    def _resolved_backend(self) -> Backend | None:
+        """Return the concrete backend for the current model + dropdown.
+
+        Returns ``None`` when the model name cannot be resolved to a backend
+        (``detect_backend`` raises ``ValueError``). Callers must treat ``None``
+        as "unresolved" — generation is blocked but the GUI stays alive.
+        """
         override = self.backend_combo.currentData()
         model = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
         config = {"model": model}
         if override == Backend.COREML:
             config["coreml_model_path"] = model
-        return detect_backend(model, override, config=config)
+        try:
+            return detect_backend(model, override, config=config)
+        except ValueError:
+            return None
 
     def _update_backend_dependent_controls(self):
         """Show/hide/enable controls based on the resolved backend."""
         backend = self._resolved_backend()
+        self.generate_btn.setEnabled(backend is not None)
+        if backend is None:
+            self.backend_hint.setText(
+                "⚠ Unrecognized model name for the selected backend. "
+                "Pick a backend or enter a supported model to generate."
+            )
+            self.backend_hint.show()
+            return
         is_mlx = backend == Backend.MLX
         is_mflux = backend == Backend.MFLUX
         is_ollama = backend == Backend.OLLAMA
