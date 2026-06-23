@@ -60,7 +60,7 @@ class HFLoginDialog(QDialog):
 
         hint = QLabel(
             '<a href="https://huggingface.co/settings/tokens">'
-            'Get a token at huggingface.co/settings/tokens</a>'
+            "Get a token at huggingface.co/settings/tokens</a>"
         )
         hint.setOpenExternalLinks(True)
         hint.setProperty("class", "hint")
@@ -97,7 +97,7 @@ class HFLoginDialog(QDialog):
             self._has_unsaved_token = False
             return True
         reply = QMessageBox.question(
-            None,  # parent=None to prevent modal-on-modal deadlocks (S1)
+            self,  # Center over the dialog to prevent modal-on-modal deadlocks (S1)
             "Discard token?",
             "A token was entered but not submitted. Discard it?",
             QMessageBox.Yes | QMessageBox.No,
@@ -124,7 +124,7 @@ class HFLoginDialog(QDialog):
         super().done(r)
 
     def _refresh_status(self):
-        info = hf_status()
+        info = _cached_hf_status()
         if info:
             name = info.get("name", "unknown")
             self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
@@ -149,15 +149,15 @@ class HFLoginDialog(QDialog):
             self.token_input.clear()
             self._has_unsaved_token = False
             self.logout_btn.setEnabled(True)
-        except (OSError, ValueError) as e:
+        except Exception as e:
             self.status_label.setText(f"❌ Login failed: {e}")
             self.status_label.setStyleSheet("color: red;")
 
     def _on_logout(self):
         try:
             hf_logout()
-        except (OSError, ValueError):
-            pass
+        except Exception as e:
+            log.warning("Logout failed: %s", e)
         self.token_input.clear()
         self._refresh_status()
 

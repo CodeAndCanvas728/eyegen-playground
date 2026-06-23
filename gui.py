@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -88,7 +88,6 @@ logging.basicConfig(
 log = logging.getLogger("eyegen")
 
 
-
 # ---------------------------------------------------------------------------
 # GUI state persistence
 # ---------------------------------------------------------------------------
@@ -120,6 +119,7 @@ _sample_euler_patched = False
 # Mutable holder so re-patching can update callbacks without replacing the function
 _sample_euler_state = {"progress_callback": None, "cancel_event": None}
 
+
 def _patch_sample_euler(progress_callback, cancel_event=None):
     """Replace diffusionkit's sample_euler with a step-reporting wrapper.
     On subsequent calls, only the callback/cancel_event references are updated
@@ -137,12 +137,8 @@ def _patch_sample_euler(progress_callback, cancel_event=None):
         extra_args = {} if extra_args is None else extra_args
         total = len(sigmas) - 1
 
-        timesteps = model.model.sampler.timestep(sigmas).astype(
-            model.model.activation_dtype
-        )
-        model.cache_modulation_params(
-            extra_args.pop("pooled_conditioning"), timesteps
-        )
+        timesteps = model.model.sampler.timestep(sigmas).astype(model.model.activation_dtype)
+        model.cache_modulation_params(extra_args.pop("pooled_conditioning"), timesteps)
 
         iter_time = []
         cancel = _sample_euler_state["cancel_event"]
@@ -189,6 +185,7 @@ def _clear_pipeline_cache():
 # Worker thread — runs image generation off the main/UI thread
 # ---------------------------------------------------------------------------
 
+
 class GenerationWorker(QThread):
     finished = Signal(object, str)  # (PIL.Image, output_path)
     error = Signal(str)
@@ -197,9 +194,22 @@ class GenerationWorker(QThread):
     progress = Signal(int, int)  # (current_step, total_steps)
     cancelled = Signal()
 
-    def __init__(self, prompt, negative_prompt, cfg_weight, num_steps, width, height,
-                 seed, config, use_t5, image_path=None, denoise=1.0,
-                 backend=BACKEND_MLX, mflux_quantize=4):
+    def __init__(
+        self,
+        prompt,
+        negative_prompt,
+        cfg_weight,
+        num_steps,
+        width,
+        height,
+        seed,
+        config,
+        use_t5,
+        image_path=None,
+        denoise=1.0,
+        backend=BACKEND_MLX,
+        mflux_quantize=4,
+    ):
         super().__init__()
         self._cancelled = threading.Event()
         self.prompt = prompt
@@ -216,12 +226,20 @@ class GenerationWorker(QThread):
         self.backend = backend
         self.mflux_quantize = mflux_quantize
 
+    def cancel(self):
+        """Request the worker to cancel generation."""
+        self._cancelled.set()
+
     def run(self):
         try:
             # Check pipeline cache
-            cache_key = (self.backend, self.config.get("model"),
-                         self.mflux_quantize, self.use_t5,
-                         self.config.get("mflux_model_path"))
+            cache_key = (
+                self.backend,
+                self.config.get("model"),
+                self.mflux_quantize,
+                self.use_t5,
+                self.config.get("mflux_model_path"),
+            )
             with _pipeline_cache_lock:
                 cached_pipeline = _pipeline_cache["pipeline"]
                 cached_key = _pipeline_cache["key"]
@@ -230,23 +248,25 @@ class GenerationWorker(QThread):
                 log.info("Using cached pipeline (backend=%s)", self.backend)
                 if self.backend == BACKEND_MLX:
                     _patch_sample_euler(
-                        lambda step, total: self.progress.emit(step, total),
-                        self._cancelled)
+                        lambda step, total: self.progress.emit(step, total), self._cancelled
+                    )
             else:
                 self.status.emit("Loading model…")
-                log.info("Loading pipeline (model=%s, backend=%s, t5=%s)",
-                         self.config.get("model", "default"), self.backend,
-                         self.use_t5)
+                log.info(
+                    "Loading pipeline (model=%s, backend=%s, t5=%s)",
+                    self.config.get("model", "default"),
+                    self.backend,
+                    self.use_t5,
+                )
                 if self.backend == BACKEND_OLLAMA:
                     pipeline = get_ollama_pipeline(self.config)
                 elif self.backend == BACKEND_MFLUX:
-                    pipeline = get_mflux_pipeline(self.config,
-                                                  quantize=self.mflux_quantize)
+                    pipeline = get_mflux_pipeline(self.config, quantize=self.mflux_quantize)
                 else:
                     pipeline = get_pipeline(self.config, use_t5=self.use_t5)
                     _patch_sample_euler(
-                        lambda step, total: self.progress.emit(step, total),
-                        self._cancelled)
+                        lambda step, total: self.progress.emit(step, total), self._cancelled
+                    )
                 with _pipeline_cache_lock:
                     _pipeline_cache["pipeline"] = pipeline
                     _pipeline_cache["key"] = cache_key
@@ -256,12 +276,23 @@ class GenerationWorker(QThread):
                 return
 
             self.status.emit("Generating…")
-            log.info("Generating: steps=%d guidance=%.1f size=%dx%d seed=%s backend=%s",
-                     self.num_steps, self.cfg_weight, self.width, self.height,
-                     self.seed, self.backend)
+            log.info(
+                "Generating: steps=%d guidance=%.1f size=%dx%d seed=%s backend=%s",
+                self.num_steps,
+                self.cfg_weight,
+                self.width,
+                self.height,
+                self.seed,
+                self.backend,
+            )
             image = generate_image(
-                pipeline, self.prompt, self.cfg_weight,
-                self.num_steps, self.width, self.height, self.seed,
+                pipeline,
+                self.prompt,
+                self.cfg_weight,
+                self.num_steps,
+                self.width,
+                self.height,
+                self.seed,
                 negative_prompt=self.negative_prompt,
                 image_path=self.image_path,
                 denoise=self.denoise,
@@ -273,7 +304,7 @@ class GenerationWorker(QThread):
                 return
 
             self.status.emit("Saving…")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             out_path = OUTPUT_DIR / f"{timestamp}.png"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             image.save(out_path)
@@ -296,6 +327,7 @@ class GenerationWorker(QThread):
 
 class PullWorker(QThread):
     """Downloads a GGUF model via ollamadiffuser in a background thread."""
+
     finished = Signal(bool, str)  # (success, message)
     status = Signal(str)
 
@@ -313,8 +345,9 @@ class PullWorker(QThread):
                 if isinstance(msg, str):
                     self.status.emit(msg)
 
-            ok = pull_model(self.model_name, progress_callback=on_progress,
-                            hf_cache_dir=self.hf_cache_dir)
+            ok = pull_model(
+                self.model_name, progress_callback=on_progress, hf_cache_dir=self.hf_cache_dir
+            )
             if ok:
                 log.info("Pull complete: %s", self.model_name)
                 self.finished.emit(True, f"Model '{self.model_name}' is ready")
@@ -328,11 +361,17 @@ class PullWorker(QThread):
 
 class SaveModelWorker(QThread):
     """Downloads, quantizes, and saves an MFLUX model in a background thread."""
+
     finished = Signal(bool, str, str)  # (success, message, saved_path)
     status = Signal(str)
 
-    def __init__(self, model_alias: str, quantize: int | None, output_path: str,
-                 hf_cache_dir: str | None = None):
+    def __init__(
+        self,
+        model_alias: str,
+        quantize: int | None,
+        output_path: str,
+        hf_cache_dir: str | None = None,
+    ):
         super().__init__()
         self.model_alias = model_alias
         self.quantize = quantize
@@ -359,6 +398,7 @@ class SaveModelWorker(QThread):
 # Helper: PIL Image → QPixmap
 # ---------------------------------------------------------------------------
 
+
 def pil_to_pixmap(pil_image) -> QPixmap:
     buf = io.BytesIO()
     pil_image.save(buf, format="PNG")
@@ -375,11 +415,10 @@ def pil_to_pixmap(pil_image) -> QPixmap:
 DIMENSION_PRESETS = [512, 640, 768, 896, 1024]
 
 
-
-
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -416,32 +455,10 @@ class MainWindow(QMainWindow):
 
     # ----- UI construction ------------------------------------------------
 
-    def _build_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QHBoxLayout(central)
-
-        splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
-
-        # --- Left: controls ---
-        controls = QWidget()
-        controls.setMaximumWidth(420)
-        controls.setMinimumWidth(300)
-        ctrl_layout = QVBoxLayout(controls)
-        ctrl_layout.setContentsMargins(8, 8, 8, 8)
-        ctrl_layout.setSpacing(8)
-
-        # Mode tab bar
-        self.mode_tabs = QTabBar()
-        self.mode_tabs.addTab("Text to Image")
-        self.mode_tabs.addTab("Image to Image")
-        self.mode_tabs.currentChanged.connect(self._on_mode_changed)
-        ctrl_layout.addWidget(self.mode_tabs)
-
+    def _build_img2img_controls(self) -> QWidget:
         # img2img controls (hidden by default)
-        self.img2img_controls = QWidget()
-        img2img_layout = QVBoxLayout(self.img2img_controls)
+        widget = QWidget()
+        img2img_layout = QVBoxLayout(widget)
         img2img_layout.setContentsMargins(0, 0, 0, 0)
         img2img_layout.setSpacing(8)
 
@@ -485,56 +502,16 @@ class MainWindow(QMainWindow):
         self.denoise_slider = QSlider(Qt.Horizontal)
         self.denoise_slider.setRange(5, 100)  # ×100 for int slider
         self.denoise_slider.setValue(75)
-        self.denoise_slider.valueChanged.connect(
-            lambda v: self.denoise_spin.setValue(v / 100.0))
+        self.denoise_slider.valueChanged.connect(lambda v: self.denoise_spin.setValue(v / 100.0))
         self.denoise_spin.valueChanged.connect(
-            lambda v: self.denoise_slider.setValue(int(round(v * 100))))
+            lambda v: self.denoise_slider.setValue(int(round(v * 100)))
+        )
         img2img_layout.addWidget(self.denoise_slider)
 
-        self.img2img_controls.hide()
-        ctrl_layout.addWidget(self.img2img_controls)
+        widget.hide()
+        return widget
 
-        # Prompt
-        ctrl_layout.addWidget(QLabel("Prompt"))
-        self.prompt_input = QTextEdit()
-        self.prompt_input.setPlaceholderText("Describe the image you want to generate…")
-        self.prompt_input.setMaximumHeight(120)
-        ctrl_layout.addWidget(self.prompt_input)
-
-        # Negative prompt
-        ctrl_layout.addWidget(QLabel("Negative Prompt"))
-        self.negative_prompt_input = QTextEdit()
-        self.negative_prompt_input.setPlaceholderText("What to avoid (optional)…")
-        self.negative_prompt_input.setMaximumHeight(60)
-        ctrl_layout.addWidget(self.negative_prompt_input)
-
-        # Generate button
-        self.generate_btn = QPushButton("✨  Generate")
-        self.generate_btn.setMinimumHeight(40)
-        self.generate_btn.setToolTip("Generate (⌘↩ / Ctrl+↩)")
-        self.generate_btn.clicked.connect(self._on_generate)
-        self.generate_shortcut = QShortcut(
-            QKeySequence("Ctrl+Return"), self.prompt_input, self._on_generate
-        )
-        self.generate_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        self.generate_shortcut_neg = QShortcut(
-            QKeySequence("Ctrl+Return"), self.negative_prompt_input, self._on_generate
-        )
-        self.generate_shortcut_neg.setContext(Qt.WidgetWithChildrenShortcut)
-        ctrl_layout.addWidget(self.generate_btn)
-
-        # Status
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: gray;")
-        ctrl_layout.addWidget(self.status_label)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumHeight(8)
-        self.progress_bar.hide()
-        ctrl_layout.addWidget(self.progress_bar)
-
-        # --- Settings group ---
+    def _build_settings_panel(self) -> QGroupBox:
         settings_group = QGroupBox("Settings")
         settings_layout = QVBoxLayout(settings_group)
         settings_layout.setSpacing(8)
@@ -568,10 +545,10 @@ class MainWindow(QMainWindow):
         self.guidance_slider = QSlider(Qt.Horizontal)
         self.guidance_slider.setRange(10, 150)  # ×10 for int slider
         self.guidance_slider.setValue(int(self.guidance_spin.value() * 10))
-        self.guidance_slider.valueChanged.connect(
-            lambda v: self.guidance_spin.setValue(v / 10.0))
+        self.guidance_slider.valueChanged.connect(lambda v: self.guidance_spin.setValue(v / 10.0))
         self.guidance_spin.valueChanged.connect(
-            lambda v: self.guidance_slider.setValue(int(v * 10)))
+            lambda v: self.guidance_slider.setValue(int(v * 10))
+        )
         settings_layout.addWidget(self.guidance_slider)
 
         # Width
@@ -580,8 +557,7 @@ class MainWindow(QMainWindow):
         self.width_combo = QComboBox()
         for d in DIMENSION_PRESETS:
             self.width_combo.addItem(str(d), d)
-        self.width_combo.setCurrentText(
-            str(self.config.get("width", 1024)))
+        self.width_combo.setCurrentText(str(self.config.get("width", 1024)))
         row.addWidget(self.width_combo)
         settings_layout.addLayout(row)
 
@@ -591,8 +567,7 @@ class MainWindow(QMainWindow):
         self.height_combo = QComboBox()
         for d in DIMENSION_PRESETS:
             self.height_combo.addItem(str(d), d)
-        self.height_combo.setCurrentText(
-            str(self.config.get("height", 1024)))
+        self.height_combo.setCurrentText(str(self.config.get("height", 1024)))
         row.addWidget(self.height_combo)
         settings_layout.addLayout(row)
 
@@ -613,11 +588,9 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(QLabel("Model"))
         model_row = QHBoxLayout()
         self.model_input = QLineEdit()
-        self.model_input.setText(
-            self.config.get("model", DEFAULT_CONFIG["model"]))
+        self.model_input.setText(self.config.get("model", DEFAULT_CONFIG["model"]))
         self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
-        self.model_input.editingFinished.connect(
-            lambda: self._update_backend_dependent_controls())
+        self.model_input.editingFinished.connect(lambda: self._update_backend_dependent_controls())
         model_row.addWidget(self.model_input)
         self.pull_btn = QPushButton("Pull…")
         self.pull_btn.setFixedWidth(50)
@@ -671,6 +644,7 @@ class MainWindow(QMainWindow):
         browse_btn.clicked.connect(self._on_browse_model_path)
         mp_top.addWidget(browse_btn)
         mp_layout.addLayout(mp_top)
+
         # Status label + Save Model button on second row
         mp_bottom = QHBoxLayout()
         self.model_path_status = QLabel()
@@ -700,8 +674,7 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(QLabel("HF Cache Dir"))
         hf_cache_row = QHBoxLayout()
         self.hf_cache_input = QLineEdit()
-        self.hf_cache_input.setPlaceholderText(
-            "Default (~/.cache/huggingface/hub)")
+        self.hf_cache_input.setPlaceholderText("Default (~/.cache/huggingface/hub)")
         self.hf_cache_input.setToolTip(
             "Directory where HuggingFace caches downloaded model weights.\n"
             "Leave blank to use the default (~/.cache/huggingface/hub)."
@@ -713,6 +686,77 @@ class MainWindow(QMainWindow):
         hf_cache_row.addWidget(hf_cache_browse)
         settings_layout.addLayout(hf_cache_row)
 
+        return settings_group
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QHBoxLayout(central)
+
+        splitter = QSplitter(Qt.Horizontal)
+        root.addWidget(splitter)
+
+        # --- Left: controls ---
+        controls = QWidget()
+        controls.setMaximumWidth(420)
+        controls.setMinimumWidth(300)
+        ctrl_layout = QVBoxLayout(controls)
+        ctrl_layout.setContentsMargins(8, 8, 8, 8)
+        ctrl_layout.setSpacing(8)
+
+        # Mode tab bar
+        self.mode_tabs = QTabBar()
+        self.mode_tabs.addTab("Text to Image")
+        self.mode_tabs.addTab("Image to Image")
+        self.mode_tabs.currentChanged.connect(self._on_mode_changed)
+        ctrl_layout.addWidget(self.mode_tabs)
+
+        # img2img controls (hidden by default)
+        self.img2img_controls = self._build_img2img_controls()
+        ctrl_layout.addWidget(self.img2img_controls)
+
+        # Prompt
+        ctrl_layout.addWidget(QLabel("Prompt"))
+        self.prompt_input = QTextEdit()
+        self.prompt_input.setPlaceholderText("Describe the image you want to generate…")
+        self.prompt_input.setMaximumHeight(120)
+        ctrl_layout.addWidget(self.prompt_input)
+
+        # Negative prompt
+        ctrl_layout.addWidget(QLabel("Negative Prompt"))
+        self.negative_prompt_input = QTextEdit()
+        self.negative_prompt_input.setPlaceholderText("What to avoid (optional)…")
+        self.negative_prompt_input.setMaximumHeight(60)
+        ctrl_layout.addWidget(self.negative_prompt_input)
+
+        # Generate button
+        self.generate_btn = QPushButton("✨  Generate")
+        self.generate_btn.setMinimumHeight(40)
+        self.generate_btn.setToolTip("Generate (⌘↩ / Ctrl+↩)")
+        self.generate_btn.clicked.connect(self._on_generate)
+        self.generate_shortcut = QShortcut(
+            QKeySequence("Ctrl+Return"), self.prompt_input, self._on_generate
+        )
+        self.generate_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.generate_shortcut_neg = QShortcut(
+            QKeySequence("Ctrl+Return"), self.negative_prompt_input, self._on_generate
+        )
+        self.generate_shortcut_neg.setContext(Qt.WidgetWithChildrenShortcut)
+        ctrl_layout.addWidget(self.generate_btn)
+
+        # Status
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet("color: gray;")
+        ctrl_layout.addWidget(self.status_label)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumHeight(8)
+        self.progress_bar.hide()
+        ctrl_layout.addWidget(self.progress_bar)
+
+        # Settings
+        settings_group = self._build_settings_panel()
         ctrl_layout.addWidget(settings_group)
 
         # HuggingFace login button
@@ -740,11 +784,11 @@ class MainWindow(QMainWindow):
 
         self.image_label = QLabel("No image yet")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.image_label.setProperty("class", "display")
         self.image_label.setStyleSheet(
-            "background-color: #1e1e1e; color: #888; border-radius: 8px;")
+            "background-color: #1e1e1e; color: #888; border-radius: 8px;"
+        )
         preview_layout.addWidget(self.image_label)
 
         splitter.addWidget(preview)
@@ -762,7 +806,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._elapsed_timer.stop()
         if self.worker is not None and self.worker.isRunning():
-            self.worker._cancelled.set()
+            self.worker.cancel()
             self.worker.terminate()
             self.worker.wait(2000)
         save_gui_state(self._collect_state())
@@ -770,7 +814,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _on_mode_changed(self, index: int):
-        is_img2img = (index == 1)
+        is_img2img = index == 1
         self.img2img_controls.setVisible(is_img2img)
         self.width_combo.setEnabled(not is_img2img)
         self.height_combo.setEnabled(not is_img2img)
@@ -788,9 +832,9 @@ class MainWindow(QMainWindow):
     def _update_backend_dependent_controls(self):
         """Show/hide/enable controls based on the resolved backend."""
         backend = self._resolved_backend()
-        is_mlx = (backend == BACKEND_MLX)
-        is_mflux = (backend == BACKEND_MFLUX)
-        is_ollama = (backend == BACKEND_OLLAMA)
+        is_mlx = backend == BACKEND_MLX
+        is_mflux = backend == BACKEND_MFLUX
+        is_ollama = backend == BACKEND_OLLAMA
 
         # T5 only applies to MLX
         self.t5_check.setEnabled(is_mlx)
@@ -802,7 +846,7 @@ class MainWindow(QMainWindow):
             self.t5_check.setToolTip("")
 
         # Img2img quantization warning only for MLX
-        is_img2img = (self.mode_tabs.currentIndex() == 1)
+        is_img2img = self.mode_tabs.currentIndex() == 1
         self.img2img_warning.setVisible(is_img2img and is_mlx)
 
         # Quantize dropdown only for MFLUX
@@ -867,7 +911,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)  # indeterminate
         self.progress_bar.show()
 
-        self.pull_worker = PullWorker(model, hf_cache_dir=self.hf_cache_input.text().strip() or None)
+        self.pull_worker = PullWorker(
+            model, hf_cache_dir=self.hf_cache_input.text().strip() or None
+        )
         self.pull_worker.status.connect(self._on_status)
         self.pull_worker.finished.connect(self._on_pull_finished)
         self.pull_worker.start()
@@ -889,8 +935,7 @@ class MainWindow(QMainWindow):
     def _on_browse_model_path(self):
         """Open a folder picker for a saved MFLUX model directory."""
         start_dir = str(MODELS_DIR) if MODELS_DIR.exists() else str(Path.home())
-        path = QFileDialog.getExistingDirectory(
-            self, "Select Saved Model Directory", start_dir)
+        path = QFileDialog.getExistingDirectory(self, "Select Saved Model Directory", start_dir)
         if path:
             self.model_path_input.setText(path)
             self._on_model_path_changed()
@@ -900,7 +945,8 @@ class MainWindow(QMainWindow):
         current = self.hf_cache_input.text().strip()
         start_dir = current if current else str(Path.home() / ".cache" / "huggingface" / "hub")
         path = QFileDialog.getExistingDirectory(
-            self, "Select HuggingFace Cache Directory", start_dir)
+            self, "Select HuggingFace Cache Directory", start_dir
+        )
         if path:
             self.hf_cache_input.setText(path)
 
@@ -942,18 +988,24 @@ class MainWindow(QMainWindow):
         saved_model_active = valid
         self.model_input.setEnabled(not saved_model_active)
         self.model_input.setToolTip(
-            "Determined by saved model path" if saved_model_active
+            "Determined by saved model path"
+            if saved_model_active
             else "Hugging Face model ID or OllamaDiffuser model name"
         )
         self.quantize_combo.setEnabled(not saved_model_active)
         self.quantize_combo.setToolTip(
-            "Determined by saved model path" if saved_model_active
+            "Determined by saved model path"
+            if saved_model_active
             else "MFLUX runtime quantization level"
         )
 
     def _on_save_model(self):
         """Open the Save Model dialog and start the save worker."""
-        if hasattr(self, "_save_worker") and self._save_worker is not None and self._save_worker.isRunning():
+        if (
+            hasattr(self, "_save_worker")
+            and self._save_worker is not None
+            and self._save_worker.isRunning()
+        ):
             self.status_label.setText("⚠ A model save is already in progress")
             self.status_label.setStyleSheet("color: orange;")
             return
@@ -968,8 +1020,7 @@ class MainWindow(QMainWindow):
         try:
             models = list_mflux_models()
             for m in models:
-                alias_combo.addItem(
-                    f"{m['alias']}  ({m['model_name']})", m["alias"])
+                alias_combo.addItem(f"{m['alias']}  ({m['model_name']})", m["alias"])
         except (OSError, ValueError, ImportError, AttributeError):
             for a in ("dev", "schnell", "fibo", "z-image"):
                 alias_combo.addItem(a, a)
@@ -990,20 +1041,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Save directory:"))
         path_row = QHBoxLayout()
         path_input = QLineEdit()
+
         def _update_default_path():
             alias = alias_combo.currentData()
             q = q_combo.currentData()
             q_label = f"{q}bit" if q else "fp"
             path_input.setText(str(MODELS_DIR / f"{alias}-{q_label}"))
+
         _update_default_path()
         alias_combo.currentIndexChanged.connect(lambda _: _update_default_path())
         q_combo.currentIndexChanged.connect(lambda _: _update_default_path())
         path_row.addWidget(path_input)
         pick_btn = QPushButton("…")
         pick_btn.setFixedWidth(30)
-        pick_btn.clicked.connect(lambda: path_input.setText(
-            QFileDialog.getExistingDirectory(dlg, "Choose Directory",
-                                             str(MODELS_DIR)) or path_input.text()))
+        pick_btn.clicked.connect(
+            lambda: path_input.setText(
+                QFileDialog.getExistingDirectory(dlg, "Choose Directory", str(MODELS_DIR))
+                or path_input.text()
+            )
+        )
         path_row.addWidget(pick_btn)
         layout.addLayout(path_row)
 
@@ -1017,6 +1073,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(note)
 
         from PySide6.QtWidgets import QDialogButtonBox
+
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
@@ -1037,8 +1094,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
-        self._save_worker = SaveModelWorker(alias, quantize, out_path,
-                                             hf_cache_dir=self.hf_cache_input.text().strip() or None)
+        self._save_worker = SaveModelWorker(
+            alias, quantize, out_path, hf_cache_dir=self.hf_cache_input.text().strip() or None
+        )
         self._save_worker.status.connect(self._on_status)
         self._save_worker.finished.connect(self._on_save_model_finished)
         self._save_worker.start()
@@ -1210,7 +1268,15 @@ class MainWindow(QMainWindow):
                 return
 
         seed_text = self.seed_input.text().strip()
-        seed = int(seed_text) if seed_text.lstrip('-').isdigit() else None
+        if seed_text:
+            try:
+                seed = int(seed_text)
+            except ValueError:
+                self.status_label.setText("⚠ Seed must be a valid integer")
+                self.status_label.setStyleSheet("color: red;")
+                return
+        else:
+            seed = None
 
         config = dict(self.config)
         config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
@@ -1321,7 +1387,7 @@ class MainWindow(QMainWindow):
         self._reset_generate_btn()
 
         # Short summary for the status bar
-        lines = [l for l in full_traceback.strip().splitlines() if l.strip()]
+        lines = [line for line in full_traceback.strip().splitlines() if line.strip()]
         last_line = lines[-1] if lines else "Unknown error"
         self.status_label.setText("❌ Error — see details")
         self.status_label.setStyleSheet("color: red;")
@@ -1369,11 +1435,13 @@ class MainWindow(QMainWindow):
             except (OSError, ValueError) as exc:
                 log.error("Cache clear failed: %s", exc)
             self.quantize_combo.setCurrentIndex(
-                self.quantize_combo.findData(0))  # "None (full precision)"
+                self.quantize_combo.findData(0)
+            )  # "None (full precision)"
             self._on_generate()
         elif clicked == retry_btn:
             self.quantize_combo.setCurrentIndex(
-                self.quantize_combo.findData(0))  # "None (full precision)"
+                self.quantize_combo.findData(0)
+            )  # "None (full precision)"
             self._on_generate()
 
     def _stop_generation(self):
@@ -1381,7 +1449,7 @@ class MainWindow(QMainWindow):
         if self.worker is None or not self.worker.isRunning():
             return
         log.info("User requested generation stop (backend=%s)", self.worker.backend)
-        self.worker._cancelled.set()
+        self.worker.cancel()
 
         self.status_label.setText("Cancelling… (cleaning up safely)")
         self.status_label.setStyleSheet("color: orange;")
@@ -1438,9 +1506,13 @@ class MainWindow(QMainWindow):
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
-    log.info("EyeGen GUI starting (Python %s, arch=%s)",
-             sys.version.split()[0], __import__("platform").machine())
+    log.info(
+        "EyeGen GUI starting (Python %s, arch=%s)",
+        sys.version.split()[0],
+        __import__("platform").machine(),
+    )
     app = QApplication(sys.argv)
     app.setApplicationName("EyeGen")
     if sys.platform == "darwin":

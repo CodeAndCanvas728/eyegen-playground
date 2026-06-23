@@ -5,29 +5,48 @@ Command-line interface for quick image generation on Apple Silicon.
 Supports MLX (diffusionkit), OllamaDiffuser (GGUF), and MFLUX backends.
 """
 
-import typer
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
 
+import typer
+
 from core import (
-    load_config, save_config, get_pipeline, get_ollama_pipeline,
-    get_mflux_pipeline,
-    sanitize_prompt, validate_dimensions, validate_image_path,
-    generate_image, detect_backend, pull_model,
-    list_ollama_models, list_mflux_models, clear_mflux_cache,
-    save_mflux_model, validate_saved_model,
-    hf_login, hf_status, hf_logout,
-    PROJECT_ROOT, CONFIG_FILE, OUTPUT_DIR, MODELS_DIR, DEFAULT_CONFIG,
-    BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
+    BACKEND_AUTO,
+    BACKEND_MFLUX,
+    BACKEND_MLX,
+    BACKEND_OLLAMA,
+    CONFIG_FILE,
+    DEFAULT_CONFIG,
+    MODELS_DIR,
+    OUTPUT_DIR,
+    PROJECT_ROOT,
     VALID_BACKENDS,
     QuantizationError,
+    clear_mflux_cache,
+    detect_backend,
+    generate_image,
+    get_mflux_pipeline,
+    get_ollama_pipeline,
+    get_pipeline,
+    hf_login,
+    hf_logout,
+    hf_status,
+    list_mflux_models,
+    list_ollama_models,
+    load_config,
+    pull_model,
+    save_config,
+    save_mflux_model,
+    validate_dimensions,
+    validate_image_path,
+    validate_saved_model,
 )
 
 app = typer.Typer(
     help="Generate images using MLX SD3.5, MFLUX (FLUX/FIBO/Z-Image), or OllamaDiffuser GGUF models",
-    no_args_is_help=True
+    no_args_is_help=True,
 )
 
 
@@ -35,60 +54,55 @@ app = typer.Typer(
 def generate(
     prompt: str = typer.Argument(..., help="Image description"),
     output: Optional[Path] = typer.Option(
-        None,
-        "--output", "-o",
-        help="Output file path (default: outputs/timestamp.png)"
+        None, "--output", "-o", help="Output file path (default: outputs/timestamp.png)"
     ),
     steps: Optional[int] = typer.Option(
-        None,
-        "--steps",
-        help="Number of inference steps (default: 30, faster: 20, better: 40)"
+        None, "--steps", help="Number of inference steps (default: 30, faster: 20, better: 40)"
     ),
     guidance: Optional[float] = typer.Option(
         None,
         "--guidance",
-        help="Guidance scale for prompt adherence (default: 7.5, range: 1.0-15.0)"
+        help="Guidance scale for prompt adherence (default: 7.5, range: 1.0-15.0)",
     ),
     height: Optional[int] = typer.Option(
-        None,
-        "--height",
-        help="Image height in pixels (default: 1024, must be multiple of 8)"
+        None, "--height", help="Image height in pixels (default: 1024, must be multiple of 8)"
     ),
     width: Optional[int] = typer.Option(
-        None,
-        "--width",
-        help="Image width in pixels (default: 1024, must be multiple of 8)"
+        None, "--width", help="Image width in pixels (default: 1024, must be multiple of 8)"
     ),
-    seed: Optional[int] = typer.Option(
-        None,
-        "--seed",
-        help="Random seed for reproducibility"
-    ),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for reproducibility"),
     image: Optional[Path] = typer.Option(
         None,
-        "--image", "-i",
+        "--image",
+        "-i",
         help="Input image for img2img mode (PNG/JPG/JPEG/BMP/WEBP/TIFF)",
     ),
     denoise: Optional[float] = typer.Option(
         None,
-        "--denoise", "-d",
+        "--denoise",
+        "-d",
         help="Denoise strength for img2img (0.05=keep original, 1.0=full redraw; default: 0.75)",
-        min=0.05, max=1.0,
+        min=0.05,
+        max=1.0,
     ),
     backend: str = typer.Option(
         "auto",
-        "--backend", "-b",
+        "--backend",
+        "-b",
         help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser",
     ),
     quantize: Optional[int] = typer.Option(
         None,
-        "--quantize", "-q",
+        "--quantize",
+        "-q",
         help="MFLUX quantization: 4 (default), 8, or omit for no quantization",
     ),
 ):
     """Generate an image from a text prompt."""
     if backend not in VALID_BACKENDS:
-        typer.echo(f"❌ Invalid backend '{backend}'. Choose from: {', '.join(VALID_BACKENDS)}", err=True)
+        typer.echo(
+            f"❌ Invalid backend '{backend}'. Choose from: {', '.join(VALID_BACKENDS)}", err=True
+        )
         raise typer.Exit(1)
 
     config = load_config()
@@ -112,9 +126,13 @@ def generate(
         image_path = str(image)
         denoise_value = denoise if denoise is not None else 0.75
         if resolved_backend == BACKEND_MLX:
-            typer.echo("⚠  Note: img2img with 4-bit quantized MLX models is known to produce output identical to the input (denoise may have no effect).")
-        if (height is not None or width is not None):
-            typer.echo("ℹ  Note: --width/--height are ignored in img2img mode (input image dimensions are used)")
+            typer.echo(
+                "⚠  Note: img2img with 4-bit quantized MLX models is known to produce output identical to the input (denoise may have no effect)."
+            )
+        if height is not None or width is not None:
+            typer.echo(
+                "ℹ  Note: --width/--height are ignored in img2img mode (input image dimensions are used)"
+            )
     elif denoise is not None:
         typer.echo("⚠  Warning: --denoise has no effect without --image")
 
@@ -125,7 +143,7 @@ def generate(
             raise typer.Exit(1)
 
     if output is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         output = OUTPUT_DIR / f"{timestamp}.png"
     else:
         output = Path(output)
@@ -137,7 +155,7 @@ def generate(
         BACKEND_MFLUX: "MFLUX (MLX FLUX)",
     }
     backend_label = backend_labels.get(resolved_backend, resolved_backend)
-    typer.echo(f"✨ Generating image...")
+    typer.echo("✨ Generating image...")
     typer.echo(f"   Backend: {backend_label}")
     typer.echo(f"   Model: {model}")
     local_model = config.get("mflux_model_path")
@@ -150,7 +168,7 @@ def generate(
         typer.echo(f"   Steps: {num_steps} | Guidance: {guidance_scale} | Size: {w}x{h}")
 
     try:
-        typer.echo(f"📦 Loading model...")
+        typer.echo("📦 Loading model...")
         if resolved_backend == BACKEND_OLLAMA:
             pipeline = get_ollama_pipeline(config)
         elif resolved_backend == BACKEND_MFLUX:
@@ -165,8 +183,15 @@ def generate(
             typer.echo(f"   Seed: {seed}")
 
         gen_image = generate_image(
-            pipeline, prompt, guidance_scale, num_steps, w, h, seed,
-            image_path=image_path, denoise=denoise_value,
+            pipeline,
+            prompt,
+            guidance_scale,
+            num_steps,
+            w,
+            h,
+            seed,
+            image_path=image_path,
+            denoise=denoise_value,
             backend=resolved_backend,
         )
 
@@ -177,17 +202,15 @@ def generate(
         if not image_path:
             typer.echo(f"   Size: {w}x{h} pixels")
 
-    except ImportError as exc:
+    except ImportError:
         if resolved_backend == BACKEND_OLLAMA:
             typer.echo(
-                "❌ ollamadiffuser not installed. Install with:\n"
-                "  pip install ollamadiffuser",
+                "❌ ollamadiffuser not installed. Install with:\n" "  pip install ollamadiffuser",
                 err=True,
             )
         elif resolved_backend == BACKEND_MFLUX:
             typer.echo(
-                "❌ mflux not installed. Install with:\n"
-                "  pip install mflux",
+                "❌ mflux not installed. Install with:\n" "  pip install mflux",
                 err=True,
             )
         else:
@@ -203,8 +226,15 @@ def generate(
         try:
             pipeline = get_mflux_pipeline(config, quantize=None)
             gen_image = generate_image(
-                pipeline, prompt, guidance_scale, num_steps, w, h, seed,
-                image_path=image_path, denoise=denoise_value,
+                pipeline,
+                prompt,
+                guidance_scale,
+                num_steps,
+                w,
+                h,
+                seed,
+                image_path=image_path,
+                denoise=denoise_value,
                 backend=resolved_backend,
             )
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -225,7 +255,9 @@ def generate(
 
 @app.command()
 def pull(
-    model_name: str = typer.Argument(..., help="OllamaDiffuser model name (e.g. flux.1-dev-gguf-q4ks)"),
+    model_name: str = typer.Argument(
+        ..., help="OllamaDiffuser model name (e.g. flux.1-dev-gguf-q4ks)"
+    ),
 ):
     """Download a GGUF model via OllamaDiffuser."""
     typer.echo(f"📥 Pulling model: {model_name}")
@@ -253,7 +285,9 @@ def list_models():
     # MLX Native models
     typer.echo("🔷 MLX Native Models (diffusionkit):")
     typer.echo("  • argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized  (Default, ~3GB)")
-    typer.echo("  • mlx-community/Lance-3B-AWQ-INT4                          (Multimodal Image Specialist)")
+    typer.echo(
+        "  • mlx-community/Lance-3B-AWQ-INT4                          (Multimodal Image Specialist)"
+    )
     typer.echo("  (Downloads from HuggingFace on first use — cached locally)")
     typer.echo()
 
@@ -295,7 +329,7 @@ def list_models():
             typer.echo(f"\n☁️  Available to pull ({len(not_installed)}):")
             for m in sorted(not_installed):
                 typer.echo(f"  • {m}")
-    typer.echo(f"\nPull a GGUF model:  ./generate.py pull <model-name>")
+    typer.echo("\nPull a GGUF model:  ./generate.py pull <model-name>")
 
 
 @app.command()
@@ -369,7 +403,7 @@ def status():
     backend_setting = config.get("backend", BACKEND_AUTO)
     resolved = detect_backend(model, backend_setting)
 
-    typer.echo(f"\n⚙️  Configuration:")
+    typer.echo("\n⚙️  Configuration:")
     typer.echo(f"  Model: {model}")
     typer.echo(f"  Backend: {backend_setting} → {resolved}")
     typer.echo(f"  Default steps: {config.get('num_inference_steps', 30)}")
@@ -379,13 +413,15 @@ def status():
     # Check diffusionkit
     try:
         import diffusionkit
+
         typer.echo(f"\n✅ diffusionkit: Installed (v{diffusionkit.__version__})")
     except ImportError:
-        typer.echo(f"\n❌ diffusionkit: Not installed")
+        typer.echo("\n❌ diffusionkit: Not installed")
 
     # Check ollamadiffuser
     try:
         import ollamadiffuser
+
         typer.echo(f"✅ ollamadiffuser: Installed (v{ollamadiffuser.__version__})")
         try:
             models = list_ollama_models()
@@ -398,12 +434,13 @@ def status():
         except (OSError, ValueError, ImportError, AttributeError):
             pass
     except ImportError:
-        typer.echo(f"❌ ollamadiffuser: Not installed")
+        typer.echo("❌ ollamadiffuser: Not installed")
 
     # Check mflux
     try:
-        import mflux
-        typer.echo(f"✅ mflux: Installed")
+        import mflux  # noqa: F401
+
+        typer.echo("✅ mflux: Installed")
         mflux_models = list_mflux_models()
         typer.echo(f"   Available models: {len(mflux_models)}")
         for m in mflux_models[:5]:
@@ -411,7 +448,7 @@ def status():
         if len(mflux_models) > 5:
             typer.echo(f"     ... and {len(mflux_models) - 5} more (run list-models to see all)")
     except ImportError:
-        typer.echo(f"❌ mflux: Not installed")
+        typer.echo("❌ mflux: Not installed")
 
     # Count generated images
     images = list(OUTPUT_DIR.glob("*.png"))
@@ -422,7 +459,7 @@ def status():
     if info:
         typer.echo(f"🔑 HuggingFace: logged in as {info.get('name', 'unknown')}")
     else:
-        typer.echo(f"🔑 HuggingFace: not logged in (run hf-login for gated models)")
+        typer.echo("🔑 HuggingFace: not logged in (run hf-login for gated models)")
 
 
 @app.command(name="clear-cache")
@@ -439,7 +476,10 @@ def clear_cache(
         if removed:
             for r in removed:
                 typer.echo(f"  ✓ Removed: {r}")
-            typer.echo(f"✅ Cleared {len(removed)} cached revision(s). Models will re-download on next use.")
+            typer.echo(
+                f"✅ Cleared {len(removed)} cached revision(s). "
+                "Models will re-download on next use."
+            )
         else:
             typer.echo("ℹ  No matching cached models found.")
     except (OSError, ValueError) as e:
@@ -455,12 +495,14 @@ def save_model_cmd(
     ),
     quantize_bits: Optional[int] = typer.Option(
         4,
-        "--quantize", "-q",
+        "--quantize",
+        "-q",
         help="Quantization bits: 4 (default), 8, or omit for full precision",
     ),
     path: Optional[Path] = typer.Option(
         None,
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Output directory (default: models/<alias>-<q>bit)",
     ),
 ):
@@ -496,7 +538,7 @@ def save_model_cmd(
         if valid and meta:
             ql = meta.get("quantization_level")
             typer.echo(f"   Quantization: {ql}-bit" if ql else "   Quantization: full precision")
-        typer.echo(f"\n💡 To use this model, set the path in your config:")
+        typer.echo("\n💡 To use this model, set the path in your config:")
         typer.echo(f"   ./generate.py config-set mflux_model_path {result_path}")
     except Exception as e:
         typer.echo(f"\n❌ Save failed: {e}", err=True)
@@ -506,7 +548,9 @@ def save_model_cmd(
 @app.command(name="hf-login")
 def hf_login_cmd(
     token: Optional[str] = typer.Option(
-        None, "--token", "-t",
+        None,
+        "--token",
+        "-t",
         help="HuggingFace access token (prompted if not provided)",
     ),
 ):

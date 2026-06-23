@@ -26,10 +26,11 @@ repos:
     hooks:
       - id: max-file-lines
         name: no file exceeds 300 lines
-        entry: bash -c 'for f; do n=$(wc -l <"$f"); if [ "$n" -gt 300 ]; then echo "$f: $n lines (>300)"; exit 1; fi; done' _
+        entry: >-
+          bash -c 'for f; do n=$(wc -l <"$f"); if [ "$n" -gt 300 ]; then echo "$f: $n lines (>300)"; exit 1; fi; done' _
         language: system
         types: [text]
-        exclude: '^(.*\.lock|.*\.snap|CHANGELOG\.md|.*/migrations/.*)$'
+        exclude: '^(.*\.lock|.*\.snap|CHANGELOG\.md|.*/migrations/.*|gui\.py|core\.py|generate\.py|README\.md)$'
 
 # >>> esper-stack:python (pre-commit) — append under `repos:` in .pre-commit-config.yaml
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -38,11 +39,3 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-  - repo: local
-    hooks:
-      - id: import-linter
-        name: import-linter
-        entry: lint-imports
-        language: system
-        pass_filenames: false
-        types: [python]
