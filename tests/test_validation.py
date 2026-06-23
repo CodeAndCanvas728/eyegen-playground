@@ -17,6 +17,14 @@ def test_validate_dimensions_invalid():
     assert validate_dimensions(100, 512) is not None
 
 
+def test_validate_dimensions_zero():
+    assert validate_dimensions(0, 1024) is not None
+
+
+def test_validate_dimensions_negative():
+    assert validate_dimensions(-8, 1024) is not None
+
+
 def test_validate_image_path_missing():
     assert validate_image_path("/nonexistent/image.png") is not None
 

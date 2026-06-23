@@ -107,6 +107,10 @@ def save_mflux_model(
         progress_callback(f"Saving to {output_path}…")
     model.save_model(str(output_path))
 
+    safetensors_files = list(output_path.rglob("*.safetensors"))
+    if not safetensors_files:
+        raise FileNotFoundError(f"Model saving failed: no safetensors files found in {output_path}")
+
     log.info("Model saved: %s", output_path)
     if progress_callback:
         progress_callback(f"✅ Model saved to {output_path}")

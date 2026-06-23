@@ -72,6 +72,8 @@ class EyeGenConfig:
         errors = []
         if not isinstance(self.backend, Backend):
             errors.append(f"Invalid backend '{self.backend}'. Must be a Backend enum value.")
+        if self.width <= 0 or self.height <= 0:
+            errors.append("Height and width must be greater than 0.")
         if self.width % 8 != 0 or self.height % 8 != 0:
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
@@ -84,11 +86,25 @@ class EyeGenConfig:
         if self.model == "mlx-community/Lance-3B-AWQ-INT4":
             if self.backend not in (Backend.AUTO, Backend.MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
+
+        errors.extend(self._validate_paths())
+        return errors
+
+    def _validate_paths(self) -> list[str]:
+        """Return errors for any configured path that escapes the allowed roots."""
+        from eyegen.validation import is_path_safe
+
+        roots = [Path.home(), Path.cwd()]
+        errors = []
+        for key in ("hf_cache_dir", "mflux_model_path", "coreml_model_path", "bonsai_model_path"):
+            value = getattr(self, key)
+            if value and not is_path_safe(value, roots):
+                errors.append(f"{key} '{value}' is invalid or outside allowed roots.")
         return errors
 
     @classmethod
     def from_dict(cls, data: dict) -> "EyeGenConfig":
-        """Build config from dict, applying type casting and filtering unknown keys."""
+        """Build config from dict, applying type casting and rejecting unknown keys."""
         valid_keys = {f.name for f in fields(cls)}
         kwargs = {}
         for k, v in data.items():
@@ -96,6 +112,8 @@ class EyeGenConfig:
                 if v == "null" or v == "None":
                     v = None
                 kwargs[k] = v
+            else:
+                raise ValueError(f"Unknown configuration key: '{k}'")
 
         cls._coerce_int(kwargs, "height")
         cls._coerce_int(kwargs, "width")

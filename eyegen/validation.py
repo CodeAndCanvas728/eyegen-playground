@@ -1,8 +1,11 @@
 """Input validation helpers for EyeGen."""
 
+import logging
 import unicodedata
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 def sanitize_prompt(prompt: str) -> str:
@@ -21,13 +24,52 @@ def sanitize_prompt(prompt: str) -> str:
 
 def validate_dimensions(width: int, height: int) -> Optional[str]:
     """Return an error message if dimensions are invalid, or None if OK."""
+    if width <= 0 or height <= 0:
+        return "Height and width must be greater than 0"
     if width % 8 != 0 or height % 8 != 0:
         return "Height and width must be multiples of 8"
     return None
 
 
+def is_path_safe(path_str: str, expected_roots: Optional[list[Path]] = None) -> bool:
+    """Verify that a path is safe (no traversal and under allowed roots)."""
+    if not path_str:
+        return True
+    path = Path(path_str)
+    if ".." in path.parts:
+        return False
+    try:
+        resolved = path.resolve()
+    except Exception:
+        return False
+
+    import tempfile
+    default_roots = [Path.home(), Path.cwd(), Path(tempfile.gettempdir())]
+    if expected_roots is None:
+        roots = default_roots
+    else:
+        roots = list(expected_roots) + [Path(tempfile.gettempdir())]
+
+    resolved_roots = []
+    for root in roots:
+        try:
+            resolved_roots.append(root.resolve())
+        except (OSError, RuntimeError) as exc:
+            log.debug("Could not resolve root %s: %s", root, exc)
+            continue
+
+    in_root = False
+    for r in resolved_roots:
+        if resolved == r or r in resolved.parents:
+            in_root = True
+            break
+    return in_root
+
+
 def validate_image_path(path: str) -> Optional[str]:
     """Return an error message if the image path is invalid, or None if OK."""
+    if not is_path_safe(path, [Path.home(), Path.cwd()]):
+        return f"Invalid or unsafe image path: {path}"
     p = Path(path)
     if not p.exists():
         return f"Image file not found: {path}"

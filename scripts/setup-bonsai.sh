@@ -31,14 +31,16 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 # Clone or update the bonsai-demo repo
+BONSAI_COMMIT="9cf9d6ee209a5c251ef7d3252c4f568efeaa08b7"
 if [ ! -d "$BONSAI_DIR" ]; then
     echo "Cloning Bonsai-Image-Demo ..."
     mkdir -p "$(dirname "$BONSAI_DIR")"
     git clone "$BONSAI_REPO" "$BONSAI_DIR"
-    echo "Cloned."
+    (cd "$BONSAI_DIR" && git checkout "$BONSAI_COMMIT")
+    echo "Cloned and checked out commit $BONSAI_COMMIT."
 elif [ -d "$BONSAI_DIR/.git" ]; then
-    echo "Bonsai-Image-Demo already cloned. Pulling latest ..."
-    (cd "$BONSAI_DIR" && git pull --ff-only || echo "  (pull skipped — local changes or no network)")
+    echo "Bonsai-Image-Demo already cloned. Fetching and checking out pinned commit $BONSAI_COMMIT ..."
+    (cd "$BONSAI_DIR" && git fetch origin && git checkout "$BONSAI_COMMIT" || echo "  (fetch/checkout skipped — no network or local changes)")
 else
     echo "ERROR: $BONSAI_DIR exists but is not a git repo."
     echo "Move it aside and re-run this script."

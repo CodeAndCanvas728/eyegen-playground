@@ -1,5 +1,6 @@
 """State persistence mixin for MainWindow."""
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -7,9 +8,25 @@ from PySide6.QtGui import QPixmap
 
 from eyegen.config import Backend
 
+log = logging.getLogger("eyegen")
+
 
 class MainWindowStateMixin:
     def _collect_state(self) -> dict:
+        model_val = self.model_input.text().strip()
+        is_fs_path = False
+        if model_val:
+            try:
+                p = Path(model_val).expanduser()
+                is_fs_path = (
+                    p.is_absolute()
+                    or p.exists()
+                    or model_val.startswith("~/")
+                    or model_val.startswith("./")
+                )
+            except (OSError, ValueError) as exc:
+                log.debug("Could not classify model value %r as path: %s", model_val, exc)
+
         return {
             "prompt": self.prompt_input.toPlainText(),
             "negative_prompt": self.negative_prompt_input.toPlainText(),
@@ -27,11 +44,11 @@ class MainWindowStateMixin:
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
-            "bonsai_model_path": self.model_input.text()
-            if self._resolved_backend() == Backend.BONSAI
+            "bonsai_model_path": model_val
+            if (self._resolved_backend() == Backend.BONSAI and is_fs_path)
             else "",
-            "coreml_model_path": self.model_input.text()
-            if self._resolved_backend() == Backend.COREML
+            "coreml_model_path": model_val
+            if (self._resolved_backend() == Backend.COREML and is_fs_path)
             else "",
             "coreml_compute_unit": self.config.get("coreml_compute_unit", "CPU_AND_NE"),
         }

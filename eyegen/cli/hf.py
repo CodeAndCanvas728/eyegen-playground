@@ -12,11 +12,18 @@ def hf_login_cmd(
         None,
         "--token",
         "-t",
-        help="HuggingFace access token (prompted if not provided)",
+        help="[DEPRECATED/INSECURE] HuggingFace access token (prompted securely if not provided)",
     ),
 ):
     """Log in to HuggingFace to access gated models."""
-    if token is None:
+    if token is not None:
+        typer.echo(
+            "⚠️  WARNING: Passing --token via command line is insecure and can "
+            "leak into shell history.\n"
+            "   Please run 'hf-login' without arguments to be prompted securely.",
+            err=True,
+        )
+    else:
         token = typer.prompt("Enter your HuggingFace token", hide_input=True)
 
     try:

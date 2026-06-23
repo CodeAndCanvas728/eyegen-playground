@@ -92,7 +92,8 @@ class BonsaiWrapper:
         from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed or uuid.uuid4().hex[:8]}.png"
+        seed_suffix = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed_suffix}.png"
 
         cmd = [
             "--model",
@@ -110,17 +111,7 @@ class BonsaiWrapper:
             cmd.extend(["--seed", str(seed)])
 
         log.info("bonsai subprocess: %s", " ".join(cmd))
-        self._proc = _spawn_bonsai_subprocess(["generate.sh", *cmd])
-        try:
-            if self._proc.stdout is None:
-                raise RuntimeError("bonsai subprocess stdout pipe was not created")
-            for line in self._proc.stdout:
-                line = line.rstrip()
-                log.info("[bonsai] %s", line)
-            self._proc.wait()
-            rc = self._proc.returncode
-        finally:
-            self._proc = None
+        rc = self._run_subprocess(["generate.sh", *cmd])
         if rc != 0:
             raise RuntimeError(
                 f"Bonsai generation failed (exit {rc}). Inspect logs at {get_bonsai_dir()}/outputs/"
@@ -128,6 +119,33 @@ class BonsaiWrapper:
         if not out_path.is_file():
             raise RuntimeError(f"Bonsai generation did not produce expected output: {out_path}")
         return Image.open(out_path).convert("RGB")
+
+    def _run_subprocess(self, args: list[str]) -> int:
+        """Spawn the bonsai subprocess, stream its stdout, and return the exit code.
+
+        Enforces a hard timeout so a hung generation cannot block the worker thread.
+        """
+        self._proc = _spawn_bonsai_subprocess(args)
+        try:
+            if self._proc.stdout is None:
+                raise RuntimeError("bonsai subprocess stdout pipe was not created")
+            for line in self._proc.stdout:
+                log.info("[bonsai] %s", line.rstrip())
+            try:
+                self._proc.wait(timeout=300.0)
+            except subprocess.TimeoutExpired:
+                log.error("Bonsai subprocess timed out. Terminating...")
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    log.error("Bonsai subprocess terminate timed out. Killing...")
+                    self._proc.kill()
+                    self._proc.wait()
+                raise
+            return self._proc.returncode
+        finally:
+            self._proc = None
 
     def cancel(self) -> None:
         proc = self._proc

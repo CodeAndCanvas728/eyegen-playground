@@ -68,29 +68,50 @@ def _resolve_mflux_class(model_config):
     """Given a resolved ModelConfig, return the appropriate model class."""
     name = model_config.model_name
 
-    if "FLUX.2" in name:
+    flux2_names = {
+        "black-forest-labs/FLUX.2-klein-4B",
+        "black-forest-labs/FLUX.2-klein-9B",
+        "black-forest-labs/FLUX.2-klein-base-4B",
+        "black-forest-labs/FLUX.2-klein-base-9B",
+    }
+    if name in flux2_names:
         from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
-
         return Flux2Klein
-    if "Z-Image" in name:
+
+    z_image_names = {
+        "Tongyi-MAI/Z-Image",
+        "Tongyi-MAI/Z-Image-Turbo",
+    }
+    if name in z_image_names:
         from mflux.models.z_image.variants.z_image import ZImage
-
         return ZImage
-    if "FIBO" in name or "Fibo" in name:
+
+    fibo_names = {
+        "briaai/FIBO",
+        "briaai/Fibo-lite",
+        "briaai/Fibo-Edit",
+        "briaai/Fibo-Edit-RMBG",
+    }
+    if name in fibo_names:
         from mflux.models.fibo.variants.txt2img.fibo import FIBO
-
         return FIBO
-    if "Qwen" in name:
+
+    qwen_names = {
+        "Qwen/Qwen-Image",
+        "Qwen/Qwen-Image-Edit-2509",
+    }
+    if name in qwen_names:
         from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
-
         return QwenImage
-    if "SeedVR2" in name:
-        from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
 
+    seedvr2_names = {
+        "numz/SeedVR2_comfyUI",
+    }
+    if name in seedvr2_names:
+        from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
         return SeedVR2
 
     from mflux.models.flux.variants.txt2img.flux import Flux1
-
     return Flux1
 
 

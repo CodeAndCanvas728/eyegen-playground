@@ -124,6 +124,33 @@ def convert_to_coreml(
         cmd.extend(["--quantize-nbits", str(quantize_nbits)])
 
     log.info("coreml-convert: %s", " ".join(cmd))
+    returncode, timed_out = _run_conversion(cmd, progress_callback)
+
+    if timed_out:
+        raise subprocess.TimeoutExpired(cmd, 1800.0)
+
+    if returncode == 0:
+        meta = {
+            "model_version": hf_model_id,
+            "compute_unit": compute_unit,
+            "attention_implementation": attention_implementation,
+            "converted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        (output_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
+    return returncode == 0
+
+
+def _run_conversion(
+    cmd: list[str],
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> tuple[int, bool]:
+    """Run the CoreML conversion subprocess with a 30-minute hard timeout.
+
+    Streams combined stdout/stderr to the log and *progress_callback*. Returns
+    ``(returncode, timed_out)``.
+    """
+    import threading
+
     env = os.environ.copy()
     env.pop("PYTHONHOME", None)
     proc = subprocess.Popen(  # noqa: S603
@@ -136,19 +163,38 @@ def convert_to_coreml(
     )
     if proc.stdout is None:
         raise RuntimeError("CoreML conversion stdout pipe was not created")
-    for line in proc.stdout:
-        line = line.rstrip()
-        log.info("[coreml-convert] %s", line)
-        if progress_callback:
-            progress_callback(line)
-    proc.wait()
 
-    if proc.returncode == 0:
-        meta = {
-            "model_version": hf_model_id,
-            "compute_unit": compute_unit,
-            "attention_implementation": attention_implementation,
-            "converted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        (output_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
-    return proc.returncode == 0
+    timed_out = False
+
+    def target_timeout():
+        nonlocal timed_out
+        timed_out = True
+        log.error("CoreML conversion timed out after 1800 seconds. Terminating...")
+        _terminate(proc)
+
+    timer = threading.Timer(1800.0, target_timeout)
+    timer.start()
+    try:
+        for line in proc.stdout:
+            line = line.rstrip()
+            log.info("[coreml-convert] %s", line)
+            if progress_callback:
+                progress_callback(line)
+        proc.wait()
+    except Exception:
+        _terminate(proc)
+        raise
+    finally:
+        timer.cancel()
+    return proc.returncode, timed_out
+
+
+def _terminate(proc: subprocess.Popen, grace: float = 10.0) -> None:
+    """Terminate *proc*, escalating to kill if it does not exit within *grace*."""
+    proc.terminate()
+    try:
+        proc.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        log.error("CoreML conversion terminate timed out. Killing...")
+        proc.kill()
+        proc.wait()

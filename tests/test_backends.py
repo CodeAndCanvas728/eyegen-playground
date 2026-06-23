@@ -38,6 +38,17 @@ def test_detect_backend_unsupported_raises():
             detect_backend("totally-unknown-model", Backend.AUTO)
 
 
+def test_detect_backend_unsupported_raises_when_diffusionkit_missing():
+    # When diffusionkit is unavailable, _get_mlx_supported_models returns None;
+    # an unsupported model must still raise rather than silently routing to MLX.
+    with (
+        patch("eyegen.backends._get_mflux_aliases", return_value=set()),
+        patch("eyegen.backends._get_mlx_supported_models", return_value=None),
+    ):
+        with pytest.raises(ValueError):
+            detect_backend("totally-unknown-model", Backend.AUTO)
+
+
 def test_is_bonsai_model():
     assert _is_bonsai_model("bonsai-ternary-mlx")
     assert not _is_bonsai_model("dev")

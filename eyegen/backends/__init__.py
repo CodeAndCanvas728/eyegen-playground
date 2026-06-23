@@ -104,8 +104,6 @@ def detect_backend(
     mlx_keys = _get_mlx_supported_models()
     if mlx_keys is not None and model in mlx_keys:
         return Backend.MLX
-    if mlx_keys is None:
-        return Backend.MLX
     raise ValueError(_format_unsupported_error(model, "auto-detected"))
 
 
@@ -113,6 +111,9 @@ def _apply_hf_cache(config: dict):
     """Set HF_HUB_CACHE env var from config if a custom directory is configured."""
     cache_dir = config.get("hf_cache_dir") if config else None
     if cache_dir:
+        from eyegen.validation import is_path_safe
+        if not is_path_safe(cache_dir, [Path.home(), Path.cwd()]):
+            raise ValueError(f"Unsafe hf_cache_dir: {cache_dir}")
         p = Path(cache_dir).expanduser()
     elif os.environ.get("HF_HUB_CACHE"):
         p = Path(os.environ["HF_HUB_CACHE"]).expanduser()
@@ -176,6 +177,9 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
 
     local_path = config.get("mflux_model_path")
     if local_path:
+        from eyegen.validation import is_path_safe
+        if not is_path_safe(local_path, [Path.home(), Path.cwd()]):
+            raise ValueError(f"Unsafe mflux_model_path: {local_path}")
         p = Path(local_path).expanduser()
         if not p.is_dir():
             raise FileNotFoundError(

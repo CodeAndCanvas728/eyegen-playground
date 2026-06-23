@@ -71,7 +71,8 @@ echo "Installing pinned dependencies (this may take a few minutes) ..."
     "matplotlib"
 
 echo "Installing python_coreml_stable_diffusion from apple/ml-stable-diffusion ..."
-"$VENV_DIR/bin/pip" install --quiet "git+https://github.com/apple/ml-stable-diffusion.git"
+COREML_COMMIT="5a170d29cf38e674b80541d7ce22929c6a11cdde"
+"$VENV_DIR/bin/pip" install --quiet "git+https://github.com/apple/ml-stable-diffusion.git@$COREML_COMMIT"
 
 # Sanity check
 if ! "$VENV_DIR/bin/python" -c "import python_coreml_stable_diffusion" 2>/dev/null; then
