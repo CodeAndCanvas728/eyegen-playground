@@ -12,25 +12,15 @@ def hf_login_cmd(
         None,
         "--token",
         "-t",
-<<<<<<< Updated upstream
-        help="[DEPRECATED/INSECURE] HuggingFace access token (prompted securely if not provided)",
-=======
         help="[DEPRECATED] HuggingFace access token (prompts securely if omitted)",
->>>>>>> Stashed changes
     ),
 ):
     """Log in to HuggingFace to access gated models."""
     if token is not None:
         typer.echo(
-<<<<<<< Updated upstream
-            "⚠️  WARNING: Passing --token via command line is insecure and can "
-            "leak into shell history.\n"
-            "   Please run 'hf-login' without arguments to be prompted securely.",
-=======
             "⚠️ WARNING: Passing the token via the command line option '--token' / '-t' "
             "is deprecated because it can leak to your shell history. "
             "For security, omit this option and enter the token at the prompt.",
->>>>>>> Stashed changes
             err=True,
         )
     else:

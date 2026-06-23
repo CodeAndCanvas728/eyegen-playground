@@ -52,21 +52,6 @@ def test_config_from_dict_coerces_mflux_quantize_none():
     assert cfg.mflux_quantize is None
 
 
-<<<<<<< Updated upstream
-def test_config_from_dict_rejects_unknown_keys():
-    with pytest.raises(ValueError, match="Unknown configuration key"):
-        EyeGenConfig.from_dict({"unknown_key": "value", "height": 512})
-
-
-def test_config_validate_rejects_zero_dimensions():
-    cfg = EyeGenConfig(width=0, height=1024)
-    assert any("greater than 0" in e for e in cfg.validate())
-
-
-def test_config_validate_rejects_negative_dimensions():
-    cfg = EyeGenConfig(width=-8, height=1024)
-    assert any("greater than 0" in e for e in cfg.validate())
-=======
 def test_config_from_dict_filters_unknown_keys(caplog):
     import logging
     caplog.set_level(logging.WARNING)
@@ -74,4 +59,3 @@ def test_config_from_dict_filters_unknown_keys(caplog):
     assert cfg.height == 512
     assert not hasattr(cfg, "unknown_key")
     assert any("unknown_key" in msg for msg in caplog.messages)
->>>>>>> Stashed changes

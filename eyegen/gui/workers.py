@@ -183,23 +183,6 @@ class GenerationWorker(QThread):
             self.finished.emit(image, str(out_path))
         except GenerationCancelled:
             log.info("Generation cancelled by user")
-<<<<<<< Updated upstream
-            self.cancelled.emit()
-        except Exception as exc:  # noqa: BLE001
-            # A worker interrupted mid-flight (e.g. Bonsai/CoreML subprocess
-            # killed by cancel()) surfaces as a generic error; treat any
-            # failure after cancellation was requested as a cancellation
-            # only if it is one of the expected exception types.
-            is_cancellation_exception = (
-                isinstance(exc, OSError)
-                or (isinstance(exc, RuntimeError) and "cancel" in str(exc).lower())
-                or (isinstance(exc, RuntimeError) and "failed (exit -" in str(exc).lower())
-            )
-            if self._cancelled.is_set() and is_cancellation_exception:
-                log.info("Generation cancelled by user")
-                self.cancelled.emit()
-                return
-=======
             self.cancelled.emit(False)
         except (OSError, RuntimeError) as exc:
             if self._cancelled.is_set():
@@ -210,7 +193,6 @@ class GenerationWorker(QThread):
                 log.error("Generation failed:\n%s", full)
                 self.error.emit(full)
         except Exception:  # noqa: BLE001
->>>>>>> Stashed changes
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)

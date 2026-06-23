@@ -69,27 +69,12 @@ def _resolve_mflux_class(model_config):
     name = model_config.model_name
     aliases = set(model_config.aliases)
 
-<<<<<<< Updated upstream
-    flux2_names = {
-=======
     klein_names = {
->>>>>>> Stashed changes
         "black-forest-labs/FLUX.2-klein-4B",
         "black-forest-labs/FLUX.2-klein-9B",
         "black-forest-labs/FLUX.2-klein-base-4B",
         "black-forest-labs/FLUX.2-klein-base-9B",
     }
-<<<<<<< Updated upstream
-    if name in flux2_names:
-        from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
-        return Flux2Klein
-
-    z_image_names = {
-        "Tongyi-MAI/Z-Image",
-        "Tongyi-MAI/Z-Image-Turbo",
-    }
-    if name in z_image_names:
-=======
     klein_aliases = {
         "flux2-klein-4b", "flux2-klein-4B", "flux2-klein", "klein-4b", "klein-4B",
         "flux2-klein-9b", "flux2-klein-9B", "klein-9b", "klein-9B",
@@ -109,7 +94,6 @@ def _resolve_mflux_class(model_config):
         "z-image", "zimage", "z-image-turbo", "zimage-turbo",
     }
     if name in z_names or not aliases.isdisjoint(z_aliases):
->>>>>>> Stashed changes
         from mflux.models.z_image.variants.z_image import ZImage
         return ZImage
 
@@ -119,15 +103,11 @@ def _resolve_mflux_class(model_config):
         "briaai/Fibo-Edit",
         "briaai/Fibo-Edit-RMBG",
     }
-<<<<<<< Updated upstream
-    if name in fibo_names:
-=======
     fibo_aliases = {
         "fibo", "fibo-lite", "fibo_lite", "fibo-edit", "fiboedit",
         "fibo-edit-rmbg", "fiboedit-rmbg",
     }
     if name in fibo_names or not aliases.isdisjoint(fibo_aliases):
->>>>>>> Stashed changes
         from mflux.models.fibo.variants.txt2img.fibo import FIBO
         return FIBO
 
@@ -135,16 +115,6 @@ def _resolve_mflux_class(model_config):
         "Qwen/Qwen-Image",
         "Qwen/Qwen-Image-Edit-2509",
     }
-<<<<<<< Updated upstream
-    if name in qwen_names:
-        from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
-        return QwenImage
-
-    seedvr2_names = {
-        "numz/SeedVR2_comfyUI",
-    }
-    if name in seedvr2_names:
-=======
     qwen_aliases = {
         "qwen-image", "qwen", "qwen-image-edit", "qwen-edit", "qwen-edit-plus", "qwen-edit-2509",
     }
@@ -159,7 +129,6 @@ def _resolve_mflux_class(model_config):
         "seedvr2-3b", "seedvr2", "seedvr2-7b", "seedvr2-7B",
     }
     if name in seed_names or not aliases.isdisjoint(seed_aliases):
->>>>>>> Stashed changes
         from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
         return SeedVR2
 

@@ -166,8 +166,6 @@ def _run_conversion(
     )
     if proc.stdout is None:
         raise RuntimeError("CoreML conversion stdout pipe was not created")
-<<<<<<< Updated upstream
-
     timed_out = False
 
     def target_timeout():
@@ -202,33 +200,3 @@ def _terminate(proc: subprocess.Popen, grace: float = 10.0) -> None:
         log.error("CoreML conversion terminate timed out. Killing...")
         proc.kill()
         proc.wait()
-=======
-    for line in proc.stdout:
-        line = line.rstrip()
-        log.info("[coreml-convert] %s", line)
-        if progress_callback:
-            progress_callback(line)
-    try:
-        proc.wait(timeout=1800.0)
-    except subprocess.TimeoutExpired as exc:
-        log.warning("CoreML conversion timed out, terminating pid=%s", proc.pid)
-        proc.terminate()
-        try:
-            proc.wait(timeout=5.0)
-        except subprocess.TimeoutExpired:
-            log.warning("CoreML conversion did not terminate, killing pid=%s", proc.pid)
-            proc.kill()
-            proc.wait(timeout=5.0)
-        raise RuntimeError("CoreML conversion timed out after 30 minutes") from exc
-
-    if proc.returncode == 0:
-        meta = {
-            "model_version": hf_model_id,
-            "compute_unit": compute_unit,
-            "attention_implementation": attention_implementation,
-            "converted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        (output_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
-        list_coreml_models.cache_clear()
-    return proc.returncode == 0
->>>>>>> Stashed changes

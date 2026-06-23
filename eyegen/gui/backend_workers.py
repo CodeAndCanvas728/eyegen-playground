@@ -16,32 +16,14 @@ class _ScriptWorker(QThread):
 
     def run(self):
         try:
-<<<<<<< Updated upstream
-            r = subprocess.run(  # noqa: S603
-                [self.script_path],
-                capture_output=True,
-                text=True,
-                timeout=900.0,
-            )
-=======
             r = subprocess.run([self.script_path], capture_output=True, text=True, timeout=600.0)  # noqa: S603
->>>>>>> Stashed changes
             if r.returncode == 0:
                 self.finished.emit(True, self._success_message())
             else:
                 msg = (r.stderr or r.stdout or "Unknown error").strip().splitlines()[-5:]
                 self.finished.emit(False, f"Setup failed (exit {r.returncode}): " + "\n".join(msg))
-<<<<<<< Updated upstream
-        except subprocess.TimeoutExpired as exc:
-            self.finished.emit(
-                False,
-                f"Setup error: Script timed out after {exc.timeout} seconds. "
-                "Please check your internet connection or run the script manually."
-            )
-=======
         except subprocess.TimeoutExpired:
             self.finished.emit(False, "Setup timed out after 10 minutes.")
->>>>>>> Stashed changes
         except (OSError, ValueError, RuntimeError) as exc:
             self.finished.emit(False, f"Setup error: {exc}")
 

@@ -74,11 +74,7 @@ class EyeGenConfig:
             errors.append(f"Invalid backend '{self.backend}'. Must be a Backend enum value.")
         if self.width <= 0 or self.height <= 0:
             errors.append("Height and width must be greater than 0.")
-<<<<<<< Updated upstream
-        if self.width % 8 != 0 or self.height % 8 != 0:
-=======
         elif self.width % 8 != 0 or self.height % 8 != 0:
->>>>>>> Stashed changes
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
@@ -91,21 +87,6 @@ class EyeGenConfig:
             if self.backend not in (Backend.AUTO, Backend.MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
 
-<<<<<<< Updated upstream
-        errors.extend(self._validate_paths())
-        return errors
-
-    def _validate_paths(self) -> list[str]:
-        """Return errors for any configured path that escapes the allowed roots."""
-        from eyegen.validation import is_path_safe
-
-        roots = [Path.home(), Path.cwd()]
-        errors = []
-        for key in ("hf_cache_dir", "mflux_model_path", "coreml_model_path", "bonsai_model_path"):
-            value = getattr(self, key)
-            if value and not is_path_safe(value, roots):
-                errors.append(f"{key} '{value}' is invalid or outside allowed roots.")
-=======
         from eyegen.validation import validate_safe_path
         for path_field, path_val in [
             ("coreml_model_path", self.coreml_model_path),
@@ -119,7 +100,7 @@ class EyeGenConfig:
                 except ValueError as exc:
                     errors.append(str(exc))
 
->>>>>>> Stashed changes
+
         return errors
 
     @classmethod
@@ -133,11 +114,7 @@ class EyeGenConfig:
                     v = None
                 kwargs[k] = v
             else:
-<<<<<<< Updated upstream
-                raise ValueError(f"Unknown configuration key: '{k}'")
-=======
                 log.warning("Ignoring unknown config key: %s", k)
->>>>>>> Stashed changes
 
         cls._coerce_int(kwargs, "height")
         cls._coerce_int(kwargs, "width")
