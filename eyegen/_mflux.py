@@ -76,14 +76,31 @@ def _resolve_mflux_class(model_config):
         "black-forest-labs/FLUX.2-klein-base-9B",
     }
     klein_aliases = {
-        "flux2-klein-4b", "flux2-klein-4B", "flux2-klein", "klein-4b", "klein-4B",
-        "flux2-klein-9b", "flux2-klein-9B", "klein-9b", "klein-9B",
-        "flux2-klein-base-4b", "flux2-klein-base-4B", "flux2-base-4b", "flux2-base-4B",
-        "klein-base-4b", "klein-base-4B", "flux2-klein-base-9b", "flux2-klein-base-9B",
-        "flux2-base-9b", "flux2-base-9B", "klein-base-9b", "klein-base-9B",
+        "flux2-klein-4b",
+        "flux2-klein-4B",
+        "flux2-klein",
+        "klein-4b",
+        "klein-4B",
+        "flux2-klein-9b",
+        "flux2-klein-9B",
+        "klein-9b",
+        "klein-9B",
+        "flux2-klein-base-4b",
+        "flux2-klein-base-4B",
+        "flux2-base-4b",
+        "flux2-base-4B",
+        "klein-base-4b",
+        "klein-base-4B",
+        "flux2-klein-base-9b",
+        "flux2-klein-base-9B",
+        "flux2-base-9b",
+        "flux2-base-9B",
+        "klein-base-9b",
+        "klein-base-9B",
     }
     if name in klein_names or not aliases.isdisjoint(klein_aliases):
         from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
+
         return Flux2Klein
 
     z_names = {
@@ -91,10 +108,14 @@ def _resolve_mflux_class(model_config):
         "Tongyi-MAI/Z-Image-Turbo",
     }
     z_aliases = {
-        "z-image", "zimage", "z-image-turbo", "zimage-turbo",
+        "z-image",
+        "zimage",
+        "z-image-turbo",
+        "zimage-turbo",
     }
     if name in z_names or not aliases.isdisjoint(z_aliases):
         from mflux.models.z_image.variants.z_image import ZImage
+
         return ZImage
 
     fibo_names = {
@@ -104,11 +125,17 @@ def _resolve_mflux_class(model_config):
         "briaai/Fibo-Edit-RMBG",
     }
     fibo_aliases = {
-        "fibo", "fibo-lite", "fibo_lite", "fibo-edit", "fiboedit",
-        "fibo-edit-rmbg", "fiboedit-rmbg",
+        "fibo",
+        "fibo-lite",
+        "fibo_lite",
+        "fibo-edit",
+        "fiboedit",
+        "fibo-edit-rmbg",
+        "fiboedit-rmbg",
     }
     if name in fibo_names or not aliases.isdisjoint(fibo_aliases):
         from mflux.models.fibo.variants.txt2img.fibo import FIBO
+
         return FIBO
 
     qwen_names = {
@@ -116,23 +143,34 @@ def _resolve_mflux_class(model_config):
         "Qwen/Qwen-Image-Edit-2509",
     }
     qwen_aliases = {
-        "qwen-image", "qwen", "qwen-image-edit", "qwen-edit", "qwen-edit-plus", "qwen-edit-2509",
+        "qwen-image",
+        "qwen",
+        "qwen-image-edit",
+        "qwen-edit",
+        "qwen-edit-plus",
+        "qwen-edit-2509",
     }
     if name in qwen_names or not aliases.isdisjoint(qwen_aliases):
         from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
+
         return QwenImage
 
     seed_names = {
         "numz/SeedVR2_comfyUI",
     }
     seed_aliases = {
-        "seedvr2-3b", "seedvr2", "seedvr2-7b", "seedvr2-7B",
+        "seedvr2-3b",
+        "seedvr2",
+        "seedvr2-7b",
+        "seedvr2-7B",
     }
     if name in seed_names or not aliases.isdisjoint(seed_aliases):
         from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
+
         return SeedVR2
 
     from mflux.models.flux.variants.txt2img.flux import Flux1
+
     return Flux1
 
 

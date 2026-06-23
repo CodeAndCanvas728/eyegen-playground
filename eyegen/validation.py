@@ -42,12 +42,12 @@ def validate_safe_path(path: str | Path, name: str) -> Path:
     allowed_roots = [
         Path.home().resolve(),
         Path.cwd().resolve(),
-        Path("/tmp").resolve(),
-        Path("/var").resolve(),
-        Path("/private/var").resolve(),
-        Path("/var/tmp").resolve(),
-        Path("/private/tmp").resolve(),
-        Path("/Volumes").resolve(),
+        Path("/tmp").resolve(),  # noqa: S108
+        Path("/var").resolve(),  # noqa: S108
+        Path("/private/var").resolve(),  # noqa: S108
+        Path("/var/tmp").resolve(),  # noqa: S108
+        Path("/private/tmp").resolve(),  # noqa: S108
+        Path("/Volumes").resolve(),  # noqa: S108
     ]
 
     is_under_allowed = False

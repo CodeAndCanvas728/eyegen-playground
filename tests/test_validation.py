@@ -57,11 +57,13 @@ def test_sanitize_prompt_replaces_smart_quotes():
 
 def test_validate_safe_path_traversal():
     from eyegen.validation import validate_safe_path
+
     with pytest.raises(ValueError, match="Directory traversal"):
         validate_safe_path("/safe/path/../../unsafe", "test_path")
 
 
 def test_validate_safe_path_not_under_root():
     from eyegen.validation import validate_safe_path
+
     with pytest.raises(ValueError, match="not under any expected root"):
         validate_safe_path("/usr/bin/somefile", "test_path")

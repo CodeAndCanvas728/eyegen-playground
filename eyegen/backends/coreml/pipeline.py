@@ -48,6 +48,7 @@ class CoreMLWrapper:
         explicit = config.get("coreml_model_path")
         if explicit:
             from eyegen.validation import validate_safe_path
+
             p = validate_safe_path(explicit, "coreml_model_path")
             if not p.is_dir():
                 raise FileNotFoundError(
@@ -146,7 +147,9 @@ class CoreMLWrapper:
             bufsize=1,
         )
         import threading
+
         stderr_lines: deque = deque(maxlen=500)
+
         def read_stderr():
             if self._proc and self._proc.stderr:
                 try:

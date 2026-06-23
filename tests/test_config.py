@@ -1,7 +1,5 @@
 """Tests for eyegen.config."""
 
-import pytest
-
 from eyegen.config import Backend, EyeGenConfig
 
 
@@ -54,6 +52,7 @@ def test_config_from_dict_coerces_mflux_quantize_none():
 
 def test_config_from_dict_filters_unknown_keys(caplog):
     import logging
+
     caplog.set_level(logging.WARNING)
     cfg = EyeGenConfig.from_dict({"unknown_key": "value", "height": 512})
     assert cfg.height == 512

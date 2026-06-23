@@ -101,12 +101,13 @@ class TestDownloadBonsaiModel:
 
         with mock.patch("eyegen.backends.bonsai.models.subprocess.Popen") as popen_mock:
             import subprocess
+
             mock_proc = mock.Mock()
             mock_proc.stdout = []
             mock_proc.wait.side_effect = [
                 subprocess.TimeoutExpired(cmd="download_model.sh", timeout=1800.0),
                 subprocess.TimeoutExpired(cmd="download_model.sh", timeout=5.0),
-                0
+                0,
             ]
             popen_mock.return_value = mock_proc
             with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
@@ -138,14 +139,10 @@ class TestBonsaiWrapper:
         expected_path.touch()
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
         wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
         img = wrapper.generate_image(
-            prompt="test",
-            cfg_weight=1.0,
-            num_steps=10,
-            width=64,
-            height=64,
-            seed=0
+            prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=0
         )
         assert img == mock_image
         assert expected_path.is_file()
@@ -161,24 +158,21 @@ class TestBonsaiWrapper:
         mock_proc = mock.Mock()
         mock_proc.stdout = ["line1\n"]
         import subprocess
+
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired(cmd="generate.sh", timeout=300.0),
             subprocess.TimeoutExpired(cmd="generate.sh", timeout=5.0),
-            0
+            0,
         ]
         mock_spawn.return_value = mock_proc
 
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
         wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
         with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
             wrapper.generate_image(
-                prompt="test",
-                cfg_weight=1.0,
-                num_steps=10,
-                width=64,
-                height=64,
-                seed=42
+                prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=42
             )
         assert mock_proc.terminate.called

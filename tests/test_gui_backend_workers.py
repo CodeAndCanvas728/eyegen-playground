@@ -1,7 +1,7 @@
 import subprocess
 from unittest import mock
-import pytest
 
+import pytest
 
 pytest.importorskip("PySide6")
 
@@ -16,6 +16,7 @@ def test_script_worker_timeout(mock_run):
     worker = BonsaiSetupWorker("/path/to/setup-bonsai.sh")
 
     finished_called = []
+
     def on_finished(success, message):
         finished_called.append((success, message))
 

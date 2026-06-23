@@ -88,6 +88,7 @@ class EyeGenConfig:
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
 
         from eyegen.validation import validate_safe_path
+
         for path_field, path_val in [
             ("coreml_model_path", self.coreml_model_path),
             ("mflux_model_path", self.mflux_model_path),
@@ -99,7 +100,6 @@ class EyeGenConfig:
                     validate_safe_path(path_val, path_field)
                 except ValueError as exc:
                     errors.append(str(exc))
-
 
         return errors
 

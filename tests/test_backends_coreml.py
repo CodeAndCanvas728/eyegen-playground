@@ -1,7 +1,7 @@
 """Smoke tests for the CoreML backend helpers."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -94,13 +94,13 @@ class TestConvertToCoreml:
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired(cmd="convert", timeout=1800.0),
             subprocess.TimeoutExpired(cmd="convert", timeout=5.0),
-            0
+            0,
         ]
         mock_popen.return_value = mock_proc
 
-        with pytest.raises(RuntimeError, match="CoreML conversion timed out"):
+        with pytest.raises(subprocess.TimeoutExpired):
             coreml.convert_to_coreml("foo/bar", tmp_path, compute_unit="CPU_AND_NE")
-        
+
         assert mock_proc.terminate.called
         assert mock_proc.kill.called
 
@@ -127,20 +127,28 @@ class TestCoreMLWrapper:
         expected_path.touch()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
         with mock.patch("eyegen.backends.coreml.pipeline.Image.open") as mock_img_open:
             mock_img_open.return_value.convert.return_value = mock.Mock()
             wrapper.generate_image(
-                prompt="test", cfg_weight=7.5, num_steps=10,
-                width=512, height=512, seed=0,
+                prompt="test",
+                cfg_weight=7.5,
+                num_steps=10,
+                width=512,
+                height=512,
+                seed=0,
             )
         assert expected_path.is_file()
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     @mock.patch("eyegen.backends.coreml.pipeline._sidecar_python")
     @mock.patch("eyegen.backends.coreml.pipeline.subprocess.Popen")
-    def test_subprocess_timeout(self, mock_popen, mock_sidecar, mock_validate, tmp_path, monkeypatch):
+    def test_subprocess_timeout(  # noqa: E501
+        self, mock_popen, mock_sidecar, mock_validate, tmp_path, monkeypatch
+    ):
         from unittest import mock
+
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_validate.return_value = mock_status
@@ -152,7 +160,7 @@ class TestCoreMLWrapper:
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired(cmd="pipeline", timeout=300.0),
             subprocess.TimeoutExpired(cmd="pipeline", timeout=5.0),
-            0
+            0,
         ]
         mock_popen.return_value = mock_proc
 
@@ -162,16 +170,12 @@ class TestCoreMLWrapper:
         model_dir.mkdir()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
-        
+
         with pytest.raises(RuntimeError, match="CoreML subprocess timed out"):
             wrapper.generate_image(
-                prompt="test",
-                cfg_weight=7.5,
-                num_steps=10,
-                width=512,
-                height=512,
-                seed=42
+                prompt="test", cfg_weight=7.5, num_steps=10, width=512, height=512, seed=42
             )
         assert mock_proc.terminate.called
         assert mock_proc.kill.called

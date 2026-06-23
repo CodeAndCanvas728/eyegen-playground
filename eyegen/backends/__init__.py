@@ -109,6 +109,7 @@ def detect_backend(
 def _apply_hf_cache(config: dict):
     """Set HF_HUB_CACHE env var from config if a custom directory is configured."""
     from eyegen.validation import validate_safe_path
+
     cache_dir = config.get("hf_cache_dir") if config else None
     if cache_dir:
         p = validate_safe_path(cache_dir, "hf_cache_dir")
@@ -175,6 +176,7 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
     local_path = config.get("mflux_model_path")
     if local_path:
         from eyegen.validation import validate_safe_path
+
         p = validate_safe_path(local_path, "mflux_model_path")
         if not p.is_dir():
             raise FileNotFoundError(

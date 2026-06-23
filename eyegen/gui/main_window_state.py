@@ -13,20 +13,6 @@ log = logging.getLogger("eyegen")
 
 class MainWindowStateMixin:
     def _collect_state(self) -> dict:
-        model_val = self.model_input.text().strip()
-        is_fs_path = False
-        if model_val:
-            try:
-                p = Path(model_val).expanduser()
-                is_fs_path = (
-                    p.is_absolute()
-                    or p.exists()
-                    or model_val.startswith("~/")
-                    or model_val.startswith("./")
-                )
-            except (OSError, ValueError) as exc:
-                log.debug("Could not classify model value %r as path: %s", model_val, exc)
-
         return {
             "prompt": self.prompt_input.toPlainText(),
             "negative_prompt": self.negative_prompt_input.toPlainText(),

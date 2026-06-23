@@ -54,7 +54,7 @@ class BonsaiWrapper:
                 f"Run: ./generate.py pull-bonsai {self.variant}"
             )
 
-    def generate_image(  # noqa: C901
+    def generate_image(  # noqa: C901, PLR0915
         self,
         prompt: str,
         cfg_weight: float,
@@ -112,6 +112,7 @@ class BonsaiWrapper:
 
         log.info("bonsai subprocess: %s", " ".join(cmd))
         import threading
+
         t: threading.Thread | None = None
         self._proc = _spawn_bonsai_subprocess(["generate.sh", *cmd])
         try:
@@ -136,7 +137,9 @@ class BonsaiWrapper:
                 try:
                     self._proc.wait(timeout=5.0)
                 except subprocess.TimeoutExpired:
-                    log.warning("Bonsai subprocess did not terminate, killing pid=%s", self._proc.pid)
+                    log.warning(  # noqa: E501
+                        "Bonsai subprocess did not terminate, killing pid=%s", self._proc.pid
+                    )
                     self._proc.kill()
                     self._proc.wait(timeout=5.0)
                 raise RuntimeError("Bonsai subprocess timed out after 300 seconds") from exc
