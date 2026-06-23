@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -46,10 +47,15 @@ class CoreMLWrapper:
     def _resolve_model_path(self, config: dict) -> Path:
         explicit = config.get("coreml_model_path")
         if explicit:
+<<<<<<< Updated upstream
             from eyegen.validation import is_path_safe
             if not is_path_safe(explicit, [Path.home(), Path.cwd()]):
                 raise ValueError(f"Unsafe coreml_model_path: {explicit}")
             p = Path(explicit).expanduser()
+=======
+            from eyegen.validation import validate_safe_path
+            p = validate_safe_path(explicit, "coreml_model_path")
+>>>>>>> Stashed changes
             if not p.is_dir():
                 raise FileNotFoundError(
                     f"coreml_model_path {p} is not a directory. "
@@ -86,7 +92,7 @@ class CoreMLWrapper:
         if not self.model_path.exists():
             raise RuntimeError(f"CoreML model dir does not exist: {self.model_path}")
 
-    def generate_image(
+    def generate_image(  # noqa: C901, PLR0915
         self,
         prompt: str,
         cfg_weight: float,
@@ -102,8 +108,14 @@ class CoreMLWrapper:
 
         from eyegen.config import OUTPUT_DIR
 
+<<<<<<< Updated upstream
         seed_suffix = str(seed) if seed is not None else uuid.uuid4().hex[:8]
         out_path = OUTPUT_DIR / f"coreml_{seed_suffix}.png"
+=======
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        out_path = OUTPUT_DIR / f"coreml_{seed_str}.png"
+>>>>>>> Stashed changes
 
         py = _sidecar_python()
         if py is None:
@@ -135,15 +147,67 @@ class CoreMLWrapper:
             cmd.extend(["--negative-prompt", negative_prompt])
 
         log.info("coreml-pipeline: %s", " ".join(cmd))
+<<<<<<< Updated upstream
         returncode, stderr_lines, timed_out = self._run_subprocess(cmd)
 
         if timed_out:
             raise subprocess.TimeoutExpired(cmd, 600.0, output="\n".join(stderr_lines))
+=======
+        env = os.environ.copy()
+        env.pop("PYTHONHOME", None)
+        self._proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        import threading
+        stderr_lines: deque = deque(maxlen=500)
+        def read_stderr():
+            if self._proc and self._proc.stderr:
+                try:
+                    for line in self._proc.stderr:
+                        line_stripped = line.rstrip()
+                        log.info("[coreml] %s", line_stripped)
+                        stderr_lines.append(line)
+                except Exception as e:
+                    log.debug("Error reading coreml stderr: %s", e)
+
+        t = threading.Thread(target=read_stderr, daemon=True)
+        t.start()
+
+        try:
+            try:
+                self._proc.wait(timeout=300.0)
+            except subprocess.TimeoutExpired as exc:
+                log.warning("CoreML subprocess timed out, terminating pid=%s", self._proc.pid)
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    log.warning(
+                        "CoreML subprocess did not terminate, killing pid=%s", self._proc.pid
+                    )
+                    self._proc.kill()
+                    self._proc.wait(timeout=5.0)
+                raise RuntimeError("CoreML subprocess timed out after 300 seconds") from exc
+            returncode = self._proc.returncode
+        finally:
+            self._proc = None
+            t.join(timeout=1.0)
+>>>>>>> Stashed changes
 
         if self._cancelled:
             raise RuntimeError("CoreML generation was cancelled by the user.")
         if returncode != 0:
+<<<<<<< Updated upstream
             log.error("coreml stderr: %s", "\n".join(stderr_lines[-50:]))
+=======
+            stderr = "".join(stderr_lines)
+            log.error("coreml stderr: %s", stderr[-2000:])
+>>>>>>> Stashed changes
             raise RuntimeError(
                 f"CoreML generation failed (exit {returncode}). See eyegen.log for details."
             )

@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -16,6 +17,7 @@ from .install import _sidecar_has_coreml, _sidecar_python, get_coreml_models_dir
 log = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=1)
 def list_coreml_models() -> list[dict]:
     models_dir = get_coreml_models_dir()
     out = []
@@ -24,8 +26,8 @@ def list_coreml_models() -> list[dict]:
     for child in sorted(models_dir.iterdir()):
         if not child.is_dir():
             continue
-        mlmodelc = list(child.rglob("*.mlmodelc"))
-        mlpackage = list(child.rglob("*.mlpackage"))
+        mlmodelc = list(child.glob("*.mlmodelc"))
+        mlpackage = list(child.glob("*.mlpackage"))
         if not (mlmodelc or mlpackage):
             continue
         meta_path = child / "model_index.json"
@@ -81,6 +83,7 @@ def pull_preconverted_coreml_model(
         "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     (target_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
+    list_coreml_models.cache_clear()
     _cb(f"Done. Model at {target_dir}")
     return target_dir
 
@@ -163,6 +166,7 @@ def _run_conversion(
     )
     if proc.stdout is None:
         raise RuntimeError("CoreML conversion stdout pipe was not created")
+<<<<<<< Updated upstream
 
     timed_out = False
 
@@ -198,3 +202,33 @@ def _terminate(proc: subprocess.Popen, grace: float = 10.0) -> None:
         log.error("CoreML conversion terminate timed out. Killing...")
         proc.kill()
         proc.wait()
+=======
+    for line in proc.stdout:
+        line = line.rstrip()
+        log.info("[coreml-convert] %s", line)
+        if progress_callback:
+            progress_callback(line)
+    try:
+        proc.wait(timeout=1800.0)
+    except subprocess.TimeoutExpired as exc:
+        log.warning("CoreML conversion timed out, terminating pid=%s", proc.pid)
+        proc.terminate()
+        try:
+            proc.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            log.warning("CoreML conversion did not terminate, killing pid=%s", proc.pid)
+            proc.kill()
+            proc.wait(timeout=5.0)
+        raise RuntimeError("CoreML conversion timed out after 30 minutes") from exc
+
+    if proc.returncode == 0:
+        meta = {
+            "model_version": hf_model_id,
+            "compute_unit": compute_unit,
+            "attention_implementation": attention_implementation,
+            "converted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        (output_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
+        list_coreml_models.cache_clear()
+    return proc.returncode == 0
+>>>>>>> Stashed changes

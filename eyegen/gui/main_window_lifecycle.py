@@ -109,7 +109,11 @@ class MainWindowLifecycleMixin:
         # stops; do not reset here or the user could launch a second run while
         # the first is still terminating.
 
+<<<<<<< Updated upstream
     def _on_cancelled(self):
+=======
+    def _on_cancelled(self, force_terminated: bool = False):
+>>>>>>> Stashed changes
         _clear_pipeline_cache()
         self._elapsed_timer.stop()
         self.progress_bar.hide()

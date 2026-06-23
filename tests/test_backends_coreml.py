@@ -1,6 +1,8 @@
 """Smoke tests for the CoreML backend helpers."""
 
 from pathlib import Path
+import subprocess
+from unittest import mock
 
 import pytest
 
@@ -11,6 +13,7 @@ from eyegen.backends.coreml import CoreMLInstallStatus
 @pytest.fixture(autouse=True)
 def _clear_coreml_cache():
     coreml.validate_coreml_install.cache_clear()
+    coreml.list_coreml_models.cache_clear()
     yield
 
 
@@ -78,3 +81,97 @@ class TestConvertToCoreml:
     def test_invalid_compute_unit_raises(self):
         with pytest.raises(ValueError, match="Invalid compute_unit"):
             coreml.convert_to_coreml("foo/bar", Path("output"), compute_unit="INVALID")
+
+    @mock.patch("eyegen.backends.coreml.models._sidecar_has_coreml")
+    @mock.patch("eyegen.backends.coreml.models._sidecar_python")
+    @mock.patch("eyegen.backends.coreml.models.subprocess.Popen")
+    def test_convert_to_coreml_timeout(self, mock_popen, mock_sidecar, mock_has_coreml, tmp_path):
+        mock_has_coreml.return_value = True
+        mock_sidecar.return_value = Path("/fake/python")
+        mock_proc = mock.Mock()
+        mock_proc.pid = 9999
+        mock_proc.stdout = ["converting model...\n"]
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="convert", timeout=1800.0),
+            subprocess.TimeoutExpired(cmd="convert", timeout=5.0),
+            0
+        ]
+        mock_popen.return_value = mock_proc
+
+        with pytest.raises(RuntimeError, match="CoreML conversion timed out"):
+            coreml.convert_to_coreml("foo/bar", tmp_path, compute_unit="CPU_AND_NE")
+        
+        assert mock_proc.terminate.called
+        assert mock_proc.kill.called
+
+
+class TestCoreMLWrapper:
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    @mock.patch("eyegen.backends.coreml.pipeline._sidecar_python")
+    @mock.patch("eyegen.backends.coreml.pipeline.subprocess.Popen")
+    def test_seed_zero(self, mock_popen, mock_sidecar, mock_validate, tmp_path, monkeypatch):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+        mock_sidecar.return_value = Path("/fake/python")
+        mock_proc = mock.Mock()
+        mock_proc.pid = 1234
+        mock_proc.stderr = ["done\n"]
+        mock_proc.wait.return_value = 0
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+        model_dir = tmp_path / "sd-2-1-base"
+        model_dir.mkdir()
+        expected_path = tmp_path / "coreml_0.png"
+        expected_path.touch()
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
+        with mock.patch("eyegen.backends.coreml.pipeline.Image.open") as mock_img_open:
+            mock_img_open.return_value.convert.return_value = mock.Mock()
+            wrapper.generate_image(
+                prompt="test", cfg_weight=7.5, num_steps=10,
+                width=512, height=512, seed=0,
+            )
+        assert expected_path.is_file()
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    @mock.patch("eyegen.backends.coreml.pipeline._sidecar_python")
+    @mock.patch("eyegen.backends.coreml.pipeline.subprocess.Popen")
+    def test_subprocess_timeout(self, mock_popen, mock_sidecar, mock_validate, tmp_path, monkeypatch):
+        from unittest import mock
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+        mock_sidecar.return_value = Path("/fake/python")
+
+        mock_proc = mock.Mock()
+        mock_proc.pid = 1234
+        mock_proc.stderr = ["loading model...\n", "generating...\n"]
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="pipeline", timeout=300.0),
+            subprocess.TimeoutExpired(cmd="pipeline", timeout=5.0),
+            0
+        ]
+        mock_popen.return_value = mock_proc
+
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+
+        model_dir = tmp_path / "sd-2-1-base"
+        model_dir.mkdir()
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
+        
+        with pytest.raises(RuntimeError, match="CoreML subprocess timed out"):
+            wrapper.generate_image(
+                prompt="test",
+                cfg_weight=7.5,
+                num_steps=10,
+                width=512,
+                height=512,
+                seed=42
+            )
+        assert mock_proc.terminate.called
+        assert mock_proc.kill.called

@@ -67,14 +67,18 @@ class EyeGenConfig:
     coreml_model_path: Optional[str] = None
     coreml_compute_unit: str = "CPU_AND_NE"
 
-    def validate(self) -> list[str]:
+    def validate(self) -> list[str]:  # noqa: C901
         """Validate settings and return a list of error messages (empty if valid)."""
         errors = []
         if not isinstance(self.backend, Backend):
             errors.append(f"Invalid backend '{self.backend}'. Must be a Backend enum value.")
         if self.width <= 0 or self.height <= 0:
             errors.append("Height and width must be greater than 0.")
+<<<<<<< Updated upstream
         if self.width % 8 != 0 or self.height % 8 != 0:
+=======
+        elif self.width % 8 != 0 or self.height % 8 != 0:
+>>>>>>> Stashed changes
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
@@ -87,6 +91,7 @@ class EyeGenConfig:
             if self.backend not in (Backend.AUTO, Backend.MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
 
+<<<<<<< Updated upstream
         errors.extend(self._validate_paths())
         return errors
 
@@ -100,6 +105,21 @@ class EyeGenConfig:
             value = getattr(self, key)
             if value and not is_path_safe(value, roots):
                 errors.append(f"{key} '{value}' is invalid or outside allowed roots.")
+=======
+        from eyegen.validation import validate_safe_path
+        for path_field, path_val in [
+            ("coreml_model_path", self.coreml_model_path),
+            ("mflux_model_path", self.mflux_model_path),
+            ("bonsai_model_path", self.bonsai_model_path),
+            ("hf_cache_dir", self.hf_cache_dir),
+        ]:
+            if path_val:
+                try:
+                    validate_safe_path(path_val, path_field)
+                except ValueError as exc:
+                    errors.append(str(exc))
+
+>>>>>>> Stashed changes
         return errors
 
     @classmethod
@@ -113,7 +133,11 @@ class EyeGenConfig:
                     v = None
                 kwargs[k] = v
             else:
+<<<<<<< Updated upstream
                 raise ValueError(f"Unknown configuration key: '{k}'")
+=======
+                log.warning("Ignoring unknown config key: %s", k)
+>>>>>>> Stashed changes
 
         cls._coerce_int(kwargs, "height")
         cls._coerce_int(kwargs, "width")

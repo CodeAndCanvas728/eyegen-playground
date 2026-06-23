@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 from typing import Optional
 
 from eyegen._mflux import _format_mflux_model_error, _get_mflux_aliases, _resolve_mflux_class
@@ -109,14 +108,19 @@ def detect_backend(
 
 def _apply_hf_cache(config: dict):
     """Set HF_HUB_CACHE env var from config if a custom directory is configured."""
+    from eyegen.validation import validate_safe_path
     cache_dir = config.get("hf_cache_dir") if config else None
     if cache_dir:
+<<<<<<< Updated upstream
         from eyegen.validation import is_path_safe
         if not is_path_safe(cache_dir, [Path.home(), Path.cwd()]):
             raise ValueError(f"Unsafe hf_cache_dir: {cache_dir}")
         p = Path(cache_dir).expanduser()
+=======
+        p = validate_safe_path(cache_dir, "hf_cache_dir")
+>>>>>>> Stashed changes
     elif os.environ.get("HF_HUB_CACHE"):
-        p = Path(os.environ["HF_HUB_CACHE"]).expanduser()
+        p = validate_safe_path(os.environ["HF_HUB_CACHE"], "HF_HUB_CACHE")
     else:
         p = HF_CACHE_DIR
     p.mkdir(parents=True, exist_ok=True)
@@ -177,10 +181,15 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
 
     local_path = config.get("mflux_model_path")
     if local_path:
+<<<<<<< Updated upstream
         from eyegen.validation import is_path_safe
         if not is_path_safe(local_path, [Path.home(), Path.cwd()]):
             raise ValueError(f"Unsafe mflux_model_path: {local_path}")
         p = Path(local_path).expanduser()
+=======
+        from eyegen.validation import validate_safe_path
+        p = validate_safe_path(local_path, "mflux_model_path")
+>>>>>>> Stashed changes
         if not p.is_dir():
             raise FileNotFoundError(
                 f"MFLUX model path does not exist: {p}\n"

@@ -92,8 +92,13 @@ class BonsaiWrapper:
         from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+<<<<<<< Updated upstream
         seed_suffix = str(seed) if seed is not None else uuid.uuid4().hex[:8]
         out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed_suffix}.png"
+=======
+        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed_str}.png"
+>>>>>>> Stashed changes
 
         cmd = [
             "--model",
@@ -111,7 +116,32 @@ class BonsaiWrapper:
             cmd.extend(["--seed", str(seed)])
 
         log.info("bonsai subprocess: %s", " ".join(cmd))
+<<<<<<< Updated upstream
         rc = self._run_subprocess(["generate.sh", *cmd])
+=======
+        self._proc = _spawn_bonsai_subprocess(["generate.sh", *cmd])
+        try:
+            if self._proc.stdout is None:
+                raise RuntimeError("bonsai subprocess stdout pipe was not created")
+            for line in self._proc.stdout:
+                line = line.rstrip()
+                log.info("[bonsai] %s", line)
+            try:
+                self._proc.wait(timeout=300.0)
+            except subprocess.TimeoutExpired as exc:
+                log.warning("Bonsai subprocess timed out, terminating pid=%s", self._proc.pid)
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    log.warning("Bonsai subprocess did not terminate, killing pid=%s", self._proc.pid)
+                    self._proc.kill()
+                    self._proc.wait(timeout=5.0)
+                raise RuntimeError("Bonsai subprocess timed out after 300 seconds") from exc
+            rc = self._proc.returncode
+        finally:
+            self._proc = None
+>>>>>>> Stashed changes
         if rc != 0:
             raise RuntimeError(
                 f"Bonsai generation failed (exit {rc}). Inspect logs at {get_bonsai_dir()}/outputs/"

@@ -86,7 +86,7 @@ class GenerationWorker(QThread):
     quantize_failed = Signal(str)
     status = Signal(str)
     progress = Signal(int, int)
-    cancelled = Signal()
+    cancelled = Signal(bool)
 
     def __init__(
         self,
@@ -135,14 +135,14 @@ class GenerationWorker(QThread):
     def run(self):
         try:
             if self._cancelled.is_set():
-                self.cancelled.emit()
+                self.cancelled.emit(False)
                 return
 
             pipeline = _load_pipeline_for_worker(self)
             self.pipeline = pipeline
 
             if self._cancelled.is_set():
-                self.cancelled.emit()
+                self.cancelled.emit(False)
                 return
 
             self.status.emit("Generating…")
@@ -170,7 +170,7 @@ class GenerationWorker(QThread):
             )
 
             if self._cancelled.is_set():
-                self.cancelled.emit()
+                self.cancelled.emit(False)
                 return
 
             self.status.emit("Saving…")
@@ -183,6 +183,7 @@ class GenerationWorker(QThread):
             self.finished.emit(image, str(out_path))
         except GenerationCancelled:
             log.info("Generation cancelled by user")
+<<<<<<< Updated upstream
             self.cancelled.emit()
         except Exception as exc:  # noqa: BLE001
             # A worker interrupted mid-flight (e.g. Bonsai/CoreML subprocess
@@ -198,6 +199,18 @@ class GenerationWorker(QThread):
                 log.info("Generation cancelled by user")
                 self.cancelled.emit()
                 return
+=======
+            self.cancelled.emit(False)
+        except (OSError, RuntimeError) as exc:
+            if self._cancelled.is_set():
+                log.info("Generation cancelled by user: %s", exc)
+                self.cancelled.emit(False)
+            else:
+                full = traceback.format_exc()
+                log.error("Generation failed:\n%s", full)
+                self.error.emit(full)
+        except Exception:  # noqa: BLE001
+>>>>>>> Stashed changes
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
