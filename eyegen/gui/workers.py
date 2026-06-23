@@ -19,7 +19,12 @@ from eyegen import (
     save_mflux_model,
 )
 from eyegen.backends import bonsai, coreml
-from eyegen.gui.cache import _clear_pipeline_cache, _pipeline_cache, _pipeline_cache_lock, get_cache_generation
+from eyegen.gui.cache import (
+    _clear_pipeline_cache,
+    _pipeline_cache,
+    _pipeline_cache_lock,
+    get_cache_generation,
+)
 from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 
 log = logging.getLogger("eyegen")
@@ -130,7 +135,7 @@ class GenerationWorker(QThread):
 
     def cancel(self) -> None:
         self._cancelled.set()
-        # Immediately clear the cache when cancelled so subsequent workers don't reuse this pipeline.
+        # Clear cache on cancel so other workers don't reuse this pipeline.
         _clear_pipeline_cache()
         pipeline = self.pipeline
         if pipeline is not None:
@@ -146,6 +151,14 @@ class GenerationWorker(QThread):
         self.pipeline = None
         self.pipeline_gen = None
         self.cancelled.emit(False)
+
+    def _save_and_finish(self, image):
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        out_path = OUTPUT_DIR / f"{timestamp}.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(out_path)
+        log.info("Saved: %s", out_path)
+        self.finished.emit(image, str(out_path))
 
     def run(self):
         try:
@@ -194,19 +207,13 @@ class GenerationWorker(QThread):
                 self._handle_cancel()
                 return
 
-            self.status.emit("Saving…")
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            out_path = OUTPUT_DIR / f"{timestamp}.png"
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            image.save(out_path)
-            log.info("Saved: %s", out_path)
-
-            self.finished.emit(image, str(out_path))
+            self._save_and_finish(image)
         except GenerationCancelled:
             log.info("Generation cancelled by user")
             self._handle_cancel()
         except (OSError, RuntimeError) as exc:
-            if self._cancelled.is_set() or (self.pipeline_gen is not None and get_cache_generation() != self.pipeline_gen):
+            stale = self.pipeline_gen is not None and get_cache_generation() != self.pipeline_gen
+            if self._cancelled.is_set() or stale:
                 log.info("Generation cancelled by user: %s", exc)
                 self._handle_cancel()
             else:

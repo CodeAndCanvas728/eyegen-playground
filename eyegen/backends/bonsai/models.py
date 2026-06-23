@@ -77,6 +77,10 @@ def download_bonsai_model(
             f"Unknown bonsai variant {variant!r}. Supported: {', '.join(SUPPORTED_VARIANTS)}"
         )
     rc = _run_bonsai_script(
-        "download_model.sh", "--model", variant, progress_callback=progress_callback, timeout=timeout
+        "download_model.sh",
+        "--model",
+        variant,
+        progress_callback=progress_callback,
+        timeout=timeout,
     )
     return rc == 0

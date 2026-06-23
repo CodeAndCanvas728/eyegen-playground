@@ -88,7 +88,9 @@ class TestConvertToCoreml:
     def test_convert_to_coreml_timeout(self, mock_exec, mock_sidecar, mock_has_coreml, tmp_path):
         mock_has_coreml.return_value = True
         mock_sidecar.return_value = Path("/fake/python")
-        mock_exec.side_effect = RuntimeError("coreml-convert subprocess timed out after 1800 seconds")
+        mock_exec.side_effect = RuntimeError(
+            "coreml-convert subprocess timed out after 1800 seconds"
+        )
 
         with pytest.raises(subprocess.TimeoutExpired):
             coreml.convert_to_coreml("foo/bar", tmp_path, compute_unit="CPU_AND_NE")
@@ -202,7 +204,9 @@ class TestCoreMLSubprocessIntegration:
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     def test_coreml_subprocess_integration(self, mock_validate, tmp_path):
         import sys
+
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_validate.return_value = mock_status
@@ -213,8 +217,7 @@ class TestCoreMLSubprocessIntegration:
         wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
 
         returncode, stdout, stderr = wrapper._execute_subprocess(
-            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"],
-            timeout=2.0
+            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
         )
         assert returncode == 0
         assert any("ok" in line for line in stdout)
@@ -222,7 +225,9 @@ class TestCoreMLSubprocessIntegration:
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     def test_coreml_subprocess_timeout(self, mock_validate, tmp_path):
         import sys
+
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_validate.return_value = mock_status
@@ -234,8 +239,12 @@ class TestCoreMLSubprocessIntegration:
 
         with pytest.raises(RuntimeError, match="timed out"):
             wrapper._execute_subprocess(
-                [sys.executable, "-c", "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)"],
-                timeout=0.5
+                [
+                    sys.executable,
+                    "-c",
+                    "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
+                ],
+                timeout=0.5,
             )
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
@@ -243,7 +252,9 @@ class TestCoreMLSubprocessIntegration:
         import sys
         import threading
         import time
+
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_validate.return_value = mock_status
@@ -262,7 +273,11 @@ class TestCoreMLSubprocessIntegration:
 
         with pytest.raises(RuntimeError, match="cancelled"):
             wrapper._execute_subprocess(
-                [sys.executable, "-c", "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)"],
-                timeout=3.0
+                [
+                    sys.executable,
+                    "-c",
+                    "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
+                ],
+                timeout=3.0,
             )
         t.join()

@@ -16,4 +16,3 @@ def _clear_pipeline_cache():
 def get_cache_generation() -> int:
     with _pipeline_cache_lock:
         return _pipeline_cache.get("generation", 0)
-
