@@ -3,10 +3,12 @@
 Local image generation on Apple Silicon — runs entirely offline, no API key needed.
 Comes with a native macOS GUI and a full-featured CLI.
 
-Three generation backends:
+Five generation backends:
 - **MLX (diffusionkit)** — Apple Silicon native, SD3.5 quantized
 - **MFLUX** — MLX-native FLUX, FLUX.2, Z-Image, FIBO, Qwen, SeedVR2 (20+ models)
 - **OllamaDiffuser (GGUF)** — 40+ quantized models (FLUX, SDXL, SD1.5, SD3.5, PixArt-Sigma, etc.)
+- **Bonsai (PrismML)** — 1.58-bit ternary + 1-bit binary FLUX.2 Klein 4B for Apple Silicon (third-party, opt-in)
+- **CoreML (Apple Neural Engine)** — SD 1.x/2.x via Apple's `python_coreml_stable_diffusion` (opt-in, sidecar venv)
 
 The backend is auto-detected from the model name, or you can choose manually.
 
@@ -109,10 +111,18 @@ source venv/bin/activate
 # Use a GGUF model (auto-detects ollamadiffuser backend)
 ./generate.py generate "a futuristic city" --steps 24
 
+# Use a Bonsai model (auto-detects bonsai backend, requires setup-bonsai)
+./generate.py generate "a tiny bonsai tree" --steps 4
+
+# Use a CoreML model (auto-detects coreml, requires setup-coreml)
+./generate.py generate "a photo of a cat" --steps 20
+
 # Force a specific backend
 ./generate.py generate "a cat" --backend mflux
 ./generate.py generate "a cat" --backend ollamadiffuser
 ./generate.py generate "a cat" --backend mlx
+./generate.py generate "a cat" --backend bonsai
+./generate.py generate "a cat" --backend coreml
 
 # MFLUX with custom quantization
 ./generate.py generate "a cat" --backend mflux --quantize 8
@@ -122,15 +132,15 @@ source venv/bin/activate
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--steps` | | Inference steps (default: 30) |
-| `--guidance` | | Guidance scale 1.0–15.0 (default: 7.5) |
-| `--width` | | Output width in pixels, multiple of 8 (default: 1024) |
-| `--height` | | Output height in pixels, multiple of 8 (default: 1024) |
+| `--steps` | | Inference steps (default: 30, 4 for Bonsai) |
+| `--guidance` | | Guidance scale 1.0–15.0 (default: 7.5, 1.0 for Bonsai) |
+| `--width` | | Output width in pixels, multiple of 8 (MLX/CoreML/GGUF) or 32 (Bonsai) |
+| `--height` | | Output height in pixels, multiple of 8 (MLX/CoreML/GGUF) or 32 (Bonsai) |
 | `--seed` | | Random seed for reproducibility |
 | `--output` | `-o` | Output file path (default: `outputs/YYYYMMDD_HHMMSS.png`) |
-| `--image` | `-i` | Input image path for img2img mode |
+| `--image` | `-i` | Input image path for img2img mode (not supported by Bonsai or CoreML) |
 | `--denoise` | `-d` | Denoise strength for img2img, 0.05–1.0 (default: 0.75) |
-| `--backend` | `-b` | `auto` (default), `mlx`, `mflux`, or `ollamadiffuser` |
+| `--backend` | `-b` | `auto` (default), `mlx`, `mflux`, `ollamadiffuser`, `bonsai`, or `coreml` |
 | `--quantize` | `-q` | MFLUX quantization: `4` (default), `8`, or omit for full precision |
 
 > `--width`/`--height` are ignored when `--image` is provided.
@@ -294,20 +304,144 @@ Run `./generate.py list-models` for the full list.
 
 ---
 
+## Bonsai Models (PrismML ternary 1.58-bit)
+
+Bonsai is a third-party backend by [Prism ML](https://huggingface.co/prism-ml) that runs
+[FLUX.2 Klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) at extremely
+small footprint via 1.58-bit ternary weights with custom MLX kernels. The 4B model
+fits in 1.21 GB instead of 7.75 GB (FP16), making it runnable on M1/M2/M3 with
+low memory pressure.
+
+**Bonsai is opt-in** because it uses a patched mflux and MLX from
+`PrismML-Eng/mflux-prism` and `PrismML-Eng/mlx` that conflict with the
+upstream `mflux` and `mlx` EyeGen uses for the MFLUX and MLX backends.
+EyeGen shells out to the bonsai-demo's own Python 3.11 venv to keep that
+isolation clean.
+
+### One-time setup
+
+```bash
+./generate.py setup-bonsai    # clones Bonsai-Image-Demo to ~/models/eyegen/bonsai-demo/
+                              # and runs its setup.sh (~3-5 min, installs Py 3.11 venv)
+./generate.py pull-bonsai     # downloads the ternary-mlx model (~1.2 GB)
+```
+
+You can also use the GUI: select **Bonsai** in the Backend dropdown → click
+**Setup Bonsai…** → click **Download Model…**.
+
+### Using Bonsai
+
+```bash
+./generate.py generate "a tiny bonsai tree in a quiet ceramic studio" \
+    --model bonsai-ternary-mlx --steps 4
+```
+
+Or type `bonsai-ternary-mlx` (or `bonsai-image-4B-ternary-mlx`, or
+`prism-ml/bonsai-image-ternary-4B-mlx-2bit`) in the **Model** field of the
+GUI and select **Bonsai** in the Backend dropdown. Backend auto-detects
+from the model name.
+
+### Bonsai constraints
+
+- **Fixed sampler**: 4 steps, `guidance=1.0`, `shift=3.0`. No CFG, no
+  negative prompt, no img2img. The GUI grays out img2img / negative prompt
+  / denoise when Bonsai is the resolved backend.
+- **Dimensions**: must be multiples of 32 (e.g. 512×512, 1024×1024,
+  1248×832, 832×1248).
+- **Cold-start**: each call pays ~5s of imports + weight load on M-series.
+  Subsequent calls at the same shape benefit from the MLX metallib cache.
+- **License**: Apache 2.0. The 4B backbone is FLUX.2 Klein 4B — check
+  the model card before commercial use.
+
+---
+
+## CoreML Models (Apple Neural Engine)
+
+The CoreML backend runs Stable Diffusion 1.x / 2.x models via Apple's
+[`python_coreml_stable_diffusion`](https://github.com/apple/ml-stable-diffusion)
+on the Apple Neural Engine (ANE) — fast and power-efficient on M-series chips.
+
+**CoreML is opt-in** because Apple's package pins an older dependency set
+(`diffusers==0.30.2`, `transformers==4.44.2`, `numpy<1.24`,
+`diffusionkit==0.4.0`) that's incompatible with EyeGen's main Python 3.14
+venv. EyeGen installs Apple's package in a sidecar Python 3.11 venv at
+`~/models/eyegen/.coreml-venv/` and shells out to it.
+
+### One-time setup
+
+```bash
+brew install python@3.11      # if not already installed
+./generate.py setup-coreml    # creates the sidecar venv + installs Apple's package (~3-5 min)
+```
+
+You can also use the GUI: select **CoreML** in the Backend dropdown → click
+**Setup CoreML…**.
+
+### Pull a pre-converted model (fast)
+
+Apple has pre-converted Stable Diffusion models on Hugging Face. Pulling
+these is the fastest path:
+
+```bash
+./generate.py pull-coreml                          # default: sd-2-1-base-palettized
+./generate.py pull-coreml sd-1-5-palettized
+./generate.py pull-coreml apple/coreml-stable-diffusion-v1-4
+```
+
+Or in the GUI: select **CoreML** → **Download Model…** → pick from a list.
+
+### Convert a PyTorch model (15-20 min on M1 Pro)
+
+```bash
+./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base
+./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base --quantize-nbits 6
+```
+
+Run `./generate.py list-coreml-models` to see installed models.
+
+### CoreML constraints
+
+- **SD 1.x/2.x only**. SD3 and FLUX have CoreML conversions in Apple's
+  package but require more memory; not first-class supported here.
+- **Image dimensions**: should be 512×512 and multiples of 8. Larger
+  sizes are technically supported but require custom conversion.
+- **No img2img** in this wrapper (would need VAE encoder conversion —
+  out of scope for first cut). The GUI switches back to txt2img if you
+  select CoreML while on the img2img tab.
+- **First call** at a new shape pays the CoreML compile cost (~5-30s).
+  Subsequent calls are fast.
+
+---
+
 ## File Structure
 
 ```
 mlx-sd35-workspace/
 ├── gui.py                # PySide6 GUI (primary interface)
 ├── generate.py           # Typer CLI
-├── core.py               # Shared generation logic
+├── core.py               # Shared generation logic (5-backend dispatcher)
+├── core_bonsai.py        # Bonsai (PrismML) backend wrapper
+├── core_coreml.py        # CoreML (Apple Neural Engine) backend wrapper
 ├── create_app.sh         # Builds ~/Applications/EyeGen.app
+├── scripts/
+│   ├── setup-bonsai.sh   # One-time installer for Bonsai
+│   └── setup-coreml.sh   # One-time installer for CoreML sidecar venv
 ├── requirements.txt      # Python dependencies
 ├── config/
 │   ├── config.json       # Generation defaults
 │   └── gui_state.json    # GUI state (auto-saved on close)
 ├── outputs/              # Generated images (auto-created)
 └── venv/                 # Virtual environment (after setup)
+
+~/models/                 # Unified model artifact tree
+├── .hf-cache/hub/        # HuggingFace download cache (HF_HUB_CACHE)
+└── eyegen/               # All EyeGen-specific artifacts
+    ├── saved-mflux/      # Output of ./generate.py save-model
+    ├── bonsai-demo/      # Bonsai-Image-Demo vendor (created by setup-bonsai)
+    │   ├── .venv/        # Py 3.11 venv with patched mflux-prism + mlx
+    │   └── models/       # Downloaded bonsai models
+    ├── coreml/           # Downloaded/converted CoreML model bundles
+    └── .coreml-venv/     # Py 3.11 sidecar venv with python_coreml_stable_diffusion
 ```
 
 ---
@@ -367,10 +501,16 @@ done
 
 **OllamaDiffuser backend:** GGUF models are pulled from the [OllamaDiffuser registry](https://github.com/ollamadiffuser/ollamadiffuser). Each model has its own license — check the model card before commercial use.
 
+**Bonsai (PrismML) backend:** Models from [prism-ml/bonsai-image-*](https://huggingface.co/prism-ml) — Apache 2.0. The base architecture is FLUX.2 Klein 4B (Black Forest Labs license). Review the model card on Hugging Face before commercial use.
+
+**CoreML (Apple Neural Engine) backend:** Uses Apple's [python_coreml_stable_diffusion](https://github.com/apple/ml-stable-diffusion) (Apple Inc. license). Underlying Stable Diffusion models have their own licenses — see the model card for each (CompVis SD 1.4/1.5: CreativeML OpenRAIL-M; Stability AI SD 2.x: their own terms).
+
 Free for personal and research use; review license terms before any commercial application.
 
 ---
 
 MLX docs: https://ml-explore.github.io/mlx/build/latest/
 MFLUX docs: https://github.com/filipstrand/mflux
+Bonsai demo: https://github.com/PrismML-Eng/Bonsai-Image-Demo
+CoreML Stable Diffusion: https://github.com/apple/ml-stable-diffusion
 OllamaDiffuser docs: https://github.com/ollamadiffuser/ollamadiffuser
