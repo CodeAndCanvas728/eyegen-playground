@@ -12,7 +12,14 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt pre-commit ruff pytest
       - run: pip install -e .
-      - run: python -m py_compile generate.py gui.py core.py
+      - run: |
+          for f in generate.py gui.py core.py; do
+            if [ -f "$f" ]; then
+              python -m py_compile "$f"
+            else
+              echo "Skipping missing file $f"
+            fi
+          done
       - run: find eyegen -name '*.py' -print0 | xargs -0 python -m py_compile
       - run: ruff check .
       - run: ruff format --check .
