@@ -12,7 +12,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt pre-commit ruff pytest
       - run: python -m py_compile generate.py gui.py core.py
-      - run: python -m py_compile eyegen/**/*.py
+      - run: find eyegen -name '*.py' -print0 | xargs -0 python -m py_compile
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest

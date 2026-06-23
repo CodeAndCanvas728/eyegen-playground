@@ -4,7 +4,6 @@ import logging
 
 from PySide6.QtWidgets import QMessageBox
 
-from eyegen.config import Backend
 from eyegen.gui.cache import _clear_pipeline_cache
 from eyegen.gui.utils import pil_to_pixmap
 
@@ -106,16 +105,12 @@ class MainWindowLifecycleMixin:
         self.status_label.setText("Cancelling… (cleaning up safely)")
         self.status_label.setStyleSheet("color: orange;")
         self.generate_btn.setEnabled(False)
-
-        if self.worker.backend in (Backend.BONSAI, Backend.COREML):
-            self.worker.cancel()
-        if self.worker.backend == Backend.MLX:
-            pass
-        else:
-            _clear_pipeline_cache()
-            self._on_cancelled(force_terminated=False)
+        # The worker resets the UI by emitting `cancelled` once it actually
+        # stops; do not reset here or the user could launch a second run while
+        # the first is still terminating.
 
     def _on_cancelled(self, force_terminated=False):
+        _clear_pipeline_cache()
         self._elapsed_timer.stop()
         self.progress_bar.hide()
         self.progress_bar.reset()

@@ -20,7 +20,7 @@ from eyegen import (
     save_mflux_model,
 )
 from eyegen.gui.cache import _pipeline_cache, _pipeline_cache_lock
-from eyegen.gui.monkeypatch import _patch_sample_euler
+from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 
 log = logging.getLogger("eyegen")
 
@@ -181,7 +181,17 @@ class GenerationWorker(QThread):
             log.info("Saved: %s", out_path)
 
             self.finished.emit(image, str(out_path))
+        except GenerationCancelled:
+            log.info("Generation cancelled by user")
+            self.cancelled.emit()
         except Exception:
+            # A worker interrupted mid-flight (e.g. Bonsai/CoreML subprocess
+            # killed by cancel()) surfaces as a generic error; treat any
+            # failure after cancellation was requested as a cancellation.
+            if self._cancelled.is_set():
+                log.info("Generation cancelled by user")
+                self.cancelled.emit()
+                return
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)

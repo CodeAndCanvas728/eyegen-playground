@@ -55,7 +55,8 @@ def _generate_image_ollama(
     if image_path:
         from PIL import Image as PILImage
 
-        kwargs["image"] = PILImage.open(image_path).convert("RGB")
+        with PILImage.open(image_path) as img:
+            kwargs["image"] = img.convert("RGB")
         kwargs["strength"] = denoise
 
     if seed is not None:

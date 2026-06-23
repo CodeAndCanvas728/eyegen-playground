@@ -25,8 +25,13 @@ class MainWindowHandlersMixin:
             self.worker.wait(2000)
         from eyegen.gui.state import save_gui_state
 
-        save_gui_state(self._collect_state())
-        log.info("GUI state saved")
+        try:
+            save_gui_state(self._collect_state())
+            log.info("GUI state saved")
+        except (ValueError, OSError) as exc:
+            # An unrecognized model name makes detect_backend raise; never let
+            # state persistence abort window shutdown.
+            log.warning("Could not save GUI state: %s", exc)
         super().closeEvent(event)
 
     def _on_pull_model(self):

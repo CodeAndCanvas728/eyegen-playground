@@ -77,7 +77,11 @@ class MainWindowStateMixin:
         if "mode_tab" in s:
             self.mode_tabs.setCurrentIndex(s["mode_tab"])
         if "backend" in s:
-            idx = self.backend_combo.findData(Backend(s["backend"]))
+            try:
+                backend = Backend(s["backend"])
+            except ValueError:
+                backend = None
+            idx = self.backend_combo.findData(backend) if backend else -1
             if idx >= 0:
                 self.backend_combo.setCurrentIndex(idx)
         if "mflux_quantize" in s:
