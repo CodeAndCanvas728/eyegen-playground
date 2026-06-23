@@ -175,6 +175,7 @@ class TestCoreMLWrapper:
         model_dir.mkdir()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
 
         # 1. Reject non-512 dimensions (e.g. 256x256)
@@ -201,7 +202,7 @@ class TestCoreMLWrapper:
         mock_validate.return_value = mock_status
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
         # Inject dangerous characters in model name
         with pytest.raises(ValueError, match="Invalid characters in CoreML model name"):
             CoreMLWrapper({"model": "sd-2-1-base; rm -rf /"})
-

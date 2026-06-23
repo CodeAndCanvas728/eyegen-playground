@@ -45,17 +45,18 @@ class CoreMLWrapper(BaseSubprocessRunner):
                 )
             return p
         model_name = config.get("model", "")
-        if model_name:
-            if not re.match(r"^[a-zA-Z0-9_\-\.]+$", model_name):
-                raise ValueError(f"Invalid characters in CoreML model name: {model_name}")
-            candidate = get_coreml_models_dir() / model_name
-            if candidate.is_dir():
-                return candidate
+        if not model_name:
+            raise RuntimeError(
+                "No model selected. Set a model name or provide a coreml_model_path."
+            )
+        if not re.match(r"^[a-zA-Z0-9_\-\.]+$", model_name):
+            raise ValueError(f"Invalid characters in CoreML model name: {model_name}")
+        candidate = get_coreml_models_dir() / model_name
+        if candidate.is_dir():
+            return candidate
         raise RuntimeError(
-            "No coreml_model_path set and no CoreML model found at "
-            f"{get_coreml_models_dir() / '<model-name>'}. "
-            "Set coreml_model_path in config or run "
-            "./generate.py pull-coreml <alias>."
+            f"CoreML model '{model_name}' not found at {candidate}. "
+            "Run ./generate.py pull-coreml <alias> to download it."
         )
 
     def _resolve_compute_unit(self, config: dict) -> str:
@@ -146,17 +147,11 @@ class CoreMLWrapper(BaseSubprocessRunner):
     def _check_request(width: int, height: int, image_path: Optional[str]) -> None:
         """Reject unsupported options and invalid dimensions."""
         if image_path:
-            raise ValueError(
-                "CoreML backend's SD 1.x/2.x pipeline does not support img2img."
-            )
+            raise ValueError("CoreML backend's SD 1.x/2.x pipeline does not support img2img.")
         if width != 512 or height != 512:
             raise ValueError(
                 "CoreML SD 1.x/2.x models only support a fixed 512x512 resolution "
                 f"(got {width}x{height})."
-            )
-        if width % 8 or height % 8:
-            raise ValueError(
-                f"CoreML requires width and height to be multiples of 8 (got {width}x{height})."
             )
 
 

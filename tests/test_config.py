@@ -103,4 +103,3 @@ def test_load_config_corrupted_backup(tmp_path, monkeypatch):
 
     # Should have rewritten a valid config
     assert fake_config.exists()
-

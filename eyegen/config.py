@@ -10,6 +10,16 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+_config_warnings: list[str] = []
+
+
+def pop_config_warnings() -> list[str]:
+    """Return accumulated config-load warnings and clear them."""
+    warnings = list(_config_warnings)
+    _config_warnings.clear()
+    return warnings
+
+
 _BUNDLED = getattr(sys, "frozen", None) == "macosx_app"
 
 MODELS_DIR = Path.home() / "models" / "eyegen"
@@ -193,6 +203,8 @@ DEFAULT_CONFIG = EyeGenConfig().to_dict()
 
 def _backup_corrupted_config(exc: Exception) -> None:
     backup_file = CONFIG_FILE.with_suffix(".json.bak")
+    msg = f"Corrupted config.json backed up to {backup_file} and reset to defaults."
+    _config_warnings.append(msg)
     log.error(
         "Invalid JSON in config.json: %s. Backing up to %s and resetting to defaults.",
         exc,
@@ -208,6 +220,8 @@ def _backup_corrupted_config(exc: Exception) -> None:
 
 
 def _handle_parse_error(exc: Exception) -> None:
+    msg = "Config file had invalid values and was reset to defaults."
+    _config_warnings.append(msg)
     log.error(
         "Failed to parse config.json, resetting to defaults: %s",
         exc,

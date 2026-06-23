@@ -25,12 +25,29 @@ class BaseSubprocessRunner:
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Validate cmd arguments to prevent option/argument injection."""
         ALLOWED_FLAGS = {
-            "-c", "-m", "--model", "--prompt", "--size", "--steps", "--output", "--seed",
-            "--compute-unit", "--num-inference-steps", "--guidance-scale",
-            "--image-height", "--image-width", "-i", "-o", "--negative-prompt",
-            "--attention-implementation", "--quantize-nbits", "--convert-unet",
-            "--convert-text-encoder", "--convert-vae-decoder", "--convert-safety-checker",
-            "--model-version"
+            "-c",
+            "-m",
+            "--model",
+            "--prompt",
+            "--size",
+            "--steps",
+            "--output",
+            "--seed",
+            "--compute-unit",
+            "--num-inference-steps",
+            "--guidance-scale",
+            "--image-height",
+            "--image-width",
+            "-i",
+            "-o",
+            "--negative-prompt",
+            "--attention-implementation",
+            "--quantize-nbits",
+            "--convert-unet",
+            "--convert-text-encoder",
+            "--convert-vae-decoder",
+            "--convert-safety-checker",
+            "--model-version",
         }
         for arg in cmd[1:]:
             if arg.startswith("-") and arg not in ALLOWED_FLAGS:
@@ -182,4 +199,3 @@ class BaseSubprocessRunner:
     def cancel(self) -> None:
         self._cancelled = True
         self._terminate_proc(grace=2.0)
-

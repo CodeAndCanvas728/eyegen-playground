@@ -4,7 +4,6 @@ import logging
 
 from PySide6.QtWidgets import QMessageBox
 
-from eyegen.gui.cache import _clear_pipeline_cache
 from eyegen.gui.utils import pil_to_pixmap
 
 log = logging.getLogger("eyegen")
@@ -110,7 +109,6 @@ class MainWindowLifecycleMixin:
         # the first is still terminating.
 
     def _on_cancelled(self, force_terminated: bool = False):
-        _clear_pipeline_cache()
         self._elapsed_timer.stop()
         self.progress_bar.hide()
         self.progress_bar.reset()

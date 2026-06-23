@@ -42,7 +42,7 @@ class BonsaiWrapper(BaseSubprocessRunner):
         elif "bonsai-image-4B-" in model_name:
             variant = model_name.split("bonsai-image-4B-")[-1]
         elif model_name.startswith("bonsai-"):
-            variant = model_name[len("bonsai-"):]
+            variant = model_name[len("bonsai-") :]
         else:
             variant = model_name
 
@@ -109,7 +109,10 @@ class BonsaiWrapper(BaseSubprocessRunner):
         if adjusted_width != width or adjusted_height != height:
             log.info(
                 "Auto-adjusting width/height for Bonsai from %dx%d to %dx%d (multiples of 32)",
-                width, height, adjusted_width, adjusted_height
+                width,
+                height,
+                adjusted_width,
+                adjusted_height,
             )
             width = adjusted_width
             height = adjusted_height

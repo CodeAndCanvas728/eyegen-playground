@@ -119,9 +119,7 @@ def test_make_patched():
         return "success"
 
     patched = _make_patched(dummy_func)
-    res = patched(
-        1, 2, a=3, memory_efficient_threshold=100
-    )
+    res = patched(1, 2, a=3, memory_efficient_threshold=100)
     assert res == "success"
     assert "a" in called_kwargs
     assert called_kwargs["a"] == 3
@@ -138,7 +136,7 @@ def test_patch_mlx_attention():
 
     with (
         patch("sys.modules", {"mlx.core": mock_mlx_core, "mlx.core.fast": mock_mlx_core_fast}),
-        patch("eyegen._mlx._patched_already", False)
+        patch("eyegen._mlx._patched_already", False),
     ):
         _patch_mlx_attention()
         assert (

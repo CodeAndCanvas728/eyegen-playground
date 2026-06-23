@@ -10,6 +10,7 @@ from eyegen.backends.runner import BaseSubprocessRunner
 
 class DummyRunner(BaseSubprocessRunner):
     """Subclass of BaseSubprocessRunner for testing."""
+
     pass
 
 
@@ -66,6 +67,7 @@ def test_runner_cancel():
 
 def test_runner_integration_real_process():
     import sys
+
     runner = DummyRunner({"subprocess_timeout": 5})
     cmd = [
         sys.executable,
@@ -85,6 +87,7 @@ def test_runner_integration_real_process():
 
 def test_runner_integration_timeout():
     import sys
+
     runner = DummyRunner({"subprocess_timeout": 0.5})
     cmd = [
         sys.executable,
@@ -99,6 +102,7 @@ def test_runner_integration_cancel():
     import sys
     import threading
     import time
+
     runner = DummyRunner({"subprocess_timeout": 5})
     cmd = [
         sys.executable,
@@ -121,6 +125,7 @@ def test_runner_integration_cancel():
 
 def test_runner_integration_injection_rejection():
     import sys
+
     runner = DummyRunner({"subprocess_timeout": 5})
     cmd = [
         sys.executable,
@@ -128,4 +133,3 @@ def test_runner_integration_injection_rejection():
     ]
     with pytest.raises(ValueError, match="Unsafe subprocess flag detected"):
         runner._execute_subprocess(cmd)
-

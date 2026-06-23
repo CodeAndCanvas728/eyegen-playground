@@ -12,7 +12,7 @@ from eyegen import (
     EyeGenConfig,
     load_config,
 )
-from eyegen.config import Backend
+from eyegen.config import Backend, pop_config_warnings
 from eyegen.gui.main_window_backend_handlers import MainWindowBackendHandlersMixin
 from eyegen.gui.main_window_controls import MainWindowControlsMixin
 from eyegen.gui.main_window_handlers import MainWindowHandlersMixin
@@ -64,6 +64,10 @@ class MainWindow(
         self.pull_worker: Optional[object] = None
         self._save_worker: Optional[object] = None
         self.config = load_config()
+        for w in pop_config_warnings():
+            log.warning("Config warning: %s", w)
+            self.status_label.setText(f"⚠️ {w}")
+            self.status_label.setStyleSheet("color: orange;")
         self._gui_state = load_gui_state()
         self._log_file = CONFIG_DIR / "eyegen.log"
         self._pre_mflux_steps: Optional[int] = None

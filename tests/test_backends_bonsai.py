@@ -218,6 +218,6 @@ class TestBonsaiWrapper:
         mock_validate.return_value = mock_status
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
         with pytest.raises(ValueError, match="Unsupported Bonsai variant"):
             BonsaiWrapper({"model": "bonsai-invalid-variant-name"})
-

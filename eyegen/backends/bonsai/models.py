@@ -42,6 +42,7 @@ def _run_bonsai_script(
     env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
 
     from eyegen.backends.runner import BaseSubprocessRunner
+
     runner = BaseSubprocessRunner({})
     try:
         returncode, _, _ = runner._execute_subprocess(
