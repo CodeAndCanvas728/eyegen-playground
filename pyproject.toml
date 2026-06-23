@@ -1,0 +1,50 @@
+[project]
+name = "eyegen"
+dynamic = ["version"]
+requires-python = ">=3.12"
+
+[project.scripts]
+generate = "eyegen.cli:app"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["eyegen*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E", "W",
+  "F",
+  "I",
+  "B",
+  "T20",
+  "S",
+  "PLR0915",
+  "C90",
+  "DTZ",
+  "ASYNC",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-statements = 40
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"generate.py" = ["B008", "PLR0915", "C901", "E501", "B904"]
+"gui.py" = ["PLR0915", "C901", "E501"]
+"core.py" = ["PLR0915", "C901", "E501"]
+"eyegen/cli/*.py" = ["B008", "B904"]
+"eyegen/gui/*.py" = ["PLR0915", "C901", "E501"]

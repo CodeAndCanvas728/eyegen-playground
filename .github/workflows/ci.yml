@@ -10,7 +10,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -r requirements.txt pre-commit ruff
-      - run: python -m py_compile core.py generate.py gui.py gui_hf_login.py
+      - run: pip install -r requirements.txt pre-commit ruff pytest
+      - run: python -m py_compile generate.py gui.py core.py
+      - run: python -m py_compile eyegen/**/*.py
       - run: ruff check .
-      - run: pre-commit run --all-files
+      - run: ruff format --check .
+      - run: pytest

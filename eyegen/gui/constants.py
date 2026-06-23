@@ -1,0 +1,3 @@
+"""GUI constants."""
+
+DIMENSION_PRESETS = [512, 640, 768, 896, 1024]

@@ -1,5 +1,6 @@
+"""GUI dialogs."""
+
 import logging
-import time
 from typing import Optional
 
 from PySide6.QtWidgets import (
@@ -12,25 +13,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core import hf_login, hf_logout, hf_status
+from eyegen import hf_login, hf_logout
+from eyegen.gui.utils import _cached_hf_status
 
 log = logging.getLogger("eyegen")
-
-# Cache for hf_status() to avoid repeated network calls
-_hf_status_cache: dict = {"result": None, "timestamp": 0.0}
-_HF_CACHE_TTL = 30.0  # seconds
-
-
-def _cached_hf_status() -> Optional[dict]:
-    """Return cached hf_status, refreshing from network every _HF_CACHE_TTL seconds."""
-    now = time.time()
-    cache_age = now - _hf_status_cache["timestamp"]
-    if cache_age < _HF_CACHE_TTL and _hf_status_cache["result"] is not None:
-        return _hf_status_cache["result"]
-    result = hf_status()
-    _hf_status_cache["result"] = result
-    _hf_status_cache["timestamp"] = now
-    return result
 
 
 class HFLoginDialog(QDialog):
@@ -45,12 +31,10 @@ class HFLoginDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
 
-        # Status
         self.status_label = QLabel("Checking login status…")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
 
-        # Token input
         layout.addWidget(QLabel("Access Token"))
         self.token_input = QLineEdit()
         self.token_input.setEchoMode(QLineEdit.Password)
@@ -66,7 +50,6 @@ class HFLoginDialog(QDialog):
         hint.setProperty("class", "hint")
         layout.addWidget(hint)
 
-        # Buttons
         btn_row = QHBoxLayout()
         self.login_btn = QPushButton("Login")
         self.login_btn.clicked.connect(self._on_login)
@@ -97,7 +80,7 @@ class HFLoginDialog(QDialog):
             self._has_unsaved_token = False
             return True
         reply = QMessageBox.question(
-            self,  # Center over the dialog to prevent modal-on-modal deadlocks (S1)
+            self,
             "Discard token?",
             "A token was entered but not submitted. Discard it?",
             QMessageBox.Yes | QMessageBox.No,
