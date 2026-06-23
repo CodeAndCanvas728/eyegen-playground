@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from eyegen.backends import _is_bonsai_model, _is_coreml_model, detect_backend
-from eyegen.config import Backend
+from eyegen.config import Backend, EyeGenConfig
 
 
 def test_detect_backend_gguf():
@@ -53,4 +53,4 @@ def test_is_bonsai_model():
 
 
 def test_is_coreml_model_with_path():
-    assert _is_coreml_model("anything", config={"coreml_model_path": "/some/path"})
+    assert _is_coreml_model("anything", config=EyeGenConfig(coreml_model_path="/some/path"))

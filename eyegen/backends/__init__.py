@@ -10,6 +10,7 @@ from eyegen.config import (
     DEFAULT_CONFIG,
     HF_CACHE_DIR,
     Backend,
+    EyeGenConfig,
 )
 
 log = logging.getLogger(__name__)
@@ -26,9 +27,9 @@ def _is_bonsai_model(model: str) -> bool:
     )
 
 
-def _is_coreml_model(model: str, config: Optional[dict] = None) -> bool:
+def _is_coreml_model(model: str, config: Optional[EyeGenConfig] = None) -> bool:
     """Return True if *model* is a CoreML bundle or a known pre-converted HF id."""
-    if config and config.get("coreml_model_path"):
+    if config and config.coreml_model_path:
         return True
     m = model.lower()
     if m in {
@@ -76,7 +77,7 @@ def _format_unsupported_error(model: str, attempted_backend: str) -> str:
 def detect_backend(
     model: str,
     override: Backend = Backend.AUTO,
-    config: Optional[dict] = None,
+    config: Optional[EyeGenConfig] = None,
 ) -> Backend:
     """Resolve which backend to use.
 
@@ -106,13 +107,12 @@ def detect_backend(
     raise ValueError(_format_unsupported_error(model, "auto-detected"))
 
 
-def _apply_hf_cache(config: dict):
+def _apply_hf_cache(config: EyeGenConfig):
     """Set HF_HUB_CACHE env var from config if a custom directory is configured."""
     from eyegen.validation import validate_safe_path
 
-    cache_dir = config.get("hf_cache_dir") if config else None
-    if cache_dir:
-        p = validate_safe_path(cache_dir, "hf_cache_dir")
+    if config.hf_cache_dir:
+        p = validate_safe_path(config.hf_cache_dir, "hf_cache_dir")
     elif os.environ.get("HF_HUB_CACHE"):
         p = validate_safe_path(os.environ["HF_HUB_CACHE"], "HF_HUB_CACHE")
     else:
@@ -122,13 +122,13 @@ def _apply_hf_cache(config: dict):
     log.info("HF_HUB_CACHE set to %s", p)
 
 
-def get_pipeline(config: dict, use_t5: bool = True):
+def get_pipeline(config: EyeGenConfig, use_t5: bool = True):
     """Load and return a diffusionkit DiffusionPipeline (MLX backend)."""
     _apply_hf_cache(config)
     _patch_mlx_attention()
     from diffusionkit.mlx import DiffusionPipeline
 
-    model_version = config.get("model", DEFAULT_CONFIG["model"])
+    model_version = config.model or DEFAULT_CONFIG.model
     mlx_keys = _get_mlx_supported_models()
     if mlx_keys is not None and model_version not in mlx_keys:
         raise ValueError(_format_unsupported_error(model_version, Backend.MLX))
@@ -142,12 +142,12 @@ def get_pipeline(config: dict, use_t5: bool = True):
     )
 
 
-def get_ollama_pipeline(config: dict):
+def get_ollama_pipeline(config: EyeGenConfig):
     """Load an ollamadiffuser model and return the engine."""
     _apply_hf_cache(config)
     from ollamadiffuser.core.models.manager import model_manager
 
-    model_name = config.get("model", "")
+    model_name = config.model or ""
     if not model_manager.is_model_installed(model_name):
         raise RuntimeError(
             f"GGUF model '{model_name}' is not installed. "
@@ -160,20 +160,20 @@ def get_ollama_pipeline(config: dict):
     return engine
 
 
-def get_mflux_pipeline(config: dict, quantize: int | None = 4):
+def get_mflux_pipeline(config: EyeGenConfig, quantize: int | None = 4):
     """Load an MFLUX model and return the model instance."""
     _apply_hf_cache(config)
     from mflux.models.common.config.model_config import ModelConfig
     from mflux.utils.exceptions import ModelConfigError
 
-    model_name = config.get("model", "dev")
+    model_name = config.model or "dev"
     try:
         model_config = ModelConfig.from_name(model_name=model_name)
     except ModelConfigError as exc:
         raise _format_mflux_model_error(model_name, exc) from exc
     cls = _resolve_mflux_class(model_config)
 
-    local_path = config.get("mflux_model_path")
+    local_path = config.mflux_model_path
     if local_path:
         from eyegen.validation import validate_safe_path
 

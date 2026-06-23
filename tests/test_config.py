@@ -72,8 +72,8 @@ def test_load_config_migration(tmp_path, monkeypatch):
         json.dump(data, f)
 
     loaded = load_config()
-    assert loaded["backend"] == "mlx"
-    assert loaded["width"] == 512
+    assert loaded.backend == "mlx"
+    assert loaded.width == 512
 
     # Verify it saved back the migrated config
     assert fake_config.exists()
@@ -94,7 +94,7 @@ def test_load_config_corrupted_backup(tmp_path, monkeypatch):
 
     loaded = load_config()
     # Should fallback to defaults
-    assert loaded["width"] == 1024
+    assert loaded.width == 1024
 
     # Should have backed up the bad config
     backup = tmp_path / "config.json.bak"

@@ -9,6 +9,7 @@ from eyegen import (
     OUTPUT_DIR,
     PROJECT_ROOT,
     Backend,
+    EyeGenConfig,
     detect_backend,
     hf_status,
     list_mflux_models,
@@ -42,23 +43,23 @@ def _package_version(name: str) -> str:
         return "unknown"
 
 
-def _print_backend_status(config: dict):
-    backend_setting = config.get("backend", Backend.AUTO.value)
+def _print_backend_status(config: EyeGenConfig):
+    backend_setting = config.backend or Backend.AUTO.value
     try:
-        resolved = detect_backend(config.get("model", ""), backend_setting, config=config)
+        resolved = detect_backend(config.model or "", backend_setting, config=config)
     except ValueError:
         resolved = backend_setting
 
     typer.echo("\n⚙️  Configuration:")
-    typer.echo(f"  Model: {config.get('model', 'Not set')}")
+    typer.echo(f"  Model: {config.model or 'Not set'}")
     resolved_label = resolved.value if isinstance(resolved, Backend) else resolved
     typer.echo(f"  Backend: {backend_setting} → {resolved_label}")
-    typer.echo(f"  Default steps: {config.get('num_inference_steps', 30)}")
-    typer.echo(f"  Default guidance: {config.get('guidance_scale', 7.5)}")
-    typer.echo(f"  Default size: {config.get('width', 1024)}x{config.get('height', 1024)}")
+    typer.echo(f"  Default steps: {config.num_inference_steps}")
+    typer.echo(f"  Default guidance: {config.guidance_scale}")
+    typer.echo(f"  Default size: {config.width}x{config.height}")
 
 
-def _print_installed_packages(config: dict):
+def _print_installed_packages(config: EyeGenConfig):
     _print_diffusionkit_status()
     _print_ollama_status()
     _print_mflux_status()

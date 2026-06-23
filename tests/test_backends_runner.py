@@ -6,6 +6,7 @@ from unittest import mock
 import pytest
 
 from eyegen.backends.runner import BaseSubprocessRunner
+from eyegen.config import EyeGenConfig
 
 
 class DummyRunner(BaseSubprocessRunner):
@@ -15,7 +16,7 @@ class DummyRunner(BaseSubprocessRunner):
 
 
 def test_runner_execute_success():
-    runner = DummyRunner({"subprocess_timeout": 5})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
 
     mock_proc = mock.Mock()
     mock_proc.returncode = 0
@@ -31,7 +32,7 @@ def test_runner_execute_success():
 
 
 def test_runner_timeout():
-    runner = DummyRunner({"subprocess_timeout": 0.1})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=0.1))
 
     mock_proc = mock.Mock()
     mock_proc.pid = 9999
@@ -45,7 +46,7 @@ def test_runner_timeout():
 
 
 def test_runner_cancel():
-    runner = DummyRunner({"subprocess_timeout": 5})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
 
     mock_proc = mock.Mock()
     mock_proc.pid = 1234
@@ -68,7 +69,7 @@ def test_runner_cancel():
 def test_runner_integration_real_process():
     import sys
 
-    runner = DummyRunner({"subprocess_timeout": 5})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
     cmd = [
         sys.executable,
         "-c",
@@ -88,7 +89,7 @@ def test_runner_integration_real_process():
 def test_runner_integration_timeout():
     import sys
 
-    runner = DummyRunner({"subprocess_timeout": 0.5})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=0.5))
     cmd = [
         sys.executable,
         "-c",
@@ -103,7 +104,7 @@ def test_runner_integration_cancel():
     import threading
     import time
 
-    runner = DummyRunner({"subprocess_timeout": 5})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
     cmd = [
         sys.executable,
         "-c",
@@ -126,7 +127,7 @@ def test_runner_integration_cancel():
 def test_runner_integration_injection_rejection():
     import sys
 
-    runner = DummyRunner({"subprocess_timeout": 5})
+    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
     cmd = [
         sys.executable,
         "--unsafe-flag",

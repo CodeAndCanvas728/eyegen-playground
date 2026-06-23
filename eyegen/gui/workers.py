@@ -11,6 +11,7 @@ from PySide6.QtCore import QThread, Signal
 from eyegen import (
     OUTPUT_DIR,
     Backend,
+    EyeGenConfig,
     generate_image,
     get_mflux_pipeline,
     get_ollama_pipeline,
@@ -30,16 +31,16 @@ from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 log = logging.getLogger("eyegen")
 
 
-def _make_cache_key(backend, config, mflux_quantize, use_t5):
+def _make_cache_key(backend, config: EyeGenConfig, mflux_quantize, use_t5):
     return (
         backend,
-        config.get("model"),
+        config.model,
         mflux_quantize,
         use_t5,
-        config.get("mflux_model_path"),
-        config.get("bonsai_model_path"),
-        config.get("coreml_model_path"),
-        config.get("coreml_compute_unit"),
+        config.mflux_model_path,
+        config.bonsai_model_path,
+        config.coreml_model_path,
+        config.coreml_compute_unit,
     )
 
 
@@ -65,7 +66,7 @@ def _load_pipeline_for_worker(worker):
     worker.status.emit("Loading model…")
     log.info(
         "Loading pipeline (model=%s, backend=%s, t5=%s)",
-        config.get("model", "default"),
+        config.model or "default",
         backend,
         worker.use_t5,
     )
@@ -108,7 +109,7 @@ class GenerationWorker(QThread):
         width,
         height,
         seed,
-        config,
+        config: EyeGenConfig,
         use_t5,
         image_path=None,
         denoise=1.0,

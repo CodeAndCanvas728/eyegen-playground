@@ -10,6 +10,7 @@ from eyegen import (
     DEFAULT_CONFIG,
     OUTPUT_DIR,
     Backend,
+    EyeGenConfig,
     QuantizationError,
     detect_backend,
     generate_image,
@@ -77,7 +78,7 @@ def setup_img2img(
 def print_generation_settings(
     model: str,
     resolved_backend: Backend,
-    config: dict,
+    config: EyeGenConfig,
     prompt: str,
     image_path: Optional[str],
     denoise_value: float,
@@ -98,18 +99,15 @@ def print_generation_settings(
     typer.echo("✨ Generating image...")
     typer.echo(f"   Backend: {backend_label}")
     typer.echo(f"   Model: {model}")
-    local_model = config.get("mflux_model_path")
-    if local_model and resolved_backend == Backend.MFLUX:
-        typer.echo(f"   Local model: {local_model}")
+    if config.mflux_model_path and resolved_backend == Backend.MFLUX:
+        typer.echo(f"   Local model: {config.mflux_model_path}")
     if resolved_backend == Backend.COREML:
-        coreml_path = config.get("coreml_model_path")
-        if coreml_path:
-            typer.echo(f"   CoreML model: {coreml_path}")
-        typer.echo(f"   Compute unit: {config.get('coreml_compute_unit', 'CPU_AND_NE')}")
+        if config.coreml_model_path:
+            typer.echo(f"   CoreML model: {config.coreml_model_path}")
+        typer.echo(f"   Compute unit: {config.coreml_compute_unit or 'CPU_AND_NE'}")
     if resolved_backend == Backend.BONSAI:
-        bonsai_path = config.get("bonsai_model_path")
-        if bonsai_path:
-            typer.echo(f"   Bonsai model: {bonsai_path}")
+        if config.bonsai_model_path:
+            typer.echo(f"   Bonsai model: {config.bonsai_model_path}")
     typer.echo(f"   Prompt: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
     if image_path:
         typer.echo(f"   Mode: img2img | Denoise: {denoise_value:.2f} | Input: {image_path}")
@@ -119,12 +117,12 @@ def print_generation_settings(
         typer.echo(f"   Seed: {seed}")
 
 
-def load_pipeline(resolved_backend: Backend, config: dict, quantize: Optional[int]):
+def load_pipeline(resolved_backend: Backend, config: EyeGenConfig, quantize: Optional[int]):
     typer.echo("📦 Loading model...")
     if resolved_backend == Backend.OLLAMA:
         return get_ollama_pipeline(config)
     if resolved_backend == Backend.MFLUX:
-        q = quantize if quantize is not None else config.get("mflux_quantize", 4)
+        q = quantize if quantize is not None else config.mflux_quantize
         if q is not None:
             typer.echo(f"   Quantize: {q}-bit")
         return get_mflux_pipeline(config, quantize=q)
@@ -164,7 +162,7 @@ def handle_import_error(resolved_backend: Backend):
 
 def handle_quantization_error(
     qe: QuantizationError,
-    config: dict,
+    config: EyeGenConfig,
     prompt: str,
     guidance_scale: float,
     num_steps: int,
@@ -215,13 +213,13 @@ def build_generation_params(
     validate_cli_backend(backend)
     config = load_config()
 
-    model = config.get("model", DEFAULT_CONFIG["model"])
+    model = config.model or DEFAULT_CONFIG.model
     resolved_backend = detect_backend(model, backend, config=config)
 
-    num_steps = steps or config.get("num_inference_steps", 30)
-    guidance_scale = guidance or config.get("guidance_scale", 7.5)
-    h = height or config.get("height", 1024)
-    w = width or config.get("width", 1024)
+    num_steps = steps or config.num_inference_steps
+    guidance_scale = guidance or config.guidance_scale
+    h = height or config.height
+    w = width or config.width
 
     image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, height, width)
 

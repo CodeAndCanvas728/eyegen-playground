@@ -18,7 +18,7 @@ classDiagram
     MainWindowSaveModelMixin <|-- MainWindow
     MainWindowLifecycleMixin <|-- MainWindow
     MainWindowStateMixin <|-- MainWindow
-    
+
     class MainWindow {
         +__init__()
         +_on_generate()
@@ -67,7 +67,7 @@ classDiagram
 
 ## State and Method Delegation Pattern
 
-Because Python class mixins resolve methods using the Method Resolution Order (MRO), they share access to the instance's dictionary (`self.__dict__`). 
+Because Python class mixins resolve methods using the Method Resolution Order (MRO), they share access to the instance's dictionary (`self.__dict__`).
 
 To ensure safety and avoid naming collisions:
 - **UI Element References**: All widgets are prefixed and stored on the instance (e.g. `self.generate_btn`, `self.steps_spin`) during `_build_ui()`.

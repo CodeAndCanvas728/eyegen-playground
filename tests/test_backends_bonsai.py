@@ -7,6 +7,7 @@ import pytest
 
 from eyegen.backends import bonsai
 from eyegen.backends.bonsai import BonsaiInstallStatus
+from eyegen.config import EyeGenConfig
 
 
 class TestBonsaiDir:
@@ -135,7 +136,7 @@ class TestBonsaiWrapper:
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
-        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
         img = wrapper.generate_image(
             prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=0
         )
@@ -161,7 +162,7 @@ class TestBonsaiWrapper:
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
-        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
         with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
             wrapper.generate_image(
                 prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=42
@@ -193,7 +194,7 @@ class TestBonsaiWrapper:
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
-        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
         # 500x500 should auto-adjust to nearest multiple of 32 (512x512)
         wrapper.generate_image(
             prompt="test", cfg_weight=1.0, num_steps=10, width=500, height=500, seed=42
@@ -213,7 +214,7 @@ class TestBonsaiWrapper:
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
         with pytest.raises(ValueError, match="Unsupported Bonsai variant"):
-            BonsaiWrapper({"model": "bonsai-invalid-variant-name"})
+            BonsaiWrapper(EyeGenConfig(model="bonsai-invalid-variant-name"))
 
 
 class TestBonsaiSubprocessIntegration:
@@ -233,7 +234,7 @@ class TestBonsaiSubprocessIntegration:
         scripts_dir.mkdir(parents=True, exist_ok=True)
         (scripts_dir / "generate.sh").touch()
 
-        wrapper = BonsaiWrapper({"subprocess_timeout": 5, "model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
         returncode, stdout, stderr = wrapper._execute_subprocess(
             [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
@@ -257,7 +258,7 @@ class TestBonsaiSubprocessIntegration:
         scripts_dir.mkdir(parents=True, exist_ok=True)
         (scripts_dir / "generate.sh").touch()
 
-        wrapper = BonsaiWrapper({"subprocess_timeout": 5, "model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
         with pytest.raises(RuntimeError, match="timed out"):
             wrapper._execute_subprocess(
@@ -287,7 +288,7 @@ class TestBonsaiSubprocessIntegration:
         scripts_dir.mkdir(parents=True, exist_ok=True)
         (scripts_dir / "generate.sh").touch()
 
-        wrapper = BonsaiWrapper({"subprocess_timeout": 5, "model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
         def cancel_after_delay():
             time.sleep(0.2)
