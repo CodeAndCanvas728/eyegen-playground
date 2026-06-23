@@ -4,8 +4,7 @@ import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
-import core_bonsai
-import core_coreml
+from eyegen.backends import bonsai, coreml
 
 
 class _ScriptWorker(QThread):
@@ -23,7 +22,7 @@ class _ScriptWorker(QThread):
             else:
                 msg = (r.stderr or r.stdout or "Unknown error").strip().splitlines()[-5:]
                 self.finished.emit(False, f"Setup failed (exit {r.returncode}): " + "\n".join(msg))
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             self.finished.emit(False, f"Setup error: {exc}")
 
     def _success_message(self) -> str:
@@ -45,7 +44,7 @@ class BonsaiDownloadWorker(QThread):
 
     def run(self):
         try:
-            ok = core_bonsai.download_bonsai_model(
+            ok = bonsai.download_bonsai_model(
                 self.variant,
                 progress_callback=lambda m: self.status.emit(m),
             )
@@ -53,7 +52,7 @@ class BonsaiDownloadWorker(QThread):
                 self.finished.emit(True, f"Bonsai model '{self.variant}' is ready")
             else:
                 self.finished.emit(False, f"Failed to download bonsai variant '{self.variant}'")
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             self.finished.emit(False, f"Download error: {exc}")
 
 
@@ -72,7 +71,7 @@ class CoreMLDownloadWorker(QThread):
 
     def run(self):
         try:
-            target = core_coreml.pull_preconverted_coreml_model(
+            target = coreml.pull_preconverted_coreml_model(
                 self.alias,
                 progress_callback=lambda m: self.status.emit(m),
             )
@@ -80,5 +79,5 @@ class CoreMLDownloadWorker(QThread):
                 self.finished.emit(True, f"CoreML model downloaded to {target}")
             else:
                 self.finished.emit(False, f"Failed to download CoreML model '{self.alias}'")
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             self.finished.emit(False, f"Download error: {exc}")

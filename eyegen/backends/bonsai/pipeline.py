@@ -10,13 +10,13 @@ from typing import Optional
 
 from PIL import Image
 
-from core_bonsai_constants import (
+from .constants import (
     BONSAI_DEFAULT_GUIDANCE,
     DEFAULT_VARIANT,
     SUPPORTED_VARIANTS,
 )
-from core_bonsai_install import get_bonsai_dir, validate_bonsai_install
-from core_bonsai_models import _spawn_bonsai_subprocess
+from .install import get_bonsai_dir, validate_bonsai_install
+from .models import _spawn_bonsai_subprocess
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class BonsaiWrapper:
         if num_steps < 1:
             raise ValueError(f"num_steps must be >= 1, got {num_steps}")
 
-        from core import OUTPUT_DIR
+        from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed or uuid.uuid4().hex[:8]}.png"
@@ -142,7 +142,7 @@ class BonsaiWrapper:
                 log.warning("bonsai cancel: terminate timed out, killing pid=%s", proc.pid)
                 proc.kill()
                 proc.wait(timeout=2.0)
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             log.warning("bonsai cancel: %s", exc)
 
 

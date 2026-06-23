@@ -51,6 +51,6 @@ def _get_mlx_supported_models() -> set | None:
         from diffusionkit.mlx import MMDIT_CKPT
 
         return set(MMDIT_CKPT.keys())
-    except Exception as exc:
+    except (ImportError, AttributeError) as exc:
         log.debug("Could not introspect diffusionkit MMDIT_CKPT: %s", exc)
         return None

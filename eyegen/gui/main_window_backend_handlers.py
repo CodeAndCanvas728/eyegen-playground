@@ -4,9 +4,8 @@ import logging
 
 from PySide6.QtWidgets import QInputDialog
 
-import core_bonsai
-import core_coreml
 from eyegen import PROJECT_ROOT
+from eyegen.backends import bonsai, coreml
 
 log = logging.getLogger("eyegen")
 
@@ -14,12 +13,12 @@ log = logging.getLogger("eyegen")
 class MainWindowBackendHandlersMixin:
     def _refresh_bonsai_status(self):
         try:
-            import core_bonsai
+            from eyegen.backends import bonsai
 
-            status = core_bonsai.validate_bonsai_install()
+            status = bonsai.validate_bonsai_install()
             self.bonsai_status_label.setText(status.message)
             self.bonsai_pull_btn.setEnabled(status.installed)
-        except Exception as exc:
+        except (OSError, ValueError, ImportError, AttributeError) as exc:
             self.bonsai_status_label.setText(f"⚠ {exc}")
 
     def _on_bonsai_setup(self):
@@ -59,8 +58,7 @@ class MainWindowBackendHandlersMixin:
         self._refresh_bonsai_status()
 
     def _on_bonsai_pull(self):
-
-        status = core_bonsai.validate_bonsai_install()
+        status = bonsai.validate_bonsai_install()
         if not status.installed:
             self.status_label.setText("⚠ Bonsai not installed. Click 'Setup Bonsai…' first.")
             self.status_label.setStyleSheet("color: orange;")
@@ -75,7 +73,7 @@ class MainWindowBackendHandlersMixin:
 
         from eyegen.gui.backend_workers import BonsaiDownloadWorker
 
-        self.bonsai_pull_worker = BonsaiDownloadWorker(variant=core_bonsai.DEFAULT_VARIANT)
+        self.bonsai_pull_worker = BonsaiDownloadWorker(variant=bonsai.DEFAULT_VARIANT)
         self.bonsai_pull_worker.status.connect(self._on_status)
         self.bonsai_pull_worker.finished.connect(self._on_bonsai_pull_finished)
         self.bonsai_pull_worker.start()
@@ -96,12 +94,12 @@ class MainWindowBackendHandlersMixin:
 
     def _refresh_coreml_status(self):
         try:
-            import core_coreml
+            from eyegen.backends import coreml
 
-            status = core_coreml.validate_coreml_install()
+            status = coreml.validate_coreml_install()
             self.coreml_status_label.setText(status.message)
             self.coreml_pull_btn.setEnabled(status.installed)
-        except Exception as exc:
+        except (OSError, ValueError, ImportError, AttributeError) as exc:
             self.coreml_status_label.setText(f"⚠ {exc}")
 
     def _on_coreml_setup(self):
@@ -141,8 +139,7 @@ class MainWindowBackendHandlersMixin:
         self._refresh_coreml_status()
 
     def _on_coreml_pull(self):
-
-        status = core_coreml.validate_coreml_install()
+        status = coreml.validate_coreml_install()
         if not status.installed:
             self.status_label.setText("⚠ CoreML not installed. Click 'Setup CoreML…' first.")
             self.status_label.setStyleSheet("color: orange;")
@@ -152,7 +149,7 @@ class MainWindowBackendHandlersMixin:
             self,
             "Download CoreML model",
             "Pre-converted CoreML models on Hugging Face:",
-            list(core_coreml.PRECONVERTED_HF_MODELS.keys()),
+            list(coreml.PRECONVERTED_HF_MODELS.keys()),
             3,
             False,
         )

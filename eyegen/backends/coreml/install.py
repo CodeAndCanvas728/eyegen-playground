@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from core_coreml_constants import DEFAULT_COREML_MODELS_DIR, DEFAULT_COREML_VENV
+from .constants import DEFAULT_COREML_MODELS_DIR, DEFAULT_COREML_VENV
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def _sidecar_has_coreml() -> bool:
             timeout=30,
         )
         return r.returncode == 0
-    except Exception:
+    except (OSError, subprocess.TimeoutExpired, ValueError):
         return False
 
 

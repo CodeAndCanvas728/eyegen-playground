@@ -132,7 +132,7 @@ def save_model_cmd(
             typer.echo(f"   Quantization: {ql}-bit" if ql else "   Quantization: full precision")
         typer.echo("\n💡 To use this model, set the path in your config:")
         typer.echo(f"   ./generate.py config-set mflux_model_path {result_path}")
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
         typer.echo(f"\n❌ Save failed: {e}", err=True)
         raise typer.Exit(1)
 

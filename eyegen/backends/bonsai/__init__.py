@@ -31,13 +31,13 @@ Lifecycle:
        shape benefit from the MLX metallib cache.
 """
 
-from core_bonsai_constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
-from core_bonsai_install import BonsaiInstallStatus, get_bonsai_dir, validate_bonsai_install
-from core_bonsai_models import (
+from .constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
+from .install import BonsaiInstallStatus, get_bonsai_dir, validate_bonsai_install
+from .models import (
     download_bonsai_model,
     list_bonsai_models,
 )
-from core_bonsai_pipeline import BonsaiWrapper, get_bonsai_pipeline
+from .pipeline import BonsaiWrapper, get_bonsai_pipeline
 
 __all__ = [
     "BonsaiInstallStatus",

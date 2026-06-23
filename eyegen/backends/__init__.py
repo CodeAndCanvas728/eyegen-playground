@@ -193,3 +193,7 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
         model_config=model_config,
         quantize=quantize,
     )
+
+
+# Re-export optional backend subpackages.
+from eyegen.backends import bonsai, coreml  # noqa: E402,F401

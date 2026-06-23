@@ -9,6 +9,8 @@ from eyegen._model_ops import (
     validate_saved_model,
 )
 from eyegen.backends import (
+    bonsai,
+    coreml,
     detect_backend,
     get_mflux_pipeline,
     get_ollama_pipeline,
@@ -38,6 +40,8 @@ from eyegen.validation import (
 
 __all__ = [
     "Backend",
+    "bonsai",
+    "coreml",
     "CONFIG_DIR",
     "CONFIG_FILE",
     "DEFAULT_CONFIG",

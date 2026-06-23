@@ -6,8 +6,6 @@ from typing import Optional, Tuple
 
 import typer
 
-import core_bonsai
-import core_coreml
 from eyegen import (
     DEFAULT_CONFIG,
     OUTPUT_DIR,
@@ -22,6 +20,7 @@ from eyegen import (
     validate_dimensions,
     validate_image_path,
 )
+from eyegen.backends import bonsai, coreml
 
 
 def validate_cli_backend(backend: str) -> str:
@@ -130,9 +129,9 @@ def load_pipeline(resolved_backend: Backend, config: dict, quantize: Optional[in
             typer.echo(f"   Quantize: {q}-bit")
         return get_mflux_pipeline(config, quantize=q)
     if resolved_backend == Backend.BONSAI:
-        return core_bonsai.get_bonsai_pipeline(config)
+        return bonsai.get_bonsai_pipeline(config)
     if resolved_backend == Backend.COREML:
-        return core_coreml.get_coreml_pipeline(config)
+        return coreml.get_coreml_pipeline(config)
     return get_pipeline(config)
 
 

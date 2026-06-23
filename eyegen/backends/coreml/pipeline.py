@@ -11,8 +11,8 @@ from typing import Optional
 
 from PIL import Image
 
-from core_coreml_constants import VALID_COMPUTE_UNITS
-from core_coreml_install import (
+from .constants import VALID_COMPUTE_UNITS
+from .install import (
     _sidecar_python,
     get_coreml_models_dir,
     validate_coreml_install,
@@ -103,7 +103,7 @@ class CoreMLWrapper:
                 f"CoreML requires width and height to be multiples of 8 (got {width}x{height})."
             )
 
-        from core import OUTPUT_DIR
+        from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         out_path = OUTPUT_DIR / f"coreml_{seed or uuid.uuid4().hex[:8]}.png"
@@ -177,7 +177,7 @@ class CoreMLWrapper:
                 log.warning("coreml cancel: terminate timed out, killing pid=%s", proc.pid)
                 proc.kill()
                 proc.wait(timeout=2.0)
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             log.warning("coreml cancel: %s", exc)
 
 

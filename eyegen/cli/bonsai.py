@@ -4,8 +4,8 @@ import subprocess
 
 import typer
 
-import core_bonsai
 from eyegen import PROJECT_ROOT
+from eyegen.backends import bonsai
 
 
 def setup_bonsai_cmd():
@@ -29,35 +29,32 @@ def setup_bonsai_cmd():
 
 def pull_bonsai_cmd(
     variant: str = typer.Option(
-        core_bonsai.DEFAULT_VARIANT,
+        bonsai.DEFAULT_VARIANT,
         "--variant",
         "-v",
-        help=f"Variant to download: {', '.join(core_bonsai.SUPPORTED_VARIANTS)}",
+        help=f"Variant to download: {', '.join(bonsai.SUPPORTED_VARIANTS)}",
     ),
 ):
     """Download a Bonsai (PrismML) model via the bonsai-demo's download script."""
-    if variant not in core_bonsai.SUPPORTED_VARIANTS:
+    if variant not in bonsai.SUPPORTED_VARIANTS:
         typer.echo(
-            f"❌ Unknown variant '{variant}'. Supported: "
-            f"{', '.join(core_bonsai.SUPPORTED_VARIANTS)}",
+            f"❌ Unknown variant '{variant}'. Supported: {', '.join(bonsai.SUPPORTED_VARIANTS)}",
             err=True,
         )
         raise typer.Exit(1)
 
-    status = core_bonsai.validate_bonsai_install()
+    status = bonsai.validate_bonsai_install()
     if not status.installed:
         typer.echo(f"❌ {status.message}", err=True)
         raise typer.Exit(1)
 
     typer.echo(f"📥 Downloading bonsai variant: {variant}")
-    ok = core_bonsai.download_bonsai_model(
+    ok = bonsai.download_bonsai_model(
         variant,
         progress_callback=lambda m: typer.echo(f"   {m}"),
     )
     if ok:
-        typer.echo(
-            f"✅ Bonsai variant '{variant}' is ready at {core_bonsai.get_bonsai_dir()}/models/"
-        )
+        typer.echo(f"✅ Bonsai variant '{variant}' is ready at {bonsai.get_bonsai_dir()}/models/")
     else:
         typer.echo(f"❌ Failed to download bonsai variant '{variant}'", err=True)
         raise typer.Exit(1)
@@ -65,16 +62,16 @@ def pull_bonsai_cmd(
 
 def list_bonsai_models_cmd():
     """List installed Bonsai (PrismML) models."""
-    status = core_bonsai.validate_bonsai_install()
+    status = bonsai.validate_bonsai_install()
     if not status.installed:
         typer.echo(f"❌ {status.message}", err=True)
         typer.echo("   Run: ./generate.py setup-bonsai", err=True)
         raise typer.Exit(1)
 
-    models = core_bonsai.list_bonsai_models()
+    models = bonsai.list_bonsai_models()
     if not models:
         typer.echo("📦 No bonsai models installed yet.")
-        typer.echo(f"   Available variants: {', '.join(core_bonsai.SUPPORTED_VARIANTS)}")
+        typer.echo(f"   Available variants: {', '.join(bonsai.SUPPORTED_VARIANTS)}")
         typer.echo("   Run: ./generate.py pull-bonsai")
     else:
         typer.echo(f"🌳 Installed bonsai models ({len(models)}):")

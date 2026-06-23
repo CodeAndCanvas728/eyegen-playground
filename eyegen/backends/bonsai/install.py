@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from core_bonsai_constants import DEFAULT_BONSAI_DIR
+from .constants import DEFAULT_BONSAI_DIR
 
 log = logging.getLogger(__name__)
 

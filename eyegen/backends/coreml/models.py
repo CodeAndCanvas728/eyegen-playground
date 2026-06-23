@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from core_coreml_constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
-from core_coreml_install import _sidecar_has_coreml, _sidecar_python, get_coreml_models_dir
+from .constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
+from .install import _sidecar_has_coreml, _sidecar_python, get_coreml_models_dir
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def list_coreml_models() -> list[dict]:
         if meta_path.is_file():
             try:
                 meta = json.loads(meta_path.read_text())
-            except Exception:
+            except (OSError, ValueError):
                 meta = {}
         out.append(
             {
@@ -71,7 +71,7 @@ def pull_preconverted_coreml_model(
             local_dir=str(target_dir),
             local_dir_use_symlinks=False,
         )
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         log.error("Failed to download %s: %s", repo_id, exc)
         return None
 

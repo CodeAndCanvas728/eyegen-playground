@@ -7,8 +7,8 @@ import os
 import subprocess
 from typing import Callable, Optional
 
-from core_bonsai_constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
-from core_bonsai_install import validate_bonsai_install
+from .constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
+from .install import validate_bonsai_install
 
 log = logging.getLogger(__name__)
 

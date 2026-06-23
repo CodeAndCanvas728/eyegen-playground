@@ -1,0 +1,80 @@
+"""Smoke tests for the CoreML backend helpers."""
+
+from pathlib import Path
+
+import pytest
+
+from eyegen.backends import coreml
+from eyegen.backends.coreml import CoreMLInstallStatus
+
+
+@pytest.fixture(autouse=True)
+def _clear_coreml_cache():
+    coreml.validate_coreml_install.cache_clear()
+    yield
+
+
+class TestCoremlPaths:
+    def test_default_models_dir(self):
+        from eyegen.backends.coreml.constants import DEFAULT_COREML_MODELS_DIR
+
+        assert coreml.get_coreml_models_dir() == DEFAULT_COREML_MODELS_DIR
+
+    def test_models_dir_env_override(self, monkeypatch):
+        monkeypatch.setenv("COREML_MODELS_DIR", "~/custom/coreml")
+        assert coreml.get_coreml_models_dir() == Path.home() / "custom" / "coreml"
+
+    def test_default_venv(self):
+        from eyegen.backends.coreml.constants import DEFAULT_COREML_VENV
+
+        assert coreml.get_coreml_venv() == DEFAULT_COREML_VENV
+
+    def test_venv_env_override(self, monkeypatch):
+        monkeypatch.setenv("COREML_VENV", "~/custom/venv")
+        assert coreml.get_coreml_venv() == Path.home() / "custom" / "venv"
+
+
+class TestValidateCoremlInstall:
+    def test_missing_venv(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("COREML_VENV", str(tmp_path / "missing"))
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path / "models"))
+        status = coreml.validate_coreml_install()
+        assert isinstance(status, CoreMLInstallStatus)
+        assert not status.installed
+        assert status.venv_python is None
+
+    def test_venv_without_coreml_package(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("COREML_VENV", str(tmp_path))
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path / "models"))
+        py = tmp_path / "bin" / "python"
+        py.parent.mkdir(parents=True)
+        py.write_text("#!/bin/sh\n")
+
+        status = coreml.validate_coreml_install()
+        assert not status.installed
+        assert "python_coreml_stable_diffusion is not installed" in status.message
+
+
+class TestListCoremlModels:
+    def test_empty_when_dir_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path / "missing"))
+        assert coreml.list_coreml_models() == []
+
+    def test_skips_entries_without_model_files(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path))
+        (tmp_path / "empty-dir").mkdir()
+        assert coreml.list_coreml_models() == []
+
+    def test_finds_mlmodelc(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path))
+        model_dir = tmp_path / "sd-2-1-base"
+        mlmodelc = model_dir / "SD2_1_base.mlmodelc"
+        mlmodelc.mkdir(parents=True)
+        assert len(coreml.list_coreml_models()) == 1
+        assert coreml.list_coreml_models()[0]["name"] == "sd-2-1-base"
+
+
+class TestConvertToCoreml:
+    def test_invalid_compute_unit_raises(self):
+        with pytest.raises(ValueError, match="Invalid compute_unit"):
+            coreml.convert_to_coreml("foo/bar", Path("output"), compute_unit="INVALID")
