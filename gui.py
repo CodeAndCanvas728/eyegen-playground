@@ -56,6 +56,7 @@ from core import (
     DEFAULT_CONFIG,
     MODELS_DIR,
     OUTPUT_DIR,
+    PROJECT_ROOT,
     EyeGenConfig,
     clear_mflux_cache,
     detect_backend,
@@ -428,7 +429,7 @@ class BonsaiSetupWorker(QThread):
 
     def run(self):
         try:
-            r = subprocess.run([self.script_path], capture_output=True, text=True)
+            r = subprocess.run([self.script_path], capture_output=True, text=True)  # noqa: S603
             if r.returncode == 0:
                 self.finished.emit(True, "Bonsai installed successfully")
             else:
@@ -471,7 +472,7 @@ class CoreMLSetupWorker(QThread):
 
     def run(self):
         try:
-            r = subprocess.run([self.script_path], capture_output=True, text=True)
+            r = subprocess.run([self.script_path], capture_output=True, text=True)  # noqa: S603
             if r.returncode == 0:
                 self.finished.emit(True, "CoreML sidecar venv installed")
             else:

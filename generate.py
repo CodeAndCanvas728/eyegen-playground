@@ -6,6 +6,7 @@ Supports MLX (diffusionkit), OllamaDiffuser (GGUF), MFLUX, Bonsai (PrismML),
 and CoreML (Apple Neural Engine) backends.
 """
 
+import importlib.util
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -459,24 +460,20 @@ def status():
     typer.echo(f"  Default size: {config.get('width', 1024)}x{config.get('height', 1024)}")
 
     # Check diffusionkit
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        import diffusionkit
+    if importlib.util.find_spec("diffusionkit") is not None:
         try:
+            from importlib.metadata import version as _pkg_version
             v = _pkg_version("diffusionkit")
         except Exception:
             v = "unknown"
         typer.echo(f"\n✅ diffusionkit: Installed (v{v})")
-    except ImportError:
+    else:
         typer.echo("\n❌ diffusionkit: Not installed")
 
     # Check ollamadiffuser
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        import ollamadiffuser
+    if importlib.util.find_spec("ollamadiffuser") is not None:
         try:
+            from importlib.metadata import version as _pkg_version
             v = _pkg_version("ollamadiffuser")
         except Exception:
             v = "unknown"
@@ -491,7 +488,7 @@ def status():
                 typer.echo(f"     ... and {len(installed) - 5} more")
         except (OSError, ValueError, ImportError, AttributeError):
             pass
-    except ImportError:
+    else:
         typer.echo("❌ ollamadiffuser: Not installed")
 
     # Check mflux
@@ -694,7 +691,7 @@ def setup_bonsai_cmd():
     typer.echo("   May take several minutes on first run.")
     typer.echo()
 
-    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode
+    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode  # noqa: S603
     if rc != 0:
         typer.echo(f"❌ Bonsai setup failed (exit {rc})", err=True)
         raise typer.Exit(1)
@@ -786,7 +783,7 @@ def setup_coreml_cmd():
     typer.echo("   May take several minutes on first run.")
     typer.echo()
 
-    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode
+    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode  # noqa: S603
     if rc != 0:
         typer.echo(f"❌ CoreML setup failed (exit {rc})", err=True)
         raise typer.Exit(1)

@@ -41,6 +41,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from PIL import Image
+
 log = logging.getLogger(__name__)
 
 
@@ -177,7 +179,7 @@ def _run_bonsai_script(script_name: str, *args: str,
     # for these operations.
     env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
 
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # noqa: S603
         cmd,
         cwd=str(status.bonsai_dir),
         env=env,
@@ -220,7 +222,7 @@ def _spawn_bonsai_subprocess(cmd: list[str]) -> subprocess.Popen:
     env = os.environ.copy()
     env["BONSAI_PACKAGE_MIN_AGE_DAYS"] = env.get("BONSAI_PACKAGE_MIN_AGE_DAYS", "0")
 
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # noqa: S603
         full_cmd,
         cwd=str(status.bonsai_dir),
         env=env,
@@ -298,18 +300,17 @@ class BonsaiWrapper:
                 f"Run: ./generate.py pull-bonsai {self.variant}"
             )
 
-    def generate_image(self, prompt: str, cfg_weight: float, num_steps: int,
+    def generate_image(self, prompt: str, cfg_weight: float, num_steps: int,  # noqa: C901
                        width: int, height: int, seed: Optional[int] = None,
                        negative_prompt: str = "",
                        image_path: Optional[str] = None,
-                       denoise: float = 1.0) -> "PIL.Image.Image":
+                       denoise: float = 1.0) -> Image.Image:
         """Run the bonsai subprocess and return a PIL Image.
 
         Ignores ``cfg_weight``, ``negative_prompt``, ``image_path``,
         ``denoise`` with a logged warning (bonsai uses fixed guidance=1.0,
         no CFG, no negative prompt, no img2img).
         """
-        from PIL import Image
 
         if cfg_weight not in (None, BONSAI_DEFAULT_GUIDANCE):
             log.warning(
@@ -320,7 +321,9 @@ class BonsaiWrapper:
         if negative_prompt:
             log.warning("Bonsai backend ignores negative_prompt (not supported by this model).")
         if image_path:
-            log.warning("Bonsai backend does not support img2img; ignoring image_path=%r", image_path)
+            log.warning(
+                "Bonsai backend does not support img2img; ignoring image_path=%r", image_path
+            )
         if denoise != 1.0:
             log.warning("Bonsai backend does not support img2img; ignoring denoise=%.2f", denoise)
 

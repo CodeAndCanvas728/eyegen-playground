@@ -43,6 +43,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
+from PIL import Image
+
 log = logging.getLogger(__name__)
 
 
@@ -115,7 +117,7 @@ def _sidecar_has_coreml() -> bool:
     if py is None:
         return False
     try:
-        r = subprocess.run(
+        r = subprocess.run(  # noqa: S603
             [str(py), "-c", "import python_coreml_stable_diffusion"],
             capture_output=True, text=True, timeout=30,
         )
@@ -296,7 +298,7 @@ def convert_to_coreml(
     log.info("coreml-convert: %s", " ".join(cmd))
     env = os.environ.copy()
     env.pop("PYTHONHOME", None)
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # noqa: S603
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, env=env,
     )
@@ -381,9 +383,8 @@ class CoreMLWrapper:
                        width: int, height: int, seed: Optional[int] = None,
                        negative_prompt: str = "",
                        image_path: Optional[str] = None,
-                       denoise: float = 1.0) -> "PIL.Image.Image":
+                       denoise: float = 1.0) -> Image.Image:
         """Run Apple's pipeline via subprocess and return a PIL Image."""
-        from PIL import Image
 
         # Apple's pipeline uses fixed 512x512 and ignores negative_prompt when
         # using v1.5/v2-base; we forward everything we can and warn on ignored.
@@ -430,7 +431,7 @@ class CoreMLWrapper:
         log.info("coreml-pipeline: %s", " ".join(cmd))
         env = os.environ.copy()
         env.pop("PYTHONHOME", None)
-        self._proc = subprocess.Popen(cmd, env=env,
+        self._proc = subprocess.Popen(cmd, env=env,  # noqa: S603
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE,
                                        text=True)
