@@ -38,13 +38,13 @@ def _patch_sample_euler(progress_callback, cancel_event=None):
             if cancel is not None and cancel.is_set():
                 model.clear_cache()
                 raise GenerationCancelled("Cancelled by user")
-            t0 = time.time()
+            t0 = time.perf_counter()
             denoised = model(x, timesteps[i], sigmas[i], **extra_args)
             d = dkmlx.to_d(x, sigmas[i], denoised)
             dt = sigmas[i + 1] - sigmas[i]
             x = x + d * dt
             mx.eval(x)
-            iter_time.append(round(time.time() - t0, 3))
+            iter_time.append(round(time.perf_counter() - t0, 3))
             cb(i + 1, total)
 
         model.clear_cache()

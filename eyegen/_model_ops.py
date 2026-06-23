@@ -36,7 +36,7 @@ def list_mflux_models() -> list[dict]:
             {"alias": alias, "model_name": cfg.model_name}
             for alias, cfg in sorted(AVAILABLE_MODELS.items(), key=lambda x: x[1].priority)
         ]
-    except Exception as exc:
+    except (ImportError, AttributeError) as exc:
         log.debug("Could not load MFLUX models from package, falling back to static list: %s", exc)
         aliases = sorted(_get_mflux_aliases())
         return [{"alias": a, "model_name": a} for a in aliases]
@@ -55,7 +55,7 @@ def clear_mflux_cache(model_alias: str | None = None) -> list[str]:
 
             mc = ModelConfig.from_name(model_name=model_alias)
             repo_id = mc.model_name
-        except Exception as exc:
+        except (ImportError, AttributeError) as exc:
             log.debug("Could not resolve model alias, using literal: %s", exc)
             repo_id = model_alias
 
@@ -107,6 +107,9 @@ def save_mflux_model(
         progress_callback(f"Saving to {output_path}…")
     model.save_model(str(output_path))
 
+    if not any(f.is_file() for f in output_path.glob("**/*")):
+        raise RuntimeError(f"MFLUX model save failed: no files were written to {output_path}")
+
     log.info("Model saved: %s", output_path)
     if progress_callback:
         progress_callback(f"✅ Model saved to {output_path}")
@@ -123,7 +126,7 @@ def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
     found_safetensors = False
 
     try:
-        from safetensors import safe_open
+        from safetensors import SafetensorError, safe_open
     except ImportError:
         log.debug("safetensors not installed, cannot validate model")
         return False, None
@@ -140,7 +143,7 @@ def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
                     meta["quantization_level"] = int(ql) if ql and ql != "None" else None
                     meta["mflux_version"] = m.get("mflux_version")
                 return True, meta
-            except Exception as exc:
+            except (OSError, ValueError, SafetensorError) as exc:
                 log.debug("Could not read safetensors metadata from %s: %s", sf, exc)
                 continue
 

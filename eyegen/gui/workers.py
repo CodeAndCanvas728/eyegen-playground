@@ -1,14 +1,13 @@
 """Background worker threads for the EyeGen GUI."""
 
 import logging
+import subprocess
 import threading
 import traceback
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QThread, Signal
 
-import core_bonsai
-import core_coreml
 from eyegen import (
     OUTPUT_DIR,
     Backend,
@@ -19,6 +18,7 @@ from eyegen import (
     pull_model,
     save_mflux_model,
 )
+from eyegen.backends import bonsai, coreml
 from eyegen.gui.cache import _pipeline_cache, _pipeline_cache_lock
 from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 
@@ -65,9 +65,9 @@ def _load_pipeline_for_worker(worker):
     elif backend == Backend.MFLUX:
         pipeline = get_mflux_pipeline(config, quantize=worker.mflux_quantize)
     elif backend == Backend.BONSAI:
-        pipeline = core_bonsai.get_bonsai_pipeline(config)
+        pipeline = bonsai.get_bonsai_pipeline(config)
     elif backend == Backend.COREML:
-        pipeline = core_coreml.get_coreml_pipeline(config)
+        pipeline = coreml.get_coreml_pipeline(config)
     else:
         pipeline = get_pipeline(config, use_t5=worker.use_t5)
         _patch_sample_euler(
@@ -86,7 +86,7 @@ class GenerationWorker(QThread):
     quantize_failed = Signal(str)
     status = Signal(str)
     progress = Signal(int, int)
-    cancelled = Signal()
+    cancelled = Signal(bool)
 
     def __init__(
         self,
@@ -129,20 +129,20 @@ class GenerationWorker(QThread):
             if callable(cancel_fn):
                 try:
                     cancel_fn()
-                except Exception as exc:
+                except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
                     log.warning("pipeline.cancel() raised: %s", exc)
 
     def run(self):
         try:
             if self._cancelled.is_set():
-                self.cancelled.emit()
+                self.cancelled.emit(False)
                 return
 
             pipeline = _load_pipeline_for_worker(self)
             self.pipeline = pipeline
 
             if self._cancelled.is_set():
-                self.cancelled.emit()
+                self.cancelled.emit(False)
                 return
 
             self.status.emit("Generating…")
@@ -170,7 +170,7 @@ class GenerationWorker(QThread):
             )
 
             if self._cancelled.is_set():
-                self.cancelled.emit()
+                self.cancelled.emit(False)
                 return
 
             self.status.emit("Saving…")
@@ -183,15 +183,16 @@ class GenerationWorker(QThread):
             self.finished.emit(image, str(out_path))
         except GenerationCancelled:
             log.info("Generation cancelled by user")
-            self.cancelled.emit()
-        except Exception:
-            # A worker interrupted mid-flight (e.g. Bonsai/CoreML subprocess
-            # killed by cancel()) surfaces as a generic error; treat any
-            # failure after cancellation was requested as a cancellation.
+            self.cancelled.emit(False)
+        except (OSError, RuntimeError) as exc:
             if self._cancelled.is_set():
-                log.info("Generation cancelled by user")
-                self.cancelled.emit()
-                return
+                log.info("Generation cancelled by user: %s", exc)
+                self.cancelled.emit(False)
+            else:
+                full = traceback.format_exc()
+                log.error("Generation failed:\n%s", full)
+                self.error.emit(full)
+        except Exception:  # noqa: BLE001
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
@@ -223,7 +224,7 @@ class PullWorker(QThread):
                 self.finished.emit(True, f"Model '{self.model_name}' is ready")
             else:
                 self.finished.emit(False, f"Failed to pull '{self.model_name}'")
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             full = traceback.format_exc()
             log.error("Pull failed:\n%s", full)
             self.finished.emit(False, str(exc))
@@ -256,7 +257,7 @@ class SaveModelWorker(QThread):
                 hf_cache_dir=self.hf_cache_dir,
             )
             self.finished.emit(True, "Model saved successfully", str(result))
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             full = traceback.format_exc()
             log.error("Save model failed:\n%s", full)
             self.finished.emit(False, str(exc), "")

@@ -134,6 +134,6 @@ def generate(
             resolved_backend,
             output_path,
         )
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
         typer.echo(f"\n❌ Generation failed: {e}", err=True)
         raise typer.Exit(1)

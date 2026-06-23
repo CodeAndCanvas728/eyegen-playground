@@ -30,19 +30,19 @@ Lifecycle:
        model directory.
 """
 
-from core_coreml_constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
-from core_coreml_install import (
+from .constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
+from .install import (
     CoreMLInstallStatus,
     get_coreml_models_dir,
     get_coreml_venv,
     validate_coreml_install,
 )
-from core_coreml_models import (
+from .models import (
     convert_to_coreml,
     list_coreml_models,
     pull_preconverted_coreml_model,
 )
-from core_coreml_pipeline import CoreMLWrapper, get_coreml_pipeline
+from .pipeline import CoreMLWrapper, get_coreml_pipeline
 
 __all__ = [
     "CoreMLInstallStatus",

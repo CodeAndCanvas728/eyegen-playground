@@ -7,8 +7,8 @@ import os
 import subprocess
 from typing import Callable, Optional
 
-from core_bonsai_constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
-from core_bonsai_install import validate_bonsai_install
+from .constants import DEFAULT_VARIANT, SUPPORTED_VARIANTS
+from .install import validate_bonsai_install
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +58,18 @@ def _run_bonsai_script(
             log.info("[bonsai] %s", line)
             if progress_callback is not None:
                 progress_callback(line)
-        proc.wait()
+        try:
+            proc.wait(timeout=1800.0)
+        except subprocess.TimeoutExpired as exc:
+            log.warning("Bonsai subprocess timed out, terminating pid=%s", proc.pid)
+            proc.terminate()
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                log.warning("Bonsai subprocess did not terminate, killing pid=%s", proc.pid)
+                proc.kill()
+                proc.wait(timeout=5.0)
+            raise RuntimeError("Bonsai subprocess timed out after 30 minutes") from exc
     except KeyboardInterrupt:
         proc.terminate()
         raise

@@ -1,11 +1,14 @@
 """State persistence mixin for MainWindow."""
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 from eyegen.config import Backend
+
+log = logging.getLogger("eyegen")
 
 
 class MainWindowStateMixin:
@@ -28,11 +31,11 @@ class MainWindowStateMixin:
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
             "bonsai_model_path": self.model_input.text()
-            if self._resolved_backend() == Backend.BONSAI
-            else "",
+            if self._resolved_backend() == Backend.BONSAI and Path(self.model_input.text()).is_dir()
+            else self.config.get("bonsai_model_path", ""),
             "coreml_model_path": self.model_input.text()
-            if self._resolved_backend() == Backend.COREML
-            else "",
+            if self._resolved_backend() == Backend.COREML and Path(self.model_input.text()).is_dir()
+            else self.config.get("coreml_model_path", ""),
             "coreml_compute_unit": self.config.get("coreml_compute_unit", "CPU_AND_NE"),
         }
 

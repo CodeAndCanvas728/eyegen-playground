@@ -6,8 +6,8 @@ from typing import Optional
 
 import typer
 
-import core_coreml
 from eyegen import PROJECT_ROOT
+from eyegen.backends import coreml
 
 
 def setup_coreml_cmd():
@@ -39,14 +39,14 @@ def pull_coreml_cmd(
     ),
 ):
     """Download a pre-converted CoreML model from Hugging Face."""
-    status = core_coreml.validate_coreml_install()
+    status = coreml.validate_coreml_install()
     if not status.installed:
         typer.echo(f"❌ {status.message}", err=True)
         typer.echo("   Run: ./generate.py setup-coreml", err=True)
         raise typer.Exit(1)
 
     typer.echo(f"📥 Downloading pre-converted CoreML model: {alias}")
-    target = core_coreml.pull_preconverted_coreml_model(
+    target = coreml.pull_preconverted_coreml_model(
         alias,
         progress_callback=lambda m: typer.echo(f"   {m}"),
     )
@@ -94,10 +94,10 @@ def convert_coreml_cmd(
 ):
     """Convert a PyTorch Stable Diffusion model to CoreML."""
     if output is None:
-        output = core_coreml.get_coreml_models_dir() / hf_model_id.split("/")[-1]
+        output = coreml.get_coreml_models_dir() / hf_model_id.split("/")[-1]
     output = output.expanduser()
 
-    status = core_coreml.validate_coreml_install()
+    status = coreml.validate_coreml_install()
     if not status.installed:
         typer.echo(f"❌ {status.message}", err=True)
         typer.echo("   Run: ./generate.py setup-coreml", err=True)
@@ -111,7 +111,7 @@ def convert_coreml_cmd(
     typer.echo("   This may take 15-20 minutes on first run.")
     typer.echo()
 
-    ok = core_coreml.convert_to_coreml(
+    ok = coreml.convert_to_coreml(
         hf_model_id=hf_model_id,
         output_dir=output,
         compute_unit=compute_unit,
@@ -130,13 +130,13 @@ def convert_coreml_cmd(
 
 def list_coreml_models_cmd():
     """List installed CoreML model bundles."""
-    status = core_coreml.validate_coreml_install()
+    status = coreml.validate_coreml_install()
     if not status.installed:
         typer.echo(f"❌ {status.message}", err=True)
         typer.echo("   Run: ./generate.py setup-coreml", err=True)
         raise typer.Exit(1)
 
-    models = core_coreml.list_coreml_models()
+    models = coreml.list_coreml_models()
     if not models:
         typer.echo("📦 No CoreML models installed yet.")
         typer.echo("   Pre-converted (fast):  ./generate.py pull-coreml sd-2-1-base-palettized")

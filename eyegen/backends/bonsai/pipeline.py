@@ -10,13 +10,13 @@ from typing import Optional
 
 from PIL import Image
 
-from core_bonsai_constants import (
+from .constants import (
     BONSAI_DEFAULT_GUIDANCE,
     DEFAULT_VARIANT,
     SUPPORTED_VARIANTS,
 )
-from core_bonsai_install import get_bonsai_dir, validate_bonsai_install
-from core_bonsai_models import _spawn_bonsai_subprocess
+from .install import get_bonsai_dir, validate_bonsai_install
+from .models import _spawn_bonsai_subprocess
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class BonsaiWrapper:
                 f"Run: ./generate.py pull-bonsai {self.variant}"
             )
 
-    def generate_image(  # noqa: C901
+    def generate_image(  # noqa: C901, PLR0915
         self,
         prompt: str,
         cfg_weight: float,
@@ -89,10 +89,11 @@ class BonsaiWrapper:
         if num_steps < 1:
             raise ValueError(f"num_steps must be >= 1, got {num_steps}")
 
-        from core import OUTPUT_DIR
+        from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed or uuid.uuid4().hex[:8]}.png"
+        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed_str}.png"
 
         cmd = [
             "--model",
@@ -110,17 +111,43 @@ class BonsaiWrapper:
             cmd.extend(["--seed", str(seed)])
 
         log.info("bonsai subprocess: %s", " ".join(cmd))
+        import threading
+
+        t: threading.Thread | None = None
         self._proc = _spawn_bonsai_subprocess(["generate.sh", *cmd])
         try:
             if self._proc.stdout is None:
                 raise RuntimeError("bonsai subprocess stdout pipe was not created")
-            for line in self._proc.stdout:
-                line = line.rstrip()
-                log.info("[bonsai] %s", line)
-            self._proc.wait()
+
+            def read_stdout():
+                try:
+                    for line in self._proc.stdout:
+                        log.info("[bonsai] %s", line.rstrip())
+                except Exception as e:
+                    log.debug("Error reading bonsai stdout: %s", e)
+
+            t = threading.Thread(target=read_stdout, daemon=True)
+            t.start()
+
+            try:
+                self._proc.wait(timeout=300.0)
+            except subprocess.TimeoutExpired as exc:
+                log.warning("Bonsai subprocess timed out, terminating pid=%s", self._proc.pid)
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    log.warning(  # noqa: E501
+                        "Bonsai subprocess did not terminate, killing pid=%s", self._proc.pid
+                    )
+                    self._proc.kill()
+                    self._proc.wait(timeout=5.0)
+                raise RuntimeError("Bonsai subprocess timed out after 300 seconds") from exc
             rc = self._proc.returncode
         finally:
             self._proc = None
+            if t is not None:
+                t.join(timeout=1.0)
         if rc != 0:
             raise RuntimeError(
                 f"Bonsai generation failed (exit {rc}). Inspect logs at {get_bonsai_dir()}/outputs/"
@@ -142,7 +169,7 @@ class BonsaiWrapper:
                 log.warning("bonsai cancel: terminate timed out, killing pid=%s", proc.pid)
                 proc.kill()
                 proc.wait(timeout=2.0)
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             log.warning("bonsai cancel: %s", exc)
 
 

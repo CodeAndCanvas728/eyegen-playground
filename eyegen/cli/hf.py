@@ -12,17 +12,24 @@ def hf_login_cmd(
         None,
         "--token",
         "-t",
-        help="HuggingFace access token (prompted if not provided)",
+        help="[DEPRECATED] HuggingFace access token (prompts securely if omitted)",
     ),
 ):
     """Log in to HuggingFace to access gated models."""
-    if token is None:
+    if token is not None:
+        typer.echo(
+            "⚠️ WARNING: Passing the token via the command line option '--token' / '-t' "
+            "is deprecated because it can leak to your shell history. "
+            "For security, omit this option and enter the token at the prompt.",
+            err=True,
+        )
+    else:
         token = typer.prompt("Enter your HuggingFace token", hide_input=True)
 
     try:
         info = hf_login(token)
         typer.echo(f"✅ Logged in as {info.get('name', 'unknown')}")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         typer.echo(f"❌ Login failed: {e}", err=True)
         raise typer.Exit(1)
 
@@ -41,6 +48,6 @@ def hf_logout_cmd():
     try:
         hf_logout()
         typer.echo("✅ Logged out from HuggingFace")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         typer.echo(f"❌ Logout failed: {e}", err=True)
         raise typer.Exit(1)

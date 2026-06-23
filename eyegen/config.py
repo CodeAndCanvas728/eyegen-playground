@@ -67,12 +67,14 @@ class EyeGenConfig:
     coreml_model_path: Optional[str] = None
     coreml_compute_unit: str = "CPU_AND_NE"
 
-    def validate(self) -> list[str]:
+    def validate(self) -> list[str]:  # noqa: C901
         """Validate settings and return a list of error messages (empty if valid)."""
         errors = []
         if not isinstance(self.backend, Backend):
             errors.append(f"Invalid backend '{self.backend}'. Must be a Backend enum value.")
-        if self.width % 8 != 0 or self.height % 8 != 0:
+        if self.width <= 0 or self.height <= 0:
+            errors.append("Height and width must be greater than 0.")
+        elif self.width % 8 != 0 or self.height % 8 != 0:
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
@@ -84,11 +86,26 @@ class EyeGenConfig:
         if self.model == "mlx-community/Lance-3B-AWQ-INT4":
             if self.backend not in (Backend.AUTO, Backend.MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
+
+        from eyegen.validation import validate_safe_path
+
+        for path_field, path_val in [
+            ("coreml_model_path", self.coreml_model_path),
+            ("mflux_model_path", self.mflux_model_path),
+            ("bonsai_model_path", self.bonsai_model_path),
+            ("hf_cache_dir", self.hf_cache_dir),
+        ]:
+            if path_val:
+                try:
+                    validate_safe_path(path_val, path_field)
+                except ValueError as exc:
+                    errors.append(str(exc))
+
         return errors
 
     @classmethod
     def from_dict(cls, data: dict) -> "EyeGenConfig":
-        """Build config from dict, applying type casting and filtering unknown keys."""
+        """Build config from dict, applying type casting and rejecting unknown keys."""
         valid_keys = {f.name for f in fields(cls)}
         kwargs = {}
         for k, v in data.items():
@@ -96,6 +113,8 @@ class EyeGenConfig:
                 if v == "null" or v == "None":
                     v = None
                 kwargs[k] = v
+            else:
+                log.warning("Ignoring unknown config key: %s", k)
 
         cls._coerce_int(kwargs, "height")
         cls._coerce_int(kwargs, "width")

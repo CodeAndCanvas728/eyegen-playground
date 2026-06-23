@@ -68,7 +68,7 @@ def _generate_image_ollama(
                 kwargs["generator"] = torch.Generator("cpu").manual_seed(seed)
             else:
                 kwargs["generator"] = torch.Generator(device=device).manual_seed(seed)
-        except Exception as exc:
+        except (ImportError, AttributeError) as exc:
             log.debug("Seed not supported by engine, continuing: %s", exc)
 
     return engine.generate_image(
@@ -119,7 +119,7 @@ def _generate_image_mflux(
             sig = inspect.signature(model.generate_image)
             if "negative_prompt" in sig.parameters:
                 kwargs["negative_prompt"] = negative_prompt
-        except Exception as exc:
+        except (ImportError, AttributeError) as exc:
             log.debug("Could not check negative_prompt support: %s", exc)
 
     try:

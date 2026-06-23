@@ -1,0 +1,178 @@
+"""Smoke tests for the Bonsai backend helpers."""
+
+from pathlib import Path
+from unittest import mock
+
+import pytest
+
+from eyegen.backends import bonsai
+from eyegen.backends.bonsai import BonsaiInstallStatus
+
+
+class TestBonsaiDir:
+    def test_default_returns_constant(self):
+        from eyegen.backends.bonsai.constants import DEFAULT_BONSAI_DIR
+
+        assert bonsai.get_bonsai_dir() == DEFAULT_BONSAI_DIR
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("BONSAI_DIR", "~/custom/bonsai")
+        assert bonsai.get_bonsai_dir() == Path.home() / "custom" / "bonsai"
+
+
+class TestValidateBonsaiInstall:
+    def test_not_installed_when_scripts_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BONSAI_DIR", str(tmp_path))
+        status = bonsai.validate_bonsai_install()
+        assert isinstance(status, BonsaiInstallStatus)
+        assert not status.installed
+        assert not status.has_venv
+        assert status.has_models == []
+        assert "not installed" in status.message
+
+    def test_installed_with_model(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BONSAI_DIR", str(tmp_path))
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "generate.sh").write_text("#!/bin/sh\n")
+        (scripts / "download_model.sh").write_text("#!/bin/sh\n")
+        venv_python = tmp_path / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("")
+
+        model_dir = tmp_path / "models" / "ternary-mlx"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_text("dummy")
+
+        status = bonsai.validate_bonsai_install()
+        assert status.installed
+        assert status.has_venv
+        assert status.has_models == ["ternary-mlx"]
+
+
+class TestListBonsaiModels:
+    def test_list_returns_expected_shape(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BONSAI_DIR", str(tmp_path))
+        model_dir = tmp_path / "models" / "ternary-mlx"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_text("dummy")
+
+        models = bonsai.list_bonsai_models()
+        assert len(models) == 1
+        assert models[0]["name"] == "ternary-mlx"
+        assert models[0]["alias"] == "bonsai-ternary-mlx"
+
+
+class TestDownloadBonsaiModel:
+    def test_invalid_variant_raises(self):
+        with pytest.raises(ValueError, match="Unknown bonsai variant"):
+            bonsai.download_bonsai_model("not-a-variant")
+
+    def test_valid_variant_calls_script(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("BONSAI_DIR", str(tmp_path))
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "generate.sh").write_text("#!/bin/sh\n")
+        (scripts / "download_model.sh").write_text("#!/bin/sh\necho ok")
+        venv_python = tmp_path / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("")
+        model_dir = tmp_path / "models" / "ternary-mlx"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_text("dummy")
+
+        with mock.patch("eyegen.backends.bonsai.models.subprocess.Popen") as popen_mock:
+            popen_mock.return_value.stdout = []
+            popen_mock.return_value.returncode = 0
+            assert bonsai.download_bonsai_model("ternary-mlx") is True
+
+    def test_download_timeout(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("BONSAI_DIR", str(tmp_path))
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "generate.sh").write_text("#!/bin/sh\n")
+        (scripts / "download_model.sh").write_text("#!/bin/sh\necho ok")
+        venv_python = tmp_path / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("")
+        model_dir = tmp_path / "models" / "ternary-mlx"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_text("dummy")
+
+        with mock.patch("eyegen.backends.bonsai.models.subprocess.Popen") as popen_mock:
+            import subprocess
+
+            mock_proc = mock.Mock()
+            mock_proc.stdout = []
+            mock_proc.wait.side_effect = [
+                subprocess.TimeoutExpired(cmd="download_model.sh", timeout=1800.0),
+                subprocess.TimeoutExpired(cmd="download_model.sh", timeout=5.0),
+                0,
+            ]
+            popen_mock.return_value = mock_proc
+            with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
+                bonsai.download_bonsai_model("ternary-mlx")
+            assert mock_proc.terminate.called
+            assert mock_proc.kill.called
+
+
+class TestBonsaiWrapper:
+    @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
+    @mock.patch("eyegen.backends.bonsai.pipeline._spawn_bonsai_subprocess")
+    @mock.patch("eyegen.backends.bonsai.pipeline.Image.open")
+    def test_seed_zero(self, mock_image_open, mock_spawn, mock_validate, tmp_path, monkeypatch):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_status.has_models = True
+        mock_validate.return_value = mock_status
+
+        mock_proc = mock.Mock()
+        mock_proc.stdout = ["line1\n", "line2\n"]
+        mock_proc.returncode = 0
+        mock_spawn.return_value = mock_proc
+
+        mock_image = mock.Mock()
+        mock_image_open.return_value.convert.return_value = mock_image
+
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+        expected_path = tmp_path / "bonsai_ternary-mlx_0.png"
+        expected_path.touch()
+
+        from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
+        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        img = wrapper.generate_image(
+            prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=0
+        )
+        assert img == mock_image
+        assert expected_path.is_file()
+
+    @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
+    @mock.patch("eyegen.backends.bonsai.pipeline._spawn_bonsai_subprocess")
+    def test_subprocess_timeout(self, mock_spawn, mock_validate, tmp_path, monkeypatch):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_status.has_models = True
+        mock_validate.return_value = mock_status
+
+        mock_proc = mock.Mock()
+        mock_proc.stdout = ["line1\n"]
+        import subprocess
+
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="generate.sh", timeout=300.0),
+            subprocess.TimeoutExpired(cmd="generate.sh", timeout=5.0),
+            0,
+        ]
+        mock_spawn.return_value = mock_proc
+
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+
+        from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
+        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
+            wrapper.generate_image(
+                prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=42
+            )
+        assert mock_proc.terminate.called

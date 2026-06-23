@@ -6,19 +6,31 @@ import logging
 import os
 import subprocess
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
 from PIL import Image
 
-from core_coreml_constants import VALID_COMPUTE_UNITS
-from core_coreml_install import (
+from .constants import VALID_COMPUTE_UNITS
+from .install import (
     _sidecar_python,
     get_coreml_models_dir,
     validate_coreml_install,
 )
 
 log = logging.getLogger(__name__)
+
+
+def _terminate(proc: subprocess.Popen, grace: float = 5.0) -> None:
+    """Terminate *proc*, escalating to kill if it does not exit within *grace*."""
+    proc.terminate()
+    try:
+        proc.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        log.error("CoreML subprocess terminate timed out. Killing...")
+        proc.kill()
+        proc.wait()
 
 
 class CoreMLWrapper:
@@ -35,7 +47,9 @@ class CoreMLWrapper:
     def _resolve_model_path(self, config: dict) -> Path:
         explicit = config.get("coreml_model_path")
         if explicit:
-            p = Path(explicit).expanduser()
+            from eyegen.validation import validate_safe_path
+
+            p = validate_safe_path(explicit, "coreml_model_path")
             if not p.is_dir():
                 raise FileNotFoundError(
                     f"coreml_model_path {p} is not a directory. "
@@ -72,7 +86,7 @@ class CoreMLWrapper:
         if not self.model_path.exists():
             raise RuntimeError(f"CoreML model dir does not exist: {self.model_path}")
 
-    def generate_image(
+    def generate_image(  # noqa: C901, PLR0915
         self,
         prompt: str,
         cfg_weight: float,
@@ -84,29 +98,13 @@ class CoreMLWrapper:
         image_path: Optional[str] = None,
         denoise: float = 1.0,
     ) -> Image.Image:
-        if image_path:
-            log.warning(
-                "CoreML backend's SD 1.x/2.x pipeline does not support img2img in this "
-                "wrapper. Ignoring image_path=%r. (Re-convert with --convert-vae-encoder "
-                "and add an img2img wrapper to enable.)",
-                image_path,
-            )
-        if width != 512 or height != 512:
-            log.warning(
-                "CoreML SD 1.x/2.x models are converted at a fixed 512x512. "
-                "Requested %dx%d may produce odd results.",
-                width,
-                height,
-            )
-        if width % 8 or height % 8:
-            raise ValueError(
-                f"CoreML requires width and height to be multiples of 8 (got {width}x{height})."
-            )
+        self._check_request(width, height, image_path)
 
-        from core import OUTPUT_DIR
+        from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = OUTPUT_DIR / f"coreml_{seed or uuid.uuid4().hex[:8]}.png"
+        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        out_path = OUTPUT_DIR / f"coreml_{seed_str}.png"
 
         py = _sidecar_python()
         if py is None:
@@ -143,25 +141,130 @@ class CoreMLWrapper:
         self._proc = subprocess.Popen(  # noqa: S603
             cmd,
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,
         )
+        import threading
+
+        stderr_lines: deque = deque(maxlen=500)
+
+        def read_stderr():
+            if self._proc and self._proc.stderr:
+                try:
+                    for line in self._proc.stderr:
+                        line_stripped = line.rstrip()
+                        log.info("[coreml] %s", line_stripped)
+                        stderr_lines.append(line)
+                except Exception as e:
+                    log.debug("Error reading coreml stderr: %s", e)
+
+        t = threading.Thread(target=read_stderr, daemon=True)
+        t.start()
+
         try:
-            _stdout, stderr = self._proc.communicate()
+            try:
+                self._proc.wait(timeout=300.0)
+            except subprocess.TimeoutExpired as exc:
+                log.warning("CoreML subprocess timed out, terminating pid=%s", self._proc.pid)
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    log.warning(
+                        "CoreML subprocess did not terminate, killing pid=%s", self._proc.pid
+                    )
+                    self._proc.kill()
+                    self._proc.wait(timeout=5.0)
+                raise RuntimeError("CoreML subprocess timed out after 300 seconds") from exc
             returncode = self._proc.returncode
         finally:
             self._proc = None
+            t.join(timeout=1.0)
+
         if self._cancelled:
             raise RuntimeError("CoreML generation was cancelled by the user.")
         if returncode != 0:
-            log.error("coreml stderr: %s", (stderr or "")[-2000:])
+            stderr = "".join(stderr_lines)
+            log.error("coreml stderr: %s", stderr[-2000:])
             raise RuntimeError(
                 f"CoreML generation failed (exit {returncode}). See eyegen.log for details."
             )
         if not out_path.is_file():
             raise RuntimeError(f"CoreML pipeline did not produce expected output: {out_path}")
         return Image.open(out_path).convert("RGB")
+
+    @staticmethod
+    def _check_request(width: int, height: int, image_path: Optional[str]) -> None:
+        """Warn about unsupported options and reject invalid dimensions."""
+        if image_path:
+            log.warning(
+                "CoreML backend's SD 1.x/2.x pipeline does not support img2img in this "
+                "wrapper. Ignoring image_path=%r. (Re-convert with --convert-vae-encoder "
+                "and add an img2img wrapper to enable.)",
+                image_path,
+            )
+        if width != 512 or height != 512:
+            log.warning(
+                "CoreML SD 1.x/2.x models are converted at a fixed 512x512. "
+                "Requested %dx%d may produce odd results.",
+                width,
+                height,
+            )
+        if width % 8 or height % 8:
+            raise ValueError(
+                f"CoreML requires width and height to be multiples of 8 (got {width}x{height})."
+            )
+
+    def _run_subprocess(self, cmd: list[str]) -> tuple[int, list[str], bool]:
+        """Run the CoreML pipeline subprocess with a hard timeout.
+
+        Streams stderr (rather than buffering via ``communicate()``) and returns
+        ``(returncode, stderr_lines, timed_out)``.
+        """
+        import threading
+
+        env = os.environ.copy()
+        env.pop("PYTHONHOME", None)
+        self._proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        timed_out = False
+
+        def target_timeout():
+            nonlocal timed_out
+            timed_out = True
+            proc = self._proc
+            if proc:
+                log.error("CoreML subprocess timed out after 600 seconds. Terminating...")
+                _terminate(proc)
+
+        timer = threading.Timer(600.0, target_timeout)
+        timer.start()
+        stderr_lines: list[str] = []
+        try:
+            if self._proc.stderr is None:
+                raise RuntimeError("coreml subprocess stderr pipe was not created")
+            for line in self._proc.stderr:
+                line = line.rstrip()
+                log.info("[coreml] %s", line)
+                stderr_lines.append(line)
+            self._proc.wait()
+            returncode = self._proc.returncode
+        except Exception:
+            if self._proc:
+                _terminate(self._proc)
+            raise
+        finally:
+            timer.cancel()
+            self._proc = None
+        return returncode, stderr_lines, timed_out
 
     def cancel(self) -> None:
         proc = self._proc
@@ -177,7 +280,7 @@ class CoreMLWrapper:
                 log.warning("coreml cancel: terminate timed out, killing pid=%s", proc.pid)
                 proc.kill()
                 proc.wait(timeout=2.0)
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             log.warning("coreml cancel: %s", exc)
 
 

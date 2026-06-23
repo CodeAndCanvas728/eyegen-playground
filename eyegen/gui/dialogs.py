@@ -132,14 +132,14 @@ class HFLoginDialog(QDialog):
             self.token_input.clear()
             self._has_unsaved_token = False
             self.logout_btn.setEnabled(True)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             self.status_label.setText(f"❌ Login failed: {e}")
             self.status_label.setStyleSheet("color: red;")
 
     def _on_logout(self):
         try:
             hf_logout()
-        except Exception as e:
+        except (OSError, ValueError) as e:
             log.warning("Logout failed: %s", e)
         self.token_input.clear()
         self._refresh_status()

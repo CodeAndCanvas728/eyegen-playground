@@ -17,7 +17,7 @@ _HF_CACHE_TTL = 30.0  # seconds
 
 def _cached_hf_status() -> Optional[dict]:
     """Return cached hf_status, refreshing from network every _HF_CACHE_TTL seconds."""
-    now = time.time()
+    now = time.monotonic()
     cache_age = now - _HF_STATUS_CACHE["timestamp"]
     if cache_age < _HF_CACHE_TTL and _HF_STATUS_CACHE["result"] is not None:
         return _HF_STATUS_CACHE["result"]

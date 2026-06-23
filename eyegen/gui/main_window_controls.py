@@ -25,8 +25,6 @@ class MainWindowControlsMixin:
         override = self.backend_combo.currentData()
         model = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
         config = {"model": model}
-        if override == Backend.COREML:
-            config["coreml_model_path"] = model
         try:
             return detect_backend(model, override, config=config)
         except ValueError:

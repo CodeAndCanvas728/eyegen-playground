@@ -29,6 +29,14 @@ def test_config_validate_catches_bad_dimensions():
     errors = cfg.validate()
     assert any("multiples of 8" in e for e in errors)
 
+    cfg_zero = EyeGenConfig(height=0, width=1024)
+    errors_zero = cfg_zero.validate()
+    assert any("greater than 0" in e for e in errors_zero)
+
+    cfg_neg = EyeGenConfig(height=-8, width=1024)
+    errors_neg = cfg_neg.validate()
+    assert any("greater than 0" in e for e in errors_neg)
+
 
 def test_config_validate_catches_invalid_backend():
     cfg = EyeGenConfig()
@@ -42,7 +50,11 @@ def test_config_from_dict_coerces_mflux_quantize_none():
     assert cfg.mflux_quantize is None
 
 
-def test_config_from_dict_filters_unknown_keys():
+def test_config_from_dict_filters_unknown_keys(caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING)
     cfg = EyeGenConfig.from_dict({"unknown_key": "value", "height": 512})
     assert cfg.height == 512
     assert not hasattr(cfg, "unknown_key")
+    assert any("unknown_key" in msg for msg in caplog.messages)

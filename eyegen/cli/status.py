@@ -4,8 +4,6 @@ import importlib.util
 
 import typer
 
-import core_bonsai
-import core_coreml
 from eyegen import (
     CONFIG_FILE,
     OUTPUT_DIR,
@@ -17,6 +15,7 @@ from eyegen import (
     list_ollama_models,
     load_config,
 )
+from eyegen.backends import bonsai, coreml
 
 
 def list_outputs():
@@ -38,7 +37,7 @@ def _package_version(name: str) -> str:
         from importlib.metadata import version as _pkg_version
 
         return _pkg_version(name)
-    except Exception:
+    except (OSError, ValueError, ImportError, AttributeError):
         return "unknown"
 
 
@@ -109,9 +108,9 @@ def _print_mflux_status():
 
 
 def _print_bonsai_status():
-    bonsai_status = core_bonsai.validate_bonsai_install()
+    bonsai_status = bonsai.validate_bonsai_install()
     if bonsai_status.installed:
-        bonsai_models = core_bonsai.list_bonsai_models()
+        bonsai_models = bonsai.list_bonsai_models()
         typer.echo("\n🌳 Bonsai (PrismML): Installed")
         typer.echo(f"   Vendor: {bonsai_status.bonsai_dir}")
         typer.echo(f"   Models: {len(bonsai_models)}")
@@ -122,9 +121,9 @@ def _print_bonsai_status():
 
 
 def _print_coreml_status():
-    coreml_status = core_coreml.validate_coreml_install()
+    coreml_status = coreml.validate_coreml_install()
     if coreml_status.installed:
-        coreml_models = core_coreml.list_coreml_models()
+        coreml_models = coreml.list_coreml_models()
         typer.echo(f"\n🍎 CoreML: Installed (venv={coreml_status.venv_python})")
         typer.echo(f"   Models: {len(coreml_models)}")
         for m in coreml_models:
