@@ -11,6 +11,7 @@ __pycache__/
 .Python
 pip-log.txt
 pip-delete-this-directory.txt
+*.egg-info/
 
 # Generated images
 outputs/
