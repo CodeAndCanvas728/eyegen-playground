@@ -1,0 +1,41 @@
+# Pre-commit — UNIVERSAL BASE. Language-agnostic; safe in ANY repo regardless of
+# stack. Per-stack lint hooks are NOT here — add from ENFORCEMENT.md.
+# Setup:  pre-commit install && pre-commit install --hook-type pre-push
+# Pin revs:  pre-commit autoupdate
+
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: max-file-lines
+        name: no file exceeds 300 lines
+        entry: >-
+          bash -c 'for f; do n=$(wc -l <"$f"); if [ "$n" -gt 300 ]; then echo "$f: $n lines (>300)"; exit 1; fi; done' _
+        language: system
+        types: [text]
+        exclude: '^(.*\.lock|.*\.snap|CHANGELOG\.md|.*/migrations/.*|gui\.py|core\.py|generate\.py|README\.md)$'
+
+# >>> esper-stack:python (pre-commit) — append under `repos:` in .pre-commit-config.yaml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4  # autoupdate
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format

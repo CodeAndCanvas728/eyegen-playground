@@ -1,6 +1,6 @@
 # EyeGen Playground
 
-Local image generation on Apple Silicon — runs entirely offline, no API key needed.  
+Local image generation on Apple Silicon — runs entirely offline, no API key needed.
 Comes with a native macOS GUI and a full-featured CLI.
 
 Five generation backends:
@@ -25,8 +25,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The MLX model (~3 GB) downloads automatically on first use and is cached by HuggingFace.  
-MFLUX models also auto-download from HuggingFace on first use — no pull step needed.  
+The MLX model (~3 GB) downloads automatically on first use and is cached by HuggingFace.
+MFLUX models also auto-download from HuggingFace on first use — no pull step needed.
 GGUF models are pulled separately — see [GGUF Models](#gguf-models-ollamadiffuser) below.
 
 ---
@@ -43,7 +43,7 @@ The GUI is the primary interface. It has two modes — **Text to Image** and **I
 ```
 Builds `EyeGen.app` and installs it to `~/Applications`. Launch from Finder, add it to your Dock, or find it via Spotlight (⌘Space → "EyeGen").
 
-> **First launch:** right-click → Open to bypass Gatekeeper (one-time only for unsigned apps).  
+> **First launch:** right-click → Open to bypass Gatekeeper (one-time only for unsigned apps).
 > Re-run `create_app.sh` if you move the workspace folder.
 
 **From the terminal:**
@@ -143,7 +143,7 @@ source venv/bin/activate
 | `--backend` | `-b` | `auto` (default), `mlx`, `mflux`, `ollamadiffuser`, `bonsai`, or `coreml` |
 | `--quantize` | `-q` | MFLUX quantization: `4` (default), `8`, or omit for full precision |
 
-> `--width`/`--height` are ignored when `--image` is provided.  
+> `--width`/`--height` are ignored when `--image` is provided.
 > **Known limitation (MLX only):** img2img with the 4-bit quantized MLX model may produce output identical to the input. MFLUX and GGUF models are not affected.
 
 ### Configuration commands
@@ -453,10 +453,10 @@ mlx-sd35-workspace/
 source venv/bin/activate   # venv must be active
 ```
 
-**First run is slow**  
+**First run is slow**
 The model (~3 GB) is downloading and caching. Subsequent runs load from the local cache.
 
-**"Height and width must be multiples of 8"**  
+**"Height and width must be multiples of 8"**
 Use one of the preset values: 512, 640, 768, 896, 1024.
 
 **Out of memory**
@@ -466,16 +466,16 @@ Use one of the preset values: 512, 640, 768, 896, 1024.
 - Use 4-bit quantization for MFLUX (`--quantize 4`)
 - Restart the terminal to clear cached models
 
-**GGUF model not found**  
+**GGUF model not found**
 Pull it first: `./generate.py pull <model-name>` or click "Pull…" in the GUI.
 
-**"Access denied" or "gated model" error**  
+**"Access denied" or "gated model" error**
 Log in to HuggingFace first: `./generate.py hf-login` or click **🔑 HuggingFace Login** in the GUI. Some models (e.g. FLUX.1-Kontext) require accepting terms on the model's HuggingFace page.
 
-**GUI errors**  
+**GUI errors**
 Full tracebacks are written to `~/Library/Logs/EyeGen.log`.
 
-**Moved the workspace folder**  
+**Moved the workspace folder**
 Re-run `./create_app.sh` — the `.app` launcher uses an absolute path to the venv.
 
 ---
@@ -509,8 +509,8 @@ Free for personal and research use; review license terms before any commercial a
 
 ---
 
-MLX docs: https://ml-explore.github.io/mlx/build/latest/  
-MFLUX docs: https://github.com/filipstrand/mflux  
-Bonsai demo: https://github.com/PrismML-Eng/Bonsai-Image-Demo  
+MLX docs: https://ml-explore.github.io/mlx/build/latest/
+MFLUX docs: https://github.com/filipstrand/mflux
+Bonsai demo: https://github.com/PrismML-Eng/Bonsai-Image-Demo
 CoreML Stable Diffusion: https://github.com/apple/ml-stable-diffusion
 OllamaDiffuser docs: https://github.com/ollamadiffuser/ollamadiffuser

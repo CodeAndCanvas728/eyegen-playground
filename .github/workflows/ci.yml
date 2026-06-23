@@ -1,0 +1,16 @@
+name: CI
+on:
+  pull_request: { branches: [main] }
+  push: { branches: [main] }
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt pre-commit ruff
+      - run: python -m py_compile core.py generate.py gui.py gui_hf_login.py
+      - run: ruff check .
+      - run: pre-commit run --all-files

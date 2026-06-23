@@ -144,3 +144,5 @@ Config and output paths retain the dev/bundled split:
 - Supports SD 1.x/2.x via pre-converted HF models (`apple/coreml-stable-diffusion-*`) or convert from scratch (`./generate.py convert-coreml`). Conversion is 15-20 min on M1 Pro.
 - `coreml_compute_unit` config key: `CPU_AND_NE` (default, mobile + ANE), `CPU_AND_GPU` (Mac), `CPU_ONLY`, `ALL`.
 - CoreML SD 1.x/2.x does not support img2img in this wrapper (would require converting a VAE encoder — out of scope for first cut).
+
+@AGENTS.md

@@ -6,33 +6,54 @@ Supports MLX (diffusionkit), OllamaDiffuser (GGUF), MFLUX, Bonsai (PrismML),
 and CoreML (Apple Neural Engine) backends.
 """
 
-import typer
+import importlib.util
 import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
 
-from core import (
-    load_config, save_config, get_pipeline, get_ollama_pipeline,
-    get_mflux_pipeline,
-    sanitize_prompt, validate_dimensions, validate_image_path,
-    generate_image, detect_backend, pull_model,
-    list_ollama_models, list_mflux_models, clear_mflux_cache,
-    save_mflux_model, validate_saved_model,
-    hf_login, hf_status, hf_logout,
-    PROJECT_ROOT, CONFIG_FILE, OUTPUT_DIR, MODELS_DIR, DEFAULT_CONFIG,
-    BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
-    BACKEND_BONSAI, BACKEND_COREML,
-    VALID_BACKENDS,
-    QuantizationError,
-)
+import typer
+
 import core_bonsai
 import core_coreml
+from core import (
+    BACKEND_AUTO,
+    BACKEND_BONSAI,
+    BACKEND_COREML,
+    BACKEND_MFLUX,
+    BACKEND_MLX,
+    BACKEND_OLLAMA,
+    CONFIG_FILE,
+    DEFAULT_CONFIG,
+    MODELS_DIR,
+    OUTPUT_DIR,
+    PROJECT_ROOT,
+    VALID_BACKENDS,
+    QuantizationError,
+    clear_mflux_cache,
+    detect_backend,
+    generate_image,
+    get_mflux_pipeline,
+    get_ollama_pipeline,
+    get_pipeline,
+    hf_login,
+    hf_logout,
+    hf_status,
+    list_mflux_models,
+    list_ollama_models,
+    load_config,
+    pull_model,
+    save_config,
+    save_mflux_model,
+    validate_dimensions,
+    validate_image_path,
+    validate_saved_model,
+)
 
 app = typer.Typer(
     help="Generate images using MLX SD3.5, MFLUX (FLUX/FIBO/Z-Image), OllamaDiffuser GGUF, Bonsai (PrismML ternary), or CoreML (Apple Neural Engine) backends",
-    no_args_is_help=True
+    no_args_is_help=True,
 )
 
 
@@ -40,60 +61,55 @@ app = typer.Typer(
 def generate(
     prompt: str = typer.Argument(..., help="Image description"),
     output: Optional[Path] = typer.Option(
-        None,
-        "--output", "-o",
-        help="Output file path (default: outputs/timestamp.png)"
+        None, "--output", "-o", help="Output file path (default: outputs/timestamp.png)"
     ),
     steps: Optional[int] = typer.Option(
-        None,
-        "--steps",
-        help="Number of inference steps (default: 30, faster: 20, better: 40)"
+        None, "--steps", help="Number of inference steps (default: 30, faster: 20, better: 40)"
     ),
     guidance: Optional[float] = typer.Option(
         None,
         "--guidance",
-        help="Guidance scale for prompt adherence (default: 7.5, range: 1.0-15.0)"
+        help="Guidance scale for prompt adherence (default: 7.5, range: 1.0-15.0)",
     ),
     height: Optional[int] = typer.Option(
-        None,
-        "--height",
-        help="Image height in pixels (default: 1024, must be multiple of 8)"
+        None, "--height", help="Image height in pixels (default: 1024, must be multiple of 8)"
     ),
     width: Optional[int] = typer.Option(
-        None,
-        "--width",
-        help="Image width in pixels (default: 1024, must be multiple of 8)"
+        None, "--width", help="Image width in pixels (default: 1024, must be multiple of 8)"
     ),
-    seed: Optional[int] = typer.Option(
-        None,
-        "--seed",
-        help="Random seed for reproducibility"
-    ),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for reproducibility"),
     image: Optional[Path] = typer.Option(
         None,
-        "--image", "-i",
+        "--image",
+        "-i",
         help="Input image for img2img mode (PNG/JPG/JPEG/BMP/WEBP/TIFF)",
     ),
     denoise: Optional[float] = typer.Option(
         None,
-        "--denoise", "-d",
+        "--denoise",
+        "-d",
         help="Denoise strength for img2img (0.05=keep original, 1.0=full redraw; default: 0.75)",
-        min=0.05, max=1.0,
+        min=0.05,
+        max=1.0,
     ),
     backend: str = typer.Option(
         "auto",
-        "--backend", "-b",
+        "--backend",
+        "-b",
         help="Generation backend: auto (detect by model name), mlx, mflux, ollamadiffuser, bonsai, coreml",
     ),
     quantize: Optional[int] = typer.Option(
         None,
-        "--quantize", "-q",
+        "--quantize",
+        "-q",
         help="MFLUX quantization: 4 (default), 8, or omit for no quantization",
     ),
 ):
     """Generate an image from a text prompt."""
     if backend not in VALID_BACKENDS:
-        typer.echo(f"❌ Invalid backend '{backend}'. Choose from: {', '.join(VALID_BACKENDS)}", err=True)
+        typer.echo(
+            f"❌ Invalid backend '{backend}'. Choose from: {', '.join(VALID_BACKENDS)}", err=True
+        )
         raise typer.Exit(1)
 
     config = load_config()
@@ -117,9 +133,13 @@ def generate(
         image_path = str(image)
         denoise_value = denoise if denoise is not None else 0.75
         if resolved_backend == BACKEND_MLX:
-            typer.echo("⚠  Note: img2img with 4-bit quantized MLX models is known to produce output identical to the input (denoise may have no effect).")
-        if (height is not None or width is not None):
-            typer.echo("ℹ  Note: --width/--height are ignored in img2img mode (input image dimensions are used)")
+            typer.echo(
+                "⚠  Note: img2img with 4-bit quantized MLX models is known to produce output identical to the input (denoise may have no effect)."
+            )
+        if height is not None or width is not None:
+            typer.echo(
+                "ℹ  Note: --width/--height are ignored in img2img mode (input image dimensions are used)"
+            )
     elif denoise is not None:
         typer.echo("⚠  Warning: --denoise has no effect without --image")
 
@@ -130,7 +150,7 @@ def generate(
             raise typer.Exit(1)
 
     if output is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         output = OUTPUT_DIR / f"{timestamp}.png"
     else:
         output = Path(output)
@@ -144,7 +164,7 @@ def generate(
         BACKEND_COREML: "CoreML (Apple Neural Engine)",
     }
     backend_label = backend_labels.get(resolved_backend, resolved_backend)
-    typer.echo(f"✨ Generating image...")
+    typer.echo("✨ Generating image...")
     typer.echo(f"   Backend: {backend_label}")
     typer.echo(f"   Model: {model}")
     local_model = config.get("mflux_model_path")
@@ -166,7 +186,7 @@ def generate(
         typer.echo(f"   Steps: {num_steps} | Guidance: {guidance_scale} | Size: {w}x{h}")
 
     try:
-        typer.echo(f"📦 Loading model...")
+        typer.echo("📦 Loading model...")
         if resolved_backend == BACKEND_OLLAMA:
             pipeline = get_ollama_pipeline(config)
         elif resolved_backend == BACKEND_MFLUX:
@@ -185,8 +205,15 @@ def generate(
             typer.echo(f"   Seed: {seed}")
 
         gen_image = generate_image(
-            pipeline, prompt, guidance_scale, num_steps, w, h, seed,
-            image_path=image_path, denoise=denoise_value,
+            pipeline,
+            prompt,
+            guidance_scale,
+            num_steps,
+            w,
+            h,
+            seed,
+            image_path=image_path,
+            denoise=denoise_value,
             backend=resolved_backend,
         )
 
@@ -197,23 +224,20 @@ def generate(
         if not image_path:
             typer.echo(f"   Size: {w}x{h} pixels")
 
-    except ImportError as exc:
+    except ImportError:
         if resolved_backend == BACKEND_OLLAMA:
             typer.echo(
-                "❌ ollamadiffuser not installed. Install with:\n"
-                "  pip install ollamadiffuser",
+                "❌ ollamadiffuser not installed. Install with:\n  pip install ollamadiffuser",
                 err=True,
             )
         elif resolved_backend == BACKEND_MFLUX:
             typer.echo(
-                "❌ mflux not installed. Install with:\n"
-                "  pip install mflux",
+                "❌ mflux not installed. Install with:\n  pip install mflux",
                 err=True,
             )
         else:
             typer.echo(
-                "❌ diffusionkit not installed. Install with:\n"
-                "  pip install -r requirements.txt",
+                "❌ diffusionkit not installed. Install with:\n  pip install -r requirements.txt",
                 err=True,
             )
         raise typer.Exit(1)
@@ -223,8 +247,15 @@ def generate(
         try:
             pipeline = get_mflux_pipeline(config, quantize=None)
             gen_image = generate_image(
-                pipeline, prompt, guidance_scale, num_steps, w, h, seed,
-                image_path=image_path, denoise=denoise_value,
+                pipeline,
+                prompt,
+                guidance_scale,
+                num_steps,
+                w,
+                h,
+                seed,
+                image_path=image_path,
+                denoise=denoise_value,
                 backend=resolved_backend,
             )
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +266,7 @@ def generate(
             typer.echo("\n💡 Tip: To avoid this warning, set quantize to None:")
             typer.echo("   ./generate.py config-set mflux_quantize null")
             typer.echo("   Or clear the model cache: ./generate.py clear-cache")
-        except Exception as retry_err:
+        except (OSError, ValueError, QuantizationError, RuntimeError) as retry_err:
             typer.echo(f"\n❌ Retry also failed: {retry_err}", err=True)
             raise typer.Exit(1)
     except Exception as e:
@@ -245,7 +276,9 @@ def generate(
 
 @app.command()
 def pull(
-    model_name: str = typer.Argument(..., help="OllamaDiffuser model name (e.g. flux.1-dev-gguf-q4ks)"),
+    model_name: str = typer.Argument(
+        ..., help="OllamaDiffuser model name (e.g. flux.1-dev-gguf-q4ks)"
+    ),
 ):
     """Download a GGUF model via OllamaDiffuser."""
     typer.echo(f"📥 Pulling model: {model_name}")
@@ -261,7 +294,7 @@ def pull(
         else:
             typer.echo(f"❌ Failed to pull model '{model_name}'", err=True)
             raise typer.Exit(1)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         typer.echo(f"❌ Pull failed: {e}", err=True)
         raise typer.Exit(1)
 
@@ -273,7 +306,9 @@ def list_models():
     # MLX Native models
     typer.echo("🔷 MLX Native Models (diffusionkit):")
     typer.echo("  • argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized  (Default, ~3GB)")
-    typer.echo("  • mlx-community/Lance-3B-AWQ-INT4                          (Multimodal Image Specialist)")
+    typer.echo(
+        "  • mlx-community/Lance-3B-AWQ-INT4                          (Multimodal Image Specialist)"
+    )
     typer.echo("  (Downloads from HuggingFace on first use — cached locally)")
     typer.echo()
 
@@ -287,7 +322,7 @@ def list_models():
             else:
                 typer.echo(f"  • {m['alias']}")
         typer.echo("  (Auto-download from HuggingFace on first use — no pull needed)")
-    except Exception as e:
+    except (OSError, ValueError, ImportError, AttributeError) as e:
         typer.echo(f"❌ Failed to list MFLUX models: {e}", err=True)
 
     typer.echo()
@@ -295,7 +330,7 @@ def list_models():
     # OllamaDiffuser models
     try:
         models = list_ollama_models()
-    except Exception as e:
+    except (OSError, ValueError, ImportError, AttributeError) as e:
         typer.echo(f"❌ Failed to list OllamaDiffuser models: {e}", err=True)
         raise typer.Exit(1)
 
@@ -315,7 +350,7 @@ def list_models():
             typer.echo(f"\n☁️  Available to pull ({len(not_installed)}):")
             for m in sorted(not_installed):
                 typer.echo(f"  • {m}")
-    typer.echo(f"\nPull a GGUF model:  ./generate.py pull <model-name>")
+    typer.echo("\nPull a GGUF model:  ./generate.py pull <model-name>")
 
     # Bonsai (PrismML)
     typer.echo()
@@ -342,7 +377,9 @@ def list_models():
         typer.echo("🍎 CoreML (Apple Neural Engine) — not installed")
         typer.echo("   Install:  ./generate.py setup-coreml")
         typer.echo("   Then:     ./generate.py pull-coreml sd-2-1-base-palettized")
-        typer.echo("   Or:       ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base")
+        typer.echo(
+            "   Or:       ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base"
+        )
 
 
 @app.command()
@@ -364,7 +401,7 @@ def config_set(
     # Try to parse as JSON (for numbers, booleans, etc.)
     try:
         parsed_value = json.loads(value)
-    except:
+    except json.JSONDecodeError:
         parsed_value = value
 
     config[key] = parsed_value
@@ -375,7 +412,7 @@ def config_set(
     except ValueError as val_err:
         typer.echo(f"❌ Configuration validation failed:\n   {val_err}", err=True)
         raise typer.Exit(1)
-    except Exception as e:
+    except OSError as e:
         typer.echo(f"❌ Failed to save config: {e}", err=True)
         raise typer.Exit(1)
 
@@ -416,7 +453,7 @@ def status():
     backend_setting = config.get("backend", BACKEND_AUTO)
     resolved = detect_backend(model, backend_setting, config=config)
 
-    typer.echo(f"\n⚙️  Configuration:")
+    typer.echo("\n⚙️  Configuration:")
     typer.echo(f"  Model: {model}")
     typer.echo(f"  Backend: {backend_setting} → {resolved}")
     typer.echo(f"  Default steps: {config.get('num_inference_steps', 30)}")
@@ -424,22 +461,22 @@ def status():
     typer.echo(f"  Default size: {config.get('width', 1024)}x{config.get('height', 1024)}")
 
     # Check diffusionkit
-    try:
-        import diffusionkit
-        from importlib.metadata import version as _pkg_version
+    if importlib.util.find_spec("diffusionkit") is not None:
         try:
+            from importlib.metadata import version as _pkg_version
+
             v = _pkg_version("diffusionkit")
         except Exception:
             v = "unknown"
         typer.echo(f"\n✅ diffusionkit: Installed (v{v})")
-    except ImportError:
-        typer.echo(f"\n❌ diffusionkit: Not installed")
+    else:
+        typer.echo("\n❌ diffusionkit: Not installed")
 
     # Check ollamadiffuser
-    try:
-        import ollamadiffuser
-        from importlib.metadata import version as _pkg_version
+    if importlib.util.find_spec("ollamadiffuser") is not None:
         try:
+            from importlib.metadata import version as _pkg_version
+
             v = _pkg_version("ollamadiffuser")
         except Exception:
             v = "unknown"
@@ -452,15 +489,16 @@ def status():
                 typer.echo(f"     • {m}")
             if len(installed) > 5:
                 typer.echo(f"     ... and {len(installed) - 5} more")
-        except Exception:
+        except (OSError, ValueError, ImportError, AttributeError):
             pass
-    except ImportError:
-        typer.echo(f"❌ ollamadiffuser: Not installed")
+    else:
+        typer.echo("❌ ollamadiffuser: Not installed")
 
     # Check mflux
     try:
-        import mflux
-        typer.echo(f"✅ mflux: Installed")
+        import mflux  # noqa: F401
+
+        typer.echo("✅ mflux: Installed")
         mflux_models = list_mflux_models()
         typer.echo(f"   Available models: {len(mflux_models)}")
         for m in mflux_models[:5]:
@@ -468,19 +506,19 @@ def status():
         if len(mflux_models) > 5:
             typer.echo(f"     ... and {len(mflux_models) - 5} more (run list-models to see all)")
     except ImportError:
-        typer.echo(f"❌ mflux: Not installed")
+        typer.echo("❌ mflux: Not installed")
 
     # Check bonsai
     bonsai_status = core_bonsai.validate_bonsai_install()
     if bonsai_status.installed:
         bonsai_models = core_bonsai.list_bonsai_models()
-        typer.echo(f"\n🌳 Bonsai (PrismML): Installed")
+        typer.echo("\n🌳 Bonsai (PrismML): Installed")
         typer.echo(f"   Vendor: {bonsai_status.bonsai_dir}")
         typer.echo(f"   Models: {len(bonsai_models)}")
         for m in bonsai_models:
             typer.echo(f"     • {m['alias']}")
     else:
-        typer.echo(f"\n🌳 Bonsai (PrismML): Not installed (run setup-bonsai)")
+        typer.echo("\n🌳 Bonsai (PrismML): Not installed (run setup-bonsai)")
 
     # Check coreml
     coreml_status = core_coreml.validate_coreml_install()
@@ -491,7 +529,7 @@ def status():
         for m in coreml_models:
             typer.echo(f"     • {m['name']}")
     else:
-        typer.echo(f"\n🍎 CoreML: Not installed (run setup-coreml)")
+        typer.echo("\n🍎 CoreML: Not installed (run setup-coreml)")
 
     # Count generated images
     images = list(OUTPUT_DIR.glob("*.png"))
@@ -502,7 +540,7 @@ def status():
     if info:
         typer.echo(f"🔑 HuggingFace: logged in as {info.get('name', 'unknown')}")
     else:
-        typer.echo(f"🔑 HuggingFace: not logged in (run hf-login for gated models)")
+        typer.echo("🔑 HuggingFace: not logged in (run hf-login for gated models)")
 
 
 @app.command(name="clear-cache")
@@ -519,10 +557,13 @@ def clear_cache(
         if removed:
             for r in removed:
                 typer.echo(f"  ✓ Removed: {r}")
-            typer.echo(f"✅ Cleared {len(removed)} cached revision(s). Models will re-download on next use.")
+            typer.echo(
+                f"✅ Cleared {len(removed)} cached revision(s). "
+                "Models will re-download on next use."
+            )
         else:
             typer.echo("ℹ  No matching cached models found.")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         typer.echo(f"❌ Cache clear failed: {e}", err=True)
         raise typer.Exit(1)
 
@@ -535,12 +576,14 @@ def save_model_cmd(
     ),
     quantize_bits: Optional[int] = typer.Option(
         4,
-        "--quantize", "-q",
+        "--quantize",
+        "-q",
         help="Quantization bits: 4 (default), 8, or omit for full precision",
     ),
     path: Optional[Path] = typer.Option(
         None,
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Output directory (default: models/<alias>-<q>bit)",
     ),
 ):
@@ -576,7 +619,7 @@ def save_model_cmd(
         if valid and meta:
             ql = meta.get("quantization_level")
             typer.echo(f"   Quantization: {ql}-bit" if ql else "   Quantization: full precision")
-        typer.echo(f"\n💡 To use this model, set the path in your config:")
+        typer.echo("\n💡 To use this model, set the path in your config:")
         typer.echo(f"   ./generate.py config-set mflux_model_path {result_path}")
     except Exception as e:
         typer.echo(f"\n❌ Save failed: {e}", err=True)
@@ -586,7 +629,9 @@ def save_model_cmd(
 @app.command(name="hf-login")
 def hf_login_cmd(
     token: Optional[str] = typer.Option(
-        None, "--token", "-t",
+        None,
+        "--token",
+        "-t",
         help="HuggingFace access token (prompted if not provided)",
     ),
 ):
@@ -649,7 +694,7 @@ def setup_bonsai_cmd():
     typer.echo("   May take several minutes on first run.")
     typer.echo()
 
-    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode
+    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode  # noqa: S603
     if rc != 0:
         typer.echo(f"❌ Bonsai setup failed (exit {rc})", err=True)
         raise typer.Exit(1)
@@ -659,7 +704,8 @@ def setup_bonsai_cmd():
 def pull_bonsai_cmd(
     variant: str = typer.Option(
         core_bonsai.DEFAULT_VARIANT,
-        "--variant", "-v",
+        "--variant",
+        "-v",
         help=f"Variant to download: {', '.join(core_bonsai.SUPPORTED_VARIANTS)}",
     ),
 ):
@@ -685,10 +731,13 @@ def pull_bonsai_cmd(
 
     typer.echo(f"📥 Downloading bonsai variant: {variant}")
     ok = core_bonsai.download_bonsai_model(
-        variant, progress_callback=lambda m: typer.echo(f"   {m}"),
+        variant,
+        progress_callback=lambda m: typer.echo(f"   {m}"),
     )
     if ok:
-        typer.echo(f"✅ Bonsai variant '{variant}' is ready at {core_bonsai.get_bonsai_dir()}/models/")
+        typer.echo(
+            f"✅ Bonsai variant '{variant}' is ready at {core_bonsai.get_bonsai_dir()}/models/"
+        )
     else:
         typer.echo(f"❌ Failed to download bonsai variant '{variant}'", err=True)
         raise typer.Exit(1)
@@ -741,7 +790,7 @@ def setup_coreml_cmd():
     typer.echo("   May take several minutes on first run.")
     typer.echo()
 
-    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode
+    rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode  # noqa: S603
     if rc != 0:
         typer.echo(f"❌ CoreML setup failed (exit {rc})", err=True)
         raise typer.Exit(1)
@@ -773,11 +822,12 @@ def pull_coreml_cmd(
 
     typer.echo(f"📥 Downloading pre-converted CoreML model: {alias}")
     target = core_coreml.pull_preconverted_coreml_model(
-        alias, progress_callback=lambda m: typer.echo(f"   {m}"),
+        alias,
+        progress_callback=lambda m: typer.echo(f"   {m}"),
     )
     if target:
         typer.echo(f"✅ CoreML model downloaded to {target}")
-        typer.echo(f"   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
+        typer.echo("   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
         typer.echo(f"       --model {alias}")
     else:
         typer.echo(f"❌ Failed to download CoreML model '{alias}'", err=True)
@@ -792,22 +842,26 @@ def convert_coreml_cmd(
     ),
     output: Optional[Path] = typer.Option(
         None,
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output directory (default: ~/models/eyegen/coreml/<name>)",
     ),
     compute_unit: str = typer.Option(
         "CPU_AND_NE",
-        "--compute-unit", "-c",
+        "--compute-unit",
+        "-c",
         help="CoreML compute unit: CPU_AND_NE (mobile), CPU_AND_GPU (Mac), CPU_ONLY, ALL",
     ),
     quantize_nbits: Optional[int] = typer.Option(
         None,
-        "--quantize-nbits", "-q",
+        "--quantize-nbits",
+        "-q",
         help="Palettization bit-width: 2, 4, 6, or 8 (reduces size; quality may drop)",
     ),
     attention: str = typer.Option(
         "SPLIT_EINSUM",
-        "--attention", "-a",
+        "--attention",
+        "-a",
         help="Attention implementation: SPLIT_EINSUM (NE), SPLIT_EINSUM_V2 (NE, slower compile), ORIGINAL (CPU/GPU)",
     ),
 ):
@@ -847,10 +901,10 @@ def convert_coreml_cmd(
     )
     if ok:
         typer.echo(f"\n✅ Converted model at {output}")
-        typer.echo(f"   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
+        typer.echo("   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
         typer.echo(f"       --model {output.name}")
     else:
-        typer.echo(f"\n❌ Conversion failed. See eyegen.log for details.", err=True)
+        typer.echo("\n❌ Conversion failed. See eyegen.log for details.", err=True)
         raise typer.Exit(1)
 
 
@@ -867,7 +921,9 @@ def list_coreml_models_cmd():
     if not models:
         typer.echo("📦 No CoreML models installed yet.")
         typer.echo("   Pre-converted (fast):  ./generate.py pull-coreml sd-2-1-base-palettized")
-        typer.echo("   Convert from PyTorch:  ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base")
+        typer.echo(
+            "   Convert from PyTorch:  ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base"
+        )
     else:
         typer.echo(f"🍎 Installed CoreML models ({len(models)}):")
         for m in models:

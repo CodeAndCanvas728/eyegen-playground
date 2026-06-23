@@ -16,9 +16,9 @@ import random
 import sys
 import threading
 import unicodedata
-from dataclasses import dataclass, asdict, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +65,15 @@ BACKEND_OLLAMA = "ollamadiffuser"
 BACKEND_MFLUX = "mflux"
 BACKEND_BONSAI = "bonsai"
 BACKEND_COREML = "coreml"
-VALID_BACKENDS = (BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX, BACKEND_BONSAI, BACKEND_COREML)
+VALID_BACKENDS = (
+    BACKEND_AUTO,
+    BACKEND_MLX,
+    BACKEND_OLLAMA,
+    BACKEND_MFLUX,
+    BACKEND_BONSAI,
+    BACKEND_COREML,
+)
+
 
 @dataclass
 class EyeGenConfig:
@@ -130,6 +138,7 @@ class EyeGenConfig:
     def to_dict(self) -> dict:
         return asdict(self)
 
+
 # Backward-compatibility layer for other modules importing DEFAULT_CONFIG
 DEFAULT_CONFIG = EyeGenConfig().to_dict()
 
@@ -137,6 +146,7 @@ DEFAULT_CONFIG = EyeGenConfig().to_dict()
 # ---------------------------------------------------------------------------
 # Quantization error
 # ---------------------------------------------------------------------------
+
 
 class QuantizationError(RuntimeError):
     """Raised when MLX quantized-weight dequantization fails at inference.
@@ -179,25 +189,52 @@ def _get_mflux_aliases() -> set:
 
     # Static fallback — covers common models even if mflux isn't installed
     _mflux_aliases = {
-        "dev", "schnell", "dev-kontext", "dev-fill", "dev-redux", "dev-depth",
-        "dev-controlnet-canny", "schnell-controlnet-canny",
-        "dev-controlnet-upscaler", "dev-fill-catvton", "krea-dev",
-        "flux2-klein-4b", "flux2-klein-9b", "flux2-klein-base-4b",
-        "flux2-klein-base-9b", "flux2-klein-4B", "flux2-klein-9B",
-        "klein-4b", "klein-9b", "klein-base-4b", "klein-base-9b",
-        "qwen-image", "qwen-image-edit", "qwen", "qwen-edit",
-        "fibo", "fibo-lite", "fibo-edit", "fibo-edit-rmbg",
-        "z-image", "z-image-turbo", "zimage", "zimage-turbo",
-        "seedvr2-3b", "seedvr2-7b", "seedvr2",
+        "dev",
+        "schnell",
+        "dev-kontext",
+        "dev-fill",
+        "dev-redux",
+        "dev-depth",
+        "dev-controlnet-canny",
+        "schnell-controlnet-canny",
+        "dev-controlnet-upscaler",
+        "dev-fill-catvton",
+        "krea-dev",
+        "flux2-klein-4b",
+        "flux2-klein-9b",
+        "flux2-klein-base-4b",
+        "flux2-klein-base-9b",
+        "flux2-klein-4B",
+        "flux2-klein-9B",
+        "klein-4b",
+        "klein-9b",
+        "klein-base-4b",
+        "klein-base-9b",
+        "qwen-image",
+        "qwen-image-edit",
+        "qwen",
+        "qwen-edit",
+        "fibo",
+        "fibo-lite",
+        "fibo-edit",
+        "fibo-edit-rmbg",
+        "z-image",
+        "z-image-turbo",
+        "zimage",
+        "zimage-turbo",
+        "seedvr2-3b",
+        "seedvr2-7b",
+        "seedvr2",
     }
 
     # Try to augment from live package
     try:
         from mflux.models.common.config.model_config import AVAILABLE_MODELS
+
         for cfg in AVAILABLE_MODELS.values():
             _mflux_aliases.update(cfg.aliases)
             _mflux_aliases.add(cfg.model_name)
-    except Exception as exc:
+    except (ImportError, AttributeError) as exc:
         log.debug("Could not augment MFLUX aliases from live package: %s", exc)
 
     return _mflux_aliases
@@ -212,6 +249,7 @@ def _get_mlx_supported_models() -> set | None:
     """
     try:
         from diffusionkit.mlx import MMDIT_CKPT
+
         return set(MMDIT_CKPT.keys())
     except Exception as exc:
         log.debug("Could not introspect diffusionkit MMDIT_CKPT: %s", exc)
@@ -225,17 +263,12 @@ def _format_unsupported_error(model: str, attempted_backend: str) -> str:
     parts = [f"Model '{model}' is not supported by the {attempted_backend} backend."]
     if mlx_keys:
         mlx_list = ", ".join(sorted(mlx_keys))
-        parts.append(
-            f"MLX (diffusionkit) supports: {mlx_list}."
-        )
+        parts.append(f"MLX (diffusionkit) supports: {mlx_list}.")
     if mflux_aliases:
         aliases_list = ", ".join(sorted(mflux_aliases))
-        parts.append(
-            f"MFLUX supports (use --backend mflux): {aliases_list}."
-        )
+        parts.append(f"MFLUX supports (use --backend mflux): {aliases_list}.")
     parts.append(
-        "For OllamaDiffuser (GGUF) models, pull one with "
-        "`./generate.py pull <name>` first."
+        "For OllamaDiffuser (GGUF) models, pull one with `./generate.py pull <name>` first."
     )
     parts.append(
         "For Bonsai (PrismML), use a model name starting with 'bonsai-' "
@@ -277,17 +310,23 @@ def _is_coreml_model(model: str, config: Optional[dict] = None) -> bool:
     if config and config.get("coreml_model_path"):
         return True
     m = model.lower()
-    if m in {"sd-1-4", "sd-1-5", "sd-1-5-palettized",
-             "sd-2-base", "sd-2-1-base", "sd-2-1-base-palettized",
-             "sdxl-base", "sdxl-ios"}:
+    if m in {
+        "sd-1-4",
+        "sd-1-5",
+        "sd-1-5-palettized",
+        "sd-2-base",
+        "sd-2-1-base",
+        "sd-2-1-base-palettized",
+        "sdxl-base",
+        "sdxl-ios",
+    }:
         return True
     if m.startswith("apple/coreml-stable-diffusion"):
         return True
     return False
 
 
-def detect_backend(model: str, override: str = BACKEND_AUTO,
-                   config: Optional[dict] = None) -> str:
+def detect_backend(model: str, override: str = BACKEND_AUTO, config: Optional[dict] = None) -> str:
     """Resolve which backend to use.
 
     If *override* is ``"auto"``:
@@ -320,6 +359,7 @@ def detect_backend(model: str, override: str = BACKEND_AUTO,
 # Config
 # ---------------------------------------------------------------------------
 
+
 def load_config() -> dict:
     """Load configuration from config.json or return defaults, using EyeGenConfig validation."""
     if CONFIG_FILE.exists():
@@ -328,7 +368,7 @@ def load_config() -> dict:
                 data = json.load(f)
                 cfg = EyeGenConfig.from_dict(data)
                 return cfg.to_dict()
-            except Exception as e:
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
                 log.warning("Failed to load config.json, resetting to defaults: %s", e)
     return EyeGenConfig().to_dict()
 
@@ -349,6 +389,7 @@ def save_config(config: dict):
 
 _patch_lock = threading.Lock()
 _patched_already = False
+
 
 def _patch_mlx_attention():
     """Compatibility shim: diffusionkit passes `memory_efficient_threshold` to
@@ -372,6 +413,7 @@ def _patch_mlx_attention():
         def _make_patched(orig):
             def _patched(*args, **kwargs):
                 return orig(*args, **{k: v for k, v in kwargs.items() if k not in _REMOVED})
+
             return _patched
 
         if hasattr(mlx.core.fast, "scaled_dot_product_attention"):
@@ -401,6 +443,7 @@ def _apply_hf_cache(config: dict):
          downloads land under one user-owned tree)
     """
     import os
+
     cache_dir = config.get("hf_cache_dir") if config else None
     if cache_dir:
         p = Path(cache_dir).expanduser()
@@ -437,11 +480,18 @@ def get_pipeline(config: dict, use_t5: bool = True):
     return pipeline
 
 
-def _generate_image_mlx(pipeline, prompt: str, cfg_weight: float, num_steps: int,
-                        width: int, height: int, seed: Optional[int] = None,
-                        negative_prompt: str = "",
-                        image_path: Optional[str] = None,
-                        denoise: float = 1.0):
+def _generate_image_mlx(
+    pipeline,
+    prompt: str,
+    cfg_weight: float,
+    num_steps: int,
+    width: int,
+    height: int,
+    seed: Optional[int] = None,
+    negative_prompt: str = "",
+    image_path: Optional[str] = None,
+    denoise: float = 1.0,
+):
     """Run the MLX/diffusionkit pipeline and return a PIL Image."""
     image, _latent = pipeline.generate_image(
         prompt,
@@ -460,6 +510,7 @@ def _generate_image_mlx(pipeline, prompt: str, cfg_weight: float, num_steps: int
 # OllamaDiffuser backend
 # ---------------------------------------------------------------------------
 
+
 def get_ollama_pipeline(config: dict):
     """Load an ollamadiffuser model and return the engine.
 
@@ -472,7 +523,7 @@ def get_ollama_pipeline(config: dict):
     if not model_manager.is_model_installed(model_name):
         raise RuntimeError(
             f"GGUF model '{model_name}' is not installed. "
-            f"Pull it first:  ./generate.py pull \"{model_name}\""
+            f'Pull it first:  ./generate.py pull "{model_name}"'
         )
     model_manager.load_model(model_name)
     engine = model_manager.loaded_model
@@ -481,11 +532,18 @@ def get_ollama_pipeline(config: dict):
     return engine
 
 
-def _generate_image_ollama(engine, prompt: str, cfg_weight: float, num_steps: int,
-                           width: int, height: int, seed: Optional[int] = None,
-                           negative_prompt: str = "",
-                           image_path: Optional[str] = None,
-                           denoise: float = 1.0):
+def _generate_image_ollama(
+    engine,
+    prompt: str,
+    cfg_weight: float,
+    num_steps: int,
+    width: int,
+    height: int,
+    seed: Optional[int] = None,
+    negative_prompt: str = "",
+    image_path: Optional[str] = None,
+    denoise: float = 1.0,
+):
     """Run ollamadiffuser engine and return a PIL Image.
 
     Maps our parameter names to the ollamadiffuser API.
@@ -495,6 +553,7 @@ def _generate_image_ollama(engine, prompt: str, cfg_weight: float, num_steps: in
     # img2img: load image and pass as 'image' + 'strength'
     if image_path:
         from PIL import Image as PILImage
+
         kwargs["image"] = PILImage.open(image_path).convert("RGB")
         kwargs["strength"] = denoise
 
@@ -502,6 +561,7 @@ def _generate_image_ollama(engine, prompt: str, cfg_weight: float, num_steps: in
     if seed is not None:
         try:
             import torch
+
             device = engine.device if hasattr(engine, "device") else "cpu"
             if device == "mps":
                 # MPS generator must be created on CPU then used on MPS
@@ -513,7 +573,8 @@ def _generate_image_ollama(engine, prompt: str, cfg_weight: float, num_steps: in
 
     image = engine.generate_image(
         prompt=prompt,
-        negative_prompt=negative_prompt or "low quality, bad anatomy, worst quality, low resolution",
+        negative_prompt=negative_prompt
+        or "low quality, bad anatomy, worst quality, low resolution",
         num_inference_steps=num_steps,
         guidance_scale=cfg_weight,
         width=width,
@@ -531,12 +592,14 @@ def pull_model(model_name: str, progress_callback=None, hf_cache_dir: str | None
     """
     _apply_hf_cache({"hf_cache_dir": hf_cache_dir})
     from ollamadiffuser.core.models.manager import model_manager
+
     return model_manager.pull_model(model_name, progress_callback=progress_callback)
 
 
 def list_ollama_models() -> dict:
     """Return dicts of available and installed ollamadiffuser models."""
     from ollamadiffuser.core.models.manager import model_manager
+
     return {
         "installed": model_manager.list_installed_models(),
         "available": model_manager.list_available_models(),
@@ -547,6 +610,7 @@ def list_ollama_models() -> dict:
 # MFLUX backend
 # ---------------------------------------------------------------------------
 
+
 def _resolve_mflux_class(model_config):
     """Given a resolved ModelConfig, return the appropriate model class.
 
@@ -556,22 +620,28 @@ def _resolve_mflux_class(model_config):
 
     if "FLUX.2" in name:
         from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
+
         return Flux2Klein
     if "Z-Image" in name:
         from mflux.models.z_image.variants.z_image import ZImage
+
         return ZImage
     if "FIBO" in name or "Fibo" in name:
         from mflux.models.fibo.variants.txt2img.fibo import FIBO
+
         return FIBO
     if "Qwen" in name:
         from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
+
         return QwenImage
     if "SeedVR2" in name:
         from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
+
         return SeedVR2
 
     # Default to Flux1 (covers FLUX.1 and custom HF models)
     from mflux.models.flux.variants.txt2img.flux import Flux1
+
     return Flux1
 
 
@@ -623,17 +693,24 @@ def get_mflux_pipeline(config: dict, quantize: int | None = 4):
     )
 
 
-def _generate_image_mflux(model, prompt: str, cfg_weight: float, num_steps: int,
-                           width: int, height: int, seed: int | None = None,
-                           negative_prompt: str = "",
-                           image_path: str | None = None,
-                           denoise: float = 1.0):
+def _generate_image_mflux(
+    model,
+    prompt: str,
+    cfg_weight: float,
+    num_steps: int,
+    width: int,
+    height: int,
+    seed: int | None = None,
+    negative_prompt: str = "",
+    image_path: str | None = None,
+    denoise: float = 1.0,
+):
     """Run an MFLUX model and return a PIL Image.
 
     Maps our parameter names to the MFLUX API.
     """
     if seed is None:
-        seed = random.randint(0, 2**32 - 1)
+        seed = random.randint(0, 2**32 - 1)  # noqa: S311
 
     kwargs = {
         "seed": seed,
@@ -653,6 +730,7 @@ def _generate_image_mflux(model, prompt: str, cfg_weight: float, num_steps: int,
     if negative_prompt:
         try:
             import inspect
+
             sig = inspect.signature(model.generate_image)
             if "negative_prompt" in sig.parameters:
                 kwargs["negative_prompt"] = negative_prompt
@@ -664,7 +742,9 @@ def _generate_image_mflux(model, prompt: str, cfg_weight: float, num_steps: int,
     except ValueError as exc:
         if _is_quantization_error(exc):
             model_config = getattr(model, "model_config", None)
-            model_name = getattr(model_config, "model_name", "unknown") if model_config else "unknown"
+            model_name = (
+                getattr(model_config, "model_name", "unknown") if model_config else "unknown"
+            )
             raise QuantizationError(exc, model_name) from exc
         raise
 
@@ -678,6 +758,7 @@ def list_mflux_models() -> list[dict]:
     """Return a list of available MFLUX model dicts with alias and HF name."""
     try:
         from mflux.models.common.config.model_config import AVAILABLE_MODELS
+
         return [
             {"alias": alias, "model_name": cfg.model_name}
             for alias, cfg in sorted(AVAILABLE_MODELS.items(), key=lambda x: x[1].priority)
@@ -702,6 +783,7 @@ def clear_mflux_cache(model_alias: str | None = None) -> list[str]:
     if model_alias:
         try:
             from mflux.models.common.config.model_config import ModelConfig
+
             mc = ModelConfig.from_name(model_name=model_alias)
             repo_id = mc.model_name
         except Exception as exc:
@@ -817,17 +899,17 @@ def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def sanitize_prompt(prompt: str) -> str:
     """Normalize Unicode and replace non-ASCII punctuation for the T5 tokenizer."""
     prompt = unicodedata.normalize("NFKC", prompt)
     return (
-        prompt
-        .replace("\u2014", "-")   # em dash
-        .replace("\u2013", "-")   # en dash
-        .replace("\u2018", "'")   # left single quote
-        .replace("\u2019", "'")   # right single quote
-        .replace("\u201c", '"')   # left double quote
-        .replace("\u201d", '"')   # right double quote
+        prompt.replace("\u2014", "-")  # em dash
+        .replace("\u2013", "-")  # en dash
+        .replace("\u2018", "'")  # left single quote
+        .replace("\u2019", "'")  # right single quote
+        .replace("\u201c", '"')  # left double quote
+        .replace("\u201d", '"')  # right double quote
         .replace("\u2026", "...")  # ellipsis
     )
 
@@ -844,7 +926,7 @@ def validate_image_path(path: str) -> Optional[str]:
     p = Path(path)
     if not p.exists():
         return f"Image file not found: {path}"
-    if p.suffix.lower() not in ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff'):
+    if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff"):
         return f"Unsupported image format: {p.suffix}"
     return None
 
@@ -853,12 +935,20 @@ def validate_image_path(path: str) -> Optional[str]:
 # Unified generate dispatcher
 # ---------------------------------------------------------------------------
 
-def generate_image(pipeline, prompt: str, cfg_weight: float, num_steps: int,
-                   width: int, height: int, seed: Optional[int] = None,
-                   negative_prompt: str = "",
-                   image_path: Optional[str] = None,
-                   denoise: float = 1.0,
-                   backend: str = BACKEND_MLX):
+
+def generate_image(
+    pipeline,
+    prompt: str,
+    cfg_weight: float,
+    num_steps: int,
+    width: int,
+    height: int,
+    seed: Optional[int] = None,
+    negative_prompt: str = "",
+    image_path: Optional[str] = None,
+    denoise: float = 1.0,
+    backend: str = BACKEND_MLX,
+):
     """Run the diffusion pipeline and return a PIL Image.
 
     *backend* should be a resolved backend (``"mlx"``, ``"ollamadiffuser"``,
@@ -870,44 +960,76 @@ def generate_image(pipeline, prompt: str, cfg_weight: float, num_steps: int,
 
     if backend == BACKEND_OLLAMA:
         return _generate_image_ollama(
-            pipeline, prompt, cfg_weight, num_steps,
-            width, height, seed, negative_prompt,
-            image_path, denoise,
+            pipeline,
+            prompt,
+            cfg_weight,
+            num_steps,
+            width,
+            height,
+            seed,
+            negative_prompt,
+            image_path,
+            denoise,
         )
 
     if backend == BACKEND_MFLUX:
         return _generate_image_mflux(
-            pipeline, prompt, cfg_weight, num_steps,
-            width, height, seed, negative_prompt,
-            image_path, denoise,
+            pipeline,
+            prompt,
+            cfg_weight,
+            num_steps,
+            width,
+            height,
+            seed,
+            negative_prompt,
+            image_path,
+            denoise,
         )
 
     if backend == BACKEND_BONSAI:
         return pipeline.generate_image(
-            prompt=prompt, cfg_weight=cfg_weight, num_steps=num_steps,
-            width=width, height=height, seed=seed,
+            prompt=prompt,
+            cfg_weight=cfg_weight,
+            num_steps=num_steps,
+            width=width,
+            height=height,
+            seed=seed,
             negative_prompt=negative_prompt,
-            image_path=image_path, denoise=denoise,
+            image_path=image_path,
+            denoise=denoise,
         )
 
     if backend == BACKEND_COREML:
         return pipeline.generate_image(
-            prompt=prompt, cfg_weight=cfg_weight, num_steps=num_steps,
-            width=width, height=height, seed=seed,
+            prompt=prompt,
+            cfg_weight=cfg_weight,
+            num_steps=num_steps,
+            width=width,
+            height=height,
+            seed=seed,
             negative_prompt=negative_prompt,
-            image_path=image_path, denoise=denoise,
+            image_path=image_path,
+            denoise=denoise,
         )
 
     return _generate_image_mlx(
-        pipeline, prompt, cfg_weight, num_steps,
-        width, height, seed, negative_prompt,
-        image_path, denoise,
+        pipeline,
+        prompt,
+        cfg_weight,
+        num_steps,
+        width,
+        height,
+        seed,
+        negative_prompt,
+        image_path,
+        denoise,
     )
 
 
 # ---------------------------------------------------------------------------
 # HuggingFace authentication
 # ---------------------------------------------------------------------------
+
 
 def hf_login(token: str) -> dict:
     """Log in to HuggingFace and return the user info dict.
@@ -917,22 +1039,38 @@ def hf_login(token: str) -> dict:
     Raises on failure.
     """
     from huggingface_hub import login, whoami
+
     login(token=token)
     return whoami()
 
 
 def hf_status() -> Optional[dict]:
     """Return HuggingFace user info if logged in, or None."""
+    from huggingface_hub import errors as hf_errors
     from huggingface_hub import get_token, whoami
+
     if get_token() is None:
         return None
+    import requests
+
+    catch_types = [
+        hf_errors.LocalTokenNotFoundError,
+        hf_errors.HTTPError,
+        ValueError,
+        requests.exceptions.RequestException,
+    ]
+    offline_err = getattr(hf_errors, "OfflineModeIsEnabled", None)
+    if offline_err is not None:
+        catch_types.append(offline_err)
     try:
         return whoami()
-    except Exception:
+    except tuple(catch_types) as exc:
+        log.debug("HF status check failed: %s", exc)
         return None
 
 
 def hf_logout():
     """Remove the stored HuggingFace token."""
     from huggingface_hub import logout
+
     logout()

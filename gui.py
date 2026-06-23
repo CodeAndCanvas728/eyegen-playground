@@ -4,42 +4,75 @@ EyeGen — PySide6 GUI
 Native macOS desktop interface for image generation on Apple Silicon.
 """
 
+import io
 import json
+import logging
 import subprocess
 import sys
-import io
-import logging
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer
-from PySide6.QtGui import QPixmap, QImage, QIcon, QFont, QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFont, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QTextEdit, QSlider, QComboBox, QLineEdit,
-    QCheckBox, QGroupBox, QSplitter, QFrame, QSizePolicy, QSpinBox,
-    QDoubleSpinBox, QProgressBar, QMessageBox, QFileDialog, QTabBar,
+    QApplication,
+    QCheckBox,
+    QComboBox,
     QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QTabBar,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
-from core import (
-    load_config, get_pipeline, get_ollama_pipeline, get_mflux_pipeline,
-    generate_image, clear_mflux_cache,
-    save_mflux_model, validate_saved_model,
-    validate_dimensions, validate_image_path, detect_backend,
-    pull_model, list_ollama_models, list_mflux_models,
-    hf_login, hf_status, hf_logout,
-    OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, DEFAULT_CONFIG,
-    BACKEND_AUTO, BACKEND_MLX, BACKEND_OLLAMA, BACKEND_MFLUX,
-    BACKEND_BONSAI, BACKEND_COREML,
-    EyeGenConfig, QuantizationError,
-)
 import core_bonsai
 import core_coreml
+from core import (
+    BACKEND_AUTO,
+    BACKEND_BONSAI,
+    BACKEND_COREML,
+    BACKEND_MFLUX,
+    BACKEND_MLX,
+    BACKEND_OLLAMA,
+    CONFIG_DIR,
+    DEFAULT_CONFIG,
+    MODELS_DIR,
+    OUTPUT_DIR,
+    PROJECT_ROOT,
+    EyeGenConfig,
+    clear_mflux_cache,
+    detect_backend,
+    generate_image,
+    get_mflux_pipeline,
+    get_ollama_pipeline,
+    get_pipeline,
+    list_mflux_models,
+    load_config,
+    pull_model,
+    save_mflux_model,
+    validate_dimensions,
+    validate_image_path,
+    validate_saved_model,
+)
+from gui_hf_login import HFLoginDialog, _cached_hf_status
 
 # ---------------------------------------------------------------------------
 # Logging — always write to ~/Library/Logs/EyeGen.log so errors are
@@ -48,9 +81,6 @@ import core_coreml
 
 LOG_FILE = CONFIG_DIR / "eyegen.log"
 
-# Cache for hf_status() to avoid repeated network calls
-_hf_status_cache: dict = {"result": None, "timestamp": 0.0}
-_HF_CACHE_TTL = 30.0  # seconds
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
@@ -70,23 +100,12 @@ log = logging.getLogger("eyegen")
 GUI_STATE_FILE = CONFIG_DIR / "gui_state.json"
 
 
-def _cached_hf_status() -> Optional[dict]:
-    """Return cached hf_status, refreshing from network every _HF_CACHE_TTL seconds."""
-    now = time.time()
-    if now - _hf_status_cache["timestamp"] < _HF_CACHE_TTL and _hf_status_cache["result"] is not None:
-        return _hf_status_cache["result"]
-    result = hf_status()
-    _hf_status_cache["result"] = result
-    _hf_status_cache["timestamp"] = now
-    return result
-
-
 def load_gui_state() -> dict:
     if GUI_STATE_FILE.exists():
         try:
             with open(GUI_STATE_FILE, "r") as f:
                 return json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
     return {}
 
@@ -105,6 +124,7 @@ _sample_euler_patched = False
 # Mutable holder so re-patching can update callbacks without replacing the function
 _sample_euler_state = {"progress_callback": None, "cancel_event": None}
 
+
 def _patch_sample_euler(progress_callback, cancel_event=None):
     """Replace diffusionkit's sample_euler with a step-reporting wrapper.
     On subsequent calls, only the callback/cancel_event references are updated
@@ -122,12 +142,8 @@ def _patch_sample_euler(progress_callback, cancel_event=None):
         extra_args = {} if extra_args is None else extra_args
         total = len(sigmas) - 1
 
-        timesteps = model.model.sampler.timestep(sigmas).astype(
-            model.model.activation_dtype
-        )
-        model.cache_modulation_params(
-            extra_args.pop("pooled_conditioning"), timesteps
-        )
+        timesteps = model.model.sampler.timestep(sigmas).astype(model.model.activation_dtype)
+        model.cache_modulation_params(extra_args.pop("pooled_conditioning"), timesteps)
 
         iter_time = []
         cancel = _sample_euler_state["cancel_event"]
@@ -174,6 +190,7 @@ def _clear_pipeline_cache():
 # Worker thread — runs image generation off the main/UI thread
 # ---------------------------------------------------------------------------
 
+
 class GenerationWorker(QThread):
     finished = Signal(object, str)  # (PIL.Image, output_path)
     error = Signal(str)
@@ -182,9 +199,22 @@ class GenerationWorker(QThread):
     progress = Signal(int, int)  # (current_step, total_steps)
     cancelled = Signal()
 
-    def __init__(self, prompt, negative_prompt, cfg_weight, num_steps, width, height,
-                 seed, config, use_t5, image_path=None, denoise=1.0,
-                 backend=BACKEND_MLX, mflux_quantize=4):
+    def __init__(
+        self,
+        prompt,
+        negative_prompt,
+        cfg_weight,
+        num_steps,
+        width,
+        height,
+        seed,
+        config,
+        use_t5,
+        image_path=None,
+        denoise=1.0,
+        backend=BACKEND_MLX,
+        mflux_quantize=4,
+    ):
         super().__init__()
         self._cancelled = threading.Event()
         self.prompt = prompt
@@ -202,16 +232,39 @@ class GenerationWorker(QThread):
         self.mflux_quantize = mflux_quantize
         self.pipeline = None
 
+    def cancel(self) -> None:
+        """Request cancellation of the running generation.
+
+        Sets the cooperative cancellation event (checked at step boundaries)
+        and, for backends that wrap a subprocess (bonsai/coreml), terminates
+        the child so the user does not have to wait minutes for a doomed
+        generation to finish. No-op for backends whose pipeline does not
+        expose ``cancel()``.
+        """
+        self._cancelled.set()
+        pipeline = self.pipeline
+        if pipeline is not None:
+            cancel_fn = getattr(pipeline, "cancel", None)
+            if callable(cancel_fn):
+                try:
+                    cancel_fn()
+                except Exception as exc:
+                    log.warning("pipeline.cancel() raised: %s", exc)
+
     def run(self):
         try:
-            # Check pipeline cache (includes the new bonsai/coreml config
+            # Check pipeline cache (includes bonsai/coreml config
             # fields so model_path or compute_unit changes invalidate the cache)
-            cache_key = (self.backend, self.config.get("model"),
-                         self.mflux_quantize, self.use_t5,
-                         self.config.get("mflux_model_path"),
-                         self.config.get("bonsai_model_path"),
-                         self.config.get("coreml_model_path"),
-                         self.config.get("coreml_compute_unit"))
+            cache_key = (
+                self.backend,
+                self.config.get("model"),
+                self.mflux_quantize,
+                self.use_t5,
+                self.config.get("mflux_model_path"),
+                self.config.get("bonsai_model_path"),
+                self.config.get("coreml_model_path"),
+                self.config.get("coreml_compute_unit"),
+            )
             with _pipeline_cache_lock:
                 cached_pipeline = _pipeline_cache["pipeline"]
                 cached_key = _pipeline_cache["key"]
@@ -220,29 +273,33 @@ class GenerationWorker(QThread):
                 log.info("Using cached pipeline (backend=%s)", self.backend)
                 if self.backend == BACKEND_MLX:
                     _patch_sample_euler(
-                        lambda step, total: self.progress.emit(step, total),
-                        self._cancelled)
+                        lambda step, total: self.progress.emit(step, total), self._cancelled
+                    )
             else:
                 self.status.emit("Loading model…")
-                log.info("Loading pipeline (model=%s, backend=%s, t5=%s)",
-                         self.config.get("model", "default"), self.backend,
-                         self.use_t5)
+                log.info(
+                    "Loading pipeline (model=%s, backend=%s, t5=%s)",
+                    self.config.get("model", "default"),
+                    self.backend,
+                    self.use_t5,
+                )
                 if self.backend == BACKEND_OLLAMA:
                     pipeline = get_ollama_pipeline(self.config)
                 elif self.backend == BACKEND_MFLUX:
-                    pipeline = get_mflux_pipeline(self.config,
-                                                  quantize=self.mflux_quantize)
+                    pipeline = get_mflux_pipeline(self.config, quantize=self.mflux_quantize)
                 elif self.backend == BACKEND_BONSAI:
                     import core_bonsai
+
                     pipeline = core_bonsai.get_bonsai_pipeline(self.config)
                 elif self.backend == BACKEND_COREML:
                     import core_coreml
+
                     pipeline = core_coreml.get_coreml_pipeline(self.config)
                 else:
                     pipeline = get_pipeline(self.config, use_t5=self.use_t5)
                     _patch_sample_euler(
-                        lambda step, total: self.progress.emit(step, total),
-                        self._cancelled)
+                        lambda step, total: self.progress.emit(step, total), self._cancelled
+                    )
                 with _pipeline_cache_lock:
                     _pipeline_cache["pipeline"] = pipeline
                     _pipeline_cache["key"] = cache_key
@@ -253,12 +310,23 @@ class GenerationWorker(QThread):
                 return
 
             self.status.emit("Generating…")
-            log.info("Generating: steps=%d guidance=%.1f size=%dx%d seed=%s backend=%s",
-                     self.num_steps, self.cfg_weight, self.width, self.height,
-                     self.seed, self.backend)
+            log.info(
+                "Generating: steps=%d guidance=%.1f size=%dx%d seed=%s backend=%s",
+                self.num_steps,
+                self.cfg_weight,
+                self.width,
+                self.height,
+                self.seed,
+                self.backend,
+            )
             image = generate_image(
-                pipeline, self.prompt, self.cfg_weight,
-                self.num_steps, self.width, self.height, self.seed,
+                pipeline,
+                self.prompt,
+                self.cfg_weight,
+                self.num_steps,
+                self.width,
+                self.height,
+                self.seed,
                 negative_prompt=self.negative_prompt,
                 image_path=self.image_path,
                 denoise=self.denoise,
@@ -270,48 +338,22 @@ class GenerationWorker(QThread):
                 return
 
             self.status.emit("Saving…")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             out_path = OUTPUT_DIR / f"{timestamp}.png"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             image.save(out_path)
             log.info("Saved: %s", out_path)
 
             self.finished.emit(image, str(out_path))
-        except GenerationCancelled:
-            log.info("Generation cancelled by user")
-            self.cancelled.emit()
-        except QuantizationError as qe:
-            log.warning("Quantization error for %s: %s", qe.model_name, qe.original)
-            _pipeline_cache["pipeline"] = None
-            _pipeline_cache["key"] = None
-            self.quantize_failed.emit(qe.model_name)
-        except Exception as exc:
+        except Exception:
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
 
-    def cancel(self) -> None:
-        """Forward cancellation to the active pipeline, if it supports it.
-
-        Called from the main thread by the ``Stop`` button. For MLX the
-        cooperative ``_cancelled`` event is enough; for bonsai/coreml
-        wrappers, this terminates the underlying subprocess so the user
-        does not have to wait minutes for a doomed generation to finish.
-        No-op for backends whose pipeline does not expose ``cancel()``.
-        """
-        pipeline = self.pipeline
-        if pipeline is None:
-            return
-        cancel_fn = getattr(pipeline, "cancel", None)
-        if callable(cancel_fn):
-            try:
-                cancel_fn()
-            except Exception as exc:
-                log.warning("pipeline.cancel() raised: %s", exc)
-
 
 class PullWorker(QThread):
     """Downloads a GGUF model via ollamadiffuser in a background thread."""
+
     finished = Signal(bool, str)  # (success, message)
     status = Signal(str)
 
@@ -329,8 +371,9 @@ class PullWorker(QThread):
                 if isinstance(msg, str):
                     self.status.emit(msg)
 
-            ok = pull_model(self.model_name, progress_callback=on_progress,
-                            hf_cache_dir=self.hf_cache_dir)
+            ok = pull_model(
+                self.model_name, progress_callback=on_progress, hf_cache_dir=self.hf_cache_dir
+            )
             if ok:
                 log.info("Pull complete: %s", self.model_name)
                 self.finished.emit(True, f"Model '{self.model_name}' is ready")
@@ -344,11 +387,17 @@ class PullWorker(QThread):
 
 class SaveModelWorker(QThread):
     """Downloads, quantizes, and saves an MFLUX model in a background thread."""
+
     finished = Signal(bool, str, str)  # (success, message, saved_path)
     status = Signal(str)
 
-    def __init__(self, model_alias: str, quantize: int | None, output_path: str,
-                 hf_cache_dir: str | None = None):
+    def __init__(
+        self,
+        model_alias: str,
+        quantize: int | None,
+        output_path: str,
+        hf_cache_dir: str | None = None,
+    ):
         super().__init__()
         self.model_alias = model_alias
         self.quantize = quantize
@@ -373,6 +422,7 @@ class SaveModelWorker(QThread):
 
 class BonsaiSetupWorker(QThread):
     """Runs scripts/setup-bonsai.sh in a subprocess."""
+
     finished = Signal(bool, str)  # (success, message)
 
     def __init__(self, script_path: str):
@@ -381,7 +431,7 @@ class BonsaiSetupWorker(QThread):
 
     def run(self):
         try:
-            r = subprocess.run([self.script_path], capture_output=True, text=True)
+            r = subprocess.run([self.script_path], capture_output=True, text=True)  # noqa: S603
             if r.returncode == 0:
                 self.finished.emit(True, "Bonsai installed successfully")
             else:
@@ -393,6 +443,7 @@ class BonsaiSetupWorker(QThread):
 
 class BonsaiDownloadWorker(QThread):
     """Downloads a bonsai model via core_bonsai.download_bonsai_model()."""
+
     finished = Signal(bool, str)
     status = Signal(str)
 
@@ -416,6 +467,7 @@ class BonsaiDownloadWorker(QThread):
 
 class CoreMLSetupWorker(QThread):
     """Runs scripts/setup-coreml.sh in a subprocess."""
+
     finished = Signal(bool, str)
 
     def __init__(self, script_path: str):
@@ -424,7 +476,7 @@ class CoreMLSetupWorker(QThread):
 
     def run(self):
         try:
-            r = subprocess.run([self.script_path], capture_output=True, text=True)
+            r = subprocess.run([self.script_path], capture_output=True, text=True)  # noqa: S603
             if r.returncode == 0:
                 self.finished.emit(True, "CoreML sidecar venv installed")
             else:
@@ -436,6 +488,7 @@ class CoreMLSetupWorker(QThread):
 
 class CoreMLDownloadWorker(QThread):
     """Downloads a pre-converted CoreML model from Hugging Face."""
+
     finished = Signal(bool, str)
     status = Signal(str)
 
@@ -461,6 +514,7 @@ class CoreMLDownloadWorker(QThread):
 # Helper: PIL Image → QPixmap
 # ---------------------------------------------------------------------------
 
+
 def pil_to_pixmap(pil_image) -> QPixmap:
     buf = io.BytesIO()
     pil_image.save(buf, format="PNG")
@@ -478,139 +532,9 @@ DIMENSION_PRESETS = [512, 640, 768, 896, 1024]
 
 
 # ---------------------------------------------------------------------------
-# HuggingFace login dialog
-# ---------------------------------------------------------------------------
-
-class HFLoginDialog(QDialog):
-    """Modal dialog for HuggingFace authentication."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("HuggingFace Login")
-        self.setMinimumWidth(400)
-        self._has_unsaved_token = False
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-
-        # Status
-        self.status_label = QLabel("Checking login status…")
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
-
-        # Token input
-        layout.addWidget(QLabel("Access Token"))
-        self.token_input = QLineEdit()
-        self.token_input.setEchoMode(QLineEdit.Password)
-        self.token_input.setPlaceholderText("hf_...")
-        self.token_input.textChanged.connect(self._on_token_changed)
-        layout.addWidget(self.token_input)
-
-        hint = QLabel(
-            '<a href="https://huggingface.co/settings/tokens">'
-            'Get a token at huggingface.co/settings/tokens</a>'
-        )
-        hint.setOpenExternalLinks(True)
-        hint.setProperty("class", "hint")
-        layout.addWidget(hint)
-
-        # Buttons
-        btn_row = QHBoxLayout()
-        self.login_btn = QPushButton("Login")
-        self.login_btn.clicked.connect(self._on_login)
-        btn_row.addWidget(self.login_btn)
-
-        self.logout_btn = QPushButton("Logout")
-        self.logout_btn.clicked.connect(self._on_logout)
-        btn_row.addWidget(self.logout_btn)
-
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self._on_close_clicked)
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
-
-        self._refresh_status()
-
-    def _on_token_changed(self, text: str):
-        self._has_unsaved_token = bool(text.strip())
-
-    def _on_close_clicked(self):
-        if self._confirm_discard_token():
-            self.accept()
-
-    def _confirm_discard_token(self) -> bool:
-        if not self._has_unsaved_token:
-            return True
-        reply = QMessageBox.question(
-            self,
-            "Discard token?",
-            "A token was entered but not submitted. Discard it?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        return reply == QMessageBox.Yes
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
-            if self._confirm_discard_token():
-                self.reject()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-    def closeEvent(self, event):
-        if self._confirm_discard_token():
-            self._has_unsaved_token = False
-            event.accept()
-        else:
-            event.ignore()
-
-    def _refresh_status(self):
-        info = hf_status()
-        if info:
-            name = info.get("name", "unknown")
-            self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
-            self.status_label.setStyleSheet("color: green;")
-            self.logout_btn.setEnabled(True)
-        else:
-            self.status_label.setText("Not logged in — enter a token to access gated models")
-            self.status_label.setStyleSheet("color: gray;")
-            self.logout_btn.setEnabled(False)
-
-    def _on_login(self):
-        token = self.token_input.text().strip()
-        if not token:
-            self.status_label.setText("⚠ Enter a token first")
-            self.status_label.setStyleSheet("color: orange;")
-            return
-        try:
-            info = hf_login(token)
-            name = info.get("name", "unknown")
-            self.status_label.setText(f"✅ Logged in as <b>{name}</b>")
-            self.status_label.setStyleSheet("color: green;")
-            self.token_input.clear()
-            self._has_unsaved_token = False
-            self.logout_btn.setEnabled(True)
-        except Exception as e:
-            self.status_label.setText(f"❌ Login failed: {e}")
-            self.status_label.setStyleSheet("color: red;")
-
-    def _on_logout(self):
-        try:
-            hf_logout()
-        except Exception:
-            pass
-        self._refresh_status()
-
-    def get_username(self) -> Optional[str]:
-        """Return current HF username if logged in, else None."""
-        info = _cached_hf_status()
-        return info.get("name") if info else None
-
-
-# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -630,6 +554,8 @@ class MainWindow(QMainWindow):
         self._restoring_state = False
         self._elapsed_seconds = 0
         self._current_phase = ""
+        self._generation_id = 0
+        self._autoclear_generation_id = 0
         self._status_clear_timer = QTimer(self)
         self._status_clear_timer.setSingleShot(True)
         self._status_clear_timer.setInterval(5000)
@@ -645,32 +571,10 @@ class MainWindow(QMainWindow):
 
     # ----- UI construction ------------------------------------------------
 
-    def _build_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QHBoxLayout(central)
-
-        splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
-
-        # --- Left: controls ---
-        controls = QWidget()
-        controls.setMaximumWidth(420)
-        controls.setMinimumWidth(300)
-        ctrl_layout = QVBoxLayout(controls)
-        ctrl_layout.setContentsMargins(8, 8, 8, 8)
-        ctrl_layout.setSpacing(8)
-
-        # Mode tab bar
-        self.mode_tabs = QTabBar()
-        self.mode_tabs.addTab("Text to Image")
-        self.mode_tabs.addTab("Image to Image")
-        self.mode_tabs.currentChanged.connect(self._on_mode_changed)
-        ctrl_layout.addWidget(self.mode_tabs)
-
+    def _build_img2img_controls(self) -> QWidget:
         # img2img controls (hidden by default)
-        self.img2img_controls = QWidget()
-        img2img_layout = QVBoxLayout(self.img2img_controls)
+        widget = QWidget()
+        img2img_layout = QVBoxLayout(widget)
         img2img_layout.setContentsMargins(0, 0, 0, 0)
         img2img_layout.setSpacing(8)
 
@@ -714,49 +618,16 @@ class MainWindow(QMainWindow):
         self.denoise_slider = QSlider(Qt.Horizontal)
         self.denoise_slider.setRange(5, 100)  # ×100 for int slider
         self.denoise_slider.setValue(75)
-        self.denoise_slider.valueChanged.connect(
-            lambda v: self.denoise_spin.setValue(v / 100.0))
+        self.denoise_slider.valueChanged.connect(lambda v: self.denoise_spin.setValue(v / 100.0))
         self.denoise_spin.valueChanged.connect(
-            lambda v: self.denoise_slider.setValue(int(round(v * 100))))
+            lambda v: self.denoise_slider.setValue(int(round(v * 100)))
+        )
         img2img_layout.addWidget(self.denoise_slider)
 
-        self.img2img_controls.hide()
-        ctrl_layout.addWidget(self.img2img_controls)
+        widget.hide()
+        return widget
 
-        # Prompt
-        ctrl_layout.addWidget(QLabel("Prompt"))
-        self.prompt_input = QTextEdit()
-        self.prompt_input.setPlaceholderText("Describe the image you want to generate…")
-        self.prompt_input.setMaximumHeight(120)
-        ctrl_layout.addWidget(self.prompt_input)
-
-        # Negative prompt
-        ctrl_layout.addWidget(QLabel("Negative Prompt"))
-        self.negative_prompt_input = QTextEdit()
-        self.negative_prompt_input.setPlaceholderText("What to avoid (optional)…")
-        self.negative_prompt_input.setMaximumHeight(60)
-        ctrl_layout.addWidget(self.negative_prompt_input)
-
-        # Generate button
-        self.generate_btn = QPushButton("✨  Generate")
-        self.generate_btn.setMinimumHeight(40)
-        self.generate_btn.setToolTip("Generate (⌘↩ / Ctrl+↩)")
-        self.generate_btn.clicked.connect(self._on_generate)
-        self.generate_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self, self._on_generate)
-        ctrl_layout.addWidget(self.generate_btn)
-
-        # Status
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: gray;")
-        ctrl_layout.addWidget(self.status_label)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumHeight(8)
-        self.progress_bar.hide()
-        ctrl_layout.addWidget(self.progress_bar)
-
-        # --- Settings group ---
+    def _build_settings_panel(self) -> QGroupBox:
         settings_group = QGroupBox("Settings")
         settings_layout = QVBoxLayout(settings_group)
         settings_layout.setSpacing(8)
@@ -790,10 +661,10 @@ class MainWindow(QMainWindow):
         self.guidance_slider = QSlider(Qt.Horizontal)
         self.guidance_slider.setRange(10, 150)  # ×10 for int slider
         self.guidance_slider.setValue(int(self.guidance_spin.value() * 10))
-        self.guidance_slider.valueChanged.connect(
-            lambda v: self.guidance_spin.setValue(v / 10.0))
+        self.guidance_slider.valueChanged.connect(lambda v: self.guidance_spin.setValue(v / 10.0))
         self.guidance_spin.valueChanged.connect(
-            lambda v: self.guidance_slider.setValue(int(v * 10)))
+            lambda v: self.guidance_slider.setValue(int(v * 10))
+        )
         settings_layout.addWidget(self.guidance_slider)
 
         # Width
@@ -802,8 +673,7 @@ class MainWindow(QMainWindow):
         self.width_combo = QComboBox()
         for d in DIMENSION_PRESETS:
             self.width_combo.addItem(str(d), d)
-        self.width_combo.setCurrentText(
-            str(self.config.get("width", 1024)))
+        self.width_combo.setCurrentText(str(self.config.get("width", 1024)))
         row.addWidget(self.width_combo)
         settings_layout.addLayout(row)
 
@@ -813,8 +683,7 @@ class MainWindow(QMainWindow):
         self.height_combo = QComboBox()
         for d in DIMENSION_PRESETS:
             self.height_combo.addItem(str(d), d)
-        self.height_combo.setCurrentText(
-            str(self.config.get("height", 1024)))
+        self.height_combo.setCurrentText(str(self.config.get("height", 1024)))
         row.addWidget(self.height_combo)
         settings_layout.addLayout(row)
 
@@ -835,11 +704,9 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(QLabel("Model"))
         model_row = QHBoxLayout()
         self.model_input = QLineEdit()
-        self.model_input.setText(
-            self.config.get("model", DEFAULT_CONFIG["model"]))
+        self.model_input.setText(self.config.get("model", DEFAULT_CONFIG["model"]))
         self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
-        self.model_input.editingFinished.connect(
-            lambda: self._update_backend_dependent_controls())
+        self.model_input.editingFinished.connect(lambda: self._update_backend_dependent_controls())
         model_row.addWidget(self.model_input)
         self.pull_btn = QPushButton("Pull…")
         self.pull_btn.setFixedWidth(50)
@@ -895,6 +762,7 @@ class MainWindow(QMainWindow):
         browse_btn.clicked.connect(self._on_browse_model_path)
         mp_top.addWidget(browse_btn)
         mp_layout.addLayout(mp_top)
+
         # Status label + Save Model button on second row
         mp_bottom = QHBoxLayout()
         self.model_path_status = QLabel()
@@ -939,7 +807,9 @@ class MainWindow(QMainWindow):
         bonsai_layout.addWidget(self.bonsai_setup_btn)
         self.bonsai_pull_btn = QPushButton("Download Model…")
         self.bonsai_pull_btn.setFixedWidth(140)
-        self.bonsai_pull_btn.setToolTip("Download a bonsai model via the bonsai-demo's download script.")
+        self.bonsai_pull_btn.setToolTip(
+            "Download a bonsai model via the bonsai-demo's download script."
+        )
         self.bonsai_pull_btn.clicked.connect(self._on_bonsai_pull)
         bonsai_layout.addWidget(self.bonsai_pull_btn)
         self.bonsai_row.hide()
@@ -976,8 +846,7 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(QLabel("HF Cache Dir"))
         hf_cache_row = QHBoxLayout()
         self.hf_cache_input = QLineEdit()
-        self.hf_cache_input.setPlaceholderText(
-            f"Default (~/.cache/huggingface/hub)")
+        self.hf_cache_input.setPlaceholderText("Default (~/.cache/huggingface/hub)")
         self.hf_cache_input.setToolTip(
             "Directory where HuggingFace caches downloaded model weights.\n"
             "Leave blank to use the default (~/.cache/huggingface/hub)."
@@ -989,6 +858,77 @@ class MainWindow(QMainWindow):
         hf_cache_row.addWidget(hf_cache_browse)
         settings_layout.addLayout(hf_cache_row)
 
+        return settings_group
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QHBoxLayout(central)
+
+        splitter = QSplitter(Qt.Horizontal)
+        root.addWidget(splitter)
+
+        # --- Left: controls ---
+        controls = QWidget()
+        controls.setMaximumWidth(420)
+        controls.setMinimumWidth(300)
+        ctrl_layout = QVBoxLayout(controls)
+        ctrl_layout.setContentsMargins(8, 8, 8, 8)
+        ctrl_layout.setSpacing(8)
+
+        # Mode tab bar
+        self.mode_tabs = QTabBar()
+        self.mode_tabs.addTab("Text to Image")
+        self.mode_tabs.addTab("Image to Image")
+        self.mode_tabs.currentChanged.connect(self._on_mode_changed)
+        ctrl_layout.addWidget(self.mode_tabs)
+
+        # img2img controls (hidden by default)
+        self.img2img_controls = self._build_img2img_controls()
+        ctrl_layout.addWidget(self.img2img_controls)
+
+        # Prompt
+        ctrl_layout.addWidget(QLabel("Prompt"))
+        self.prompt_input = QTextEdit()
+        self.prompt_input.setPlaceholderText("Describe the image you want to generate…")
+        self.prompt_input.setMaximumHeight(120)
+        ctrl_layout.addWidget(self.prompt_input)
+
+        # Negative prompt
+        ctrl_layout.addWidget(QLabel("Negative Prompt"))
+        self.negative_prompt_input = QTextEdit()
+        self.negative_prompt_input.setPlaceholderText("What to avoid (optional)…")
+        self.negative_prompt_input.setMaximumHeight(60)
+        ctrl_layout.addWidget(self.negative_prompt_input)
+
+        # Generate button
+        self.generate_btn = QPushButton("✨  Generate")
+        self.generate_btn.setMinimumHeight(40)
+        self.generate_btn.setToolTip("Generate (⌘↩ / Ctrl+↩)")
+        self.generate_btn.clicked.connect(self._on_generate)
+        self.generate_shortcut = QShortcut(
+            QKeySequence("Ctrl+Return"), self.prompt_input, self._on_generate
+        )
+        self.generate_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.generate_shortcut_neg = QShortcut(
+            QKeySequence("Ctrl+Return"), self.negative_prompt_input, self._on_generate
+        )
+        self.generate_shortcut_neg.setContext(Qt.WidgetWithChildrenShortcut)
+        ctrl_layout.addWidget(self.generate_btn)
+
+        # Status
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet("color: gray;")
+        ctrl_layout.addWidget(self.status_label)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumHeight(8)
+        self.progress_bar.hide()
+        ctrl_layout.addWidget(self.progress_bar)
+
+        # Settings
+        settings_group = self._build_settings_panel()
         ctrl_layout.addWidget(settings_group)
 
         # HuggingFace login button
@@ -1016,11 +956,11 @@ class MainWindow(QMainWindow):
 
         self.image_label = QLabel("No image yet")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.image_label.setProperty("class", "display")
         self.image_label.setStyleSheet(
-            "background-color: #1e1e1e; color: #888; border-radius: 8px;")
+            "background-color: #1e1e1e; color: #888; border-radius: 8px;"
+        )
         preview_layout.addWidget(self.image_label)
 
         splitter.addWidget(preview)
@@ -1038,7 +978,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._elapsed_timer.stop()
         if self.worker is not None and self.worker.isRunning():
-            self.worker._cancelled.set()
+            self.worker.cancel()
             self.worker.terminate()
             self.worker.wait(2000)
         save_gui_state(self._collect_state())
@@ -1046,7 +986,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _on_mode_changed(self, index: int):
-        is_img2img = (index == 1)
+        is_img2img = index == 1
         self.img2img_controls.setVisible(is_img2img)
         self.width_combo.setEnabled(not is_img2img)
         self.height_combo.setEnabled(not is_img2img)
@@ -1070,11 +1010,11 @@ class MainWindow(QMainWindow):
     def _update_backend_dependent_controls(self):
         """Show/hide/enable controls based on the resolved backend."""
         backend = self._resolved_backend()
-        is_mlx = (backend == BACKEND_MLX)
-        is_mflux = (backend == BACKEND_MFLUX)
-        is_ollama = (backend == BACKEND_OLLAMA)
-        is_bonsai = (backend == BACKEND_BONSAI)
-        is_coreml = (backend == BACKEND_COREML)
+        is_mlx = backend == BACKEND_MLX
+        is_mflux = backend == BACKEND_MFLUX
+        is_ollama = backend == BACKEND_OLLAMA
+        is_bonsai = backend == BACKEND_BONSAI
+        is_coreml = backend == BACKEND_COREML
 
         # T5 only applies to MLX
         self.t5_check.setEnabled(is_mlx)
@@ -1090,7 +1030,7 @@ class MainWindow(QMainWindow):
             self.t5_check.setToolTip("")
 
         # Img2img quantization warning only for MLX
-        is_img2img = (self.mode_tabs.currentIndex() == 1)
+        is_img2img = self.mode_tabs.currentIndex() == 1
         self.img2img_warning.setVisible(is_img2img and is_mlx)
 
         # Bonsai + CoreML don't support img2img — switch back to txt2img if needed
@@ -1176,7 +1116,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)  # indeterminate
         self.progress_bar.show()
 
-        self.pull_worker = PullWorker(model, hf_cache_dir=self.hf_cache_input.text().strip() or None)
+        self.pull_worker = PullWorker(
+            model, hf_cache_dir=self.hf_cache_input.text().strip() or None
+        )
         self.pull_worker.status.connect(self._on_status)
         self.pull_worker.finished.connect(self._on_pull_finished)
         self.pull_worker.start()
@@ -1199,6 +1141,7 @@ class MainWindow(QMainWindow):
         """Show the current bonsai install state in the status label."""
         try:
             import core_bonsai
+
             status = core_bonsai.validate_bonsai_install()
             self.bonsai_status_label.setText(status.message)
             # Pull enabled once install is ready (whether or not models are present)
@@ -1208,7 +1151,6 @@ class MainWindow(QMainWindow):
 
     def _on_bonsai_setup(self):
         """Run scripts/setup-bonsai.sh in a subprocess thread."""
-        from core_bonsai import get_bonsai_dir
         script = PROJECT_ROOT / "scripts" / "setup-bonsai.sh"
         if not script.is_file():
             self.status_label.setText(f"❌ Setup script not found: {script}")
@@ -1217,7 +1159,9 @@ class MainWindow(QMainWindow):
         self.bonsai_setup_btn.setEnabled(False)
         self.bonsai_pull_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
-        self.status_label.setText("🌳 Setting up Bonsai (one-time install, may take a few minutes)…")
+        self.status_label.setText(
+            "🌳 Setting up Bonsai (one-time install, may take a few minutes)…"
+        )
         self.status_label.setStyleSheet("color: blue;")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
@@ -1243,6 +1187,7 @@ class MainWindow(QMainWindow):
     def _on_bonsai_pull(self):
         """Download a bonsai model in a thread."""
         import core_bonsai
+
         status = core_bonsai.validate_bonsai_install()
         if not status.installed:
             self.status_label.setText("⚠ Bonsai not installed. Click 'Setup Bonsai…' first.")
@@ -1281,6 +1226,7 @@ class MainWindow(QMainWindow):
         """Show the current CoreML install state in the status label."""
         try:
             import core_coreml
+
             status = core_coreml.validate_coreml_install()
             self.coreml_status_label.setText(status.message)
             self.coreml_pull_btn.setEnabled(status.installed)
@@ -1297,7 +1243,9 @@ class MainWindow(QMainWindow):
         self.coreml_setup_btn.setEnabled(False)
         self.coreml_pull_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
-        self.status_label.setText("🍎 Setting up CoreML (one-time install, may take a few minutes)…")
+        self.status_label.setText(
+            "🍎 Setting up CoreML (one-time install, may take a few minutes)…"
+        )
         self.status_label.setStyleSheet("color: blue;")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
@@ -1323,6 +1271,7 @@ class MainWindow(QMainWindow):
     def _on_coreml_pull(self):
         """Open a small dialog to pick an alias, then download."""
         import core_coreml
+
         status = core_coreml.validate_coreml_install()
         if not status.installed:
             self.status_label.setText("⚠ CoreML not installed. Click 'Setup CoreML…' first.")
@@ -1330,8 +1279,10 @@ class MainWindow(QMainWindow):
             return
 
         from PySide6.QtWidgets import QInputDialog
+
         alias, ok = QInputDialog.getItem(
-            self, "Download CoreML model",
+            self,
+            "Download CoreML model",
             "Pre-converted CoreML models on Hugging Face:",
             list(core_coreml.PRECONVERTED_HF_MODELS.keys()),
             3,  # default to sd-2-1-base-palettized
@@ -1372,8 +1323,7 @@ class MainWindow(QMainWindow):
     def _on_browse_model_path(self):
         """Open a folder picker for a saved MFLUX model directory."""
         start_dir = str(MODELS_DIR) if MODELS_DIR.exists() else str(Path.home())
-        path = QFileDialog.getExistingDirectory(
-            self, "Select Saved Model Directory", start_dir)
+        path = QFileDialog.getExistingDirectory(self, "Select Saved Model Directory", start_dir)
         if path:
             self.model_path_input.setText(path)
             self._on_model_path_changed()
@@ -1383,7 +1333,8 @@ class MainWindow(QMainWindow):
         current = self.hf_cache_input.text().strip()
         start_dir = current if current else str(Path.home() / ".cache" / "huggingface" / "hub")
         path = QFileDialog.getExistingDirectory(
-            self, "Select HuggingFace Cache Directory", start_dir)
+            self, "Select HuggingFace Cache Directory", start_dir
+        )
         if path:
             self.hf_cache_input.setText(path)
 
@@ -1425,18 +1376,24 @@ class MainWindow(QMainWindow):
         saved_model_active = valid
         self.model_input.setEnabled(not saved_model_active)
         self.model_input.setToolTip(
-            "Determined by saved model path" if saved_model_active
+            "Determined by saved model path"
+            if saved_model_active
             else "Hugging Face model ID or OllamaDiffuser model name"
         )
         self.quantize_combo.setEnabled(not saved_model_active)
         self.quantize_combo.setToolTip(
-            "Determined by saved model path" if saved_model_active
+            "Determined by saved model path"
+            if saved_model_active
             else "MFLUX runtime quantization level"
         )
 
     def _on_save_model(self):
         """Open the Save Model dialog and start the save worker."""
-        if hasattr(self, "_save_worker") and self._save_worker is not None and self._save_worker.isRunning():
+        if (
+            hasattr(self, "_save_worker")
+            and self._save_worker is not None
+            and self._save_worker.isRunning()
+        ):
             self.status_label.setText("⚠ A model save is already in progress")
             self.status_label.setStyleSheet("color: orange;")
             return
@@ -1451,9 +1408,8 @@ class MainWindow(QMainWindow):
         try:
             models = list_mflux_models()
             for m in models:
-                alias_combo.addItem(
-                    f"{m['alias']}  ({m['model_name']})", m["alias"])
-        except Exception:
+                alias_combo.addItem(f"{m['alias']}  ({m['model_name']})", m["alias"])
+        except (OSError, ValueError, ImportError, AttributeError):
             for a in ("dev", "schnell", "fibo", "z-image"):
                 alias_combo.addItem(a, a)
         # Pre-select current model if it's in the list
@@ -1473,20 +1429,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Save directory:"))
         path_row = QHBoxLayout()
         path_input = QLineEdit()
+
         def _update_default_path():
             alias = alias_combo.currentData()
             q = q_combo.currentData()
             q_label = f"{q}bit" if q else "fp"
             path_input.setText(str(MODELS_DIR / f"{alias}-{q_label}"))
+
         _update_default_path()
         alias_combo.currentIndexChanged.connect(lambda _: _update_default_path())
         q_combo.currentIndexChanged.connect(lambda _: _update_default_path())
         path_row.addWidget(path_input)
         pick_btn = QPushButton("…")
         pick_btn.setFixedWidth(30)
-        pick_btn.clicked.connect(lambda: path_input.setText(
-            QFileDialog.getExistingDirectory(dlg, "Choose Directory",
-                                             str(MODELS_DIR)) or path_input.text()))
+        pick_btn.clicked.connect(
+            lambda: path_input.setText(
+                QFileDialog.getExistingDirectory(dlg, "Choose Directory", str(MODELS_DIR))
+                or path_input.text()
+            )
+        )
         path_row.addWidget(pick_btn)
         layout.addLayout(path_row)
 
@@ -1500,6 +1461,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(note)
 
         from PySide6.QtWidgets import QDialogButtonBox
+
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
@@ -1520,8 +1482,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
-        self._save_worker = SaveModelWorker(alias, quantize, out_path,
-                                             hf_cache_dir=self.hf_cache_input.text().strip() or None)
+        self._save_worker = SaveModelWorker(
+            alias, quantize, out_path, hf_cache_dir=self.hf_cache_input.text().strip() or None
+        )
         self._save_worker.status.connect(self._on_status)
         self._save_worker.finished.connect(self._on_save_model_finished)
         self._save_worker.start()
@@ -1598,8 +1561,12 @@ class MainWindow(QMainWindow):
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
-            "bonsai_model_path": self.model_input.text() if self._resolved_backend() == BACKEND_BONSAI else "",
-            "coreml_model_path": self.model_input.text() if self._resolved_backend() == BACKEND_COREML else "",
+            "bonsai_model_path": self.model_input.text()
+            if self._resolved_backend() == BACKEND_BONSAI
+            else "",
+            "coreml_model_path": self.model_input.text()
+            if self._resolved_backend() == BACKEND_COREML
+            else "",
             "coreml_compute_unit": self.config.get("coreml_compute_unit", "CPU_AND_NE"),
         }
 
@@ -1696,7 +1663,15 @@ class MainWindow(QMainWindow):
                 return
 
         seed_text = self.seed_input.text().strip()
-        seed = int(seed_text) if seed_text.lstrip('-').isdigit() else None
+        if seed_text:
+            try:
+                seed = int(seed_text)
+            except ValueError:
+                self.status_label.setText("⚠ Seed must be a valid integer")
+                self.status_label.setStyleSheet("color: red;")
+                return
+        else:
+            seed = None
 
         config = dict(self.config)
         config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
@@ -1728,8 +1703,14 @@ class MainWindow(QMainWindow):
                 self.status_label.setStyleSheet("color: red;")
                 return
             config = cfg_obj.to_dict()
-        except Exception as e:
-            log.warning("Validation failed: %s", e)
+        except (ValueError, TypeError) as e:
+            log.warning("Config cast failed: %s", e)
+            self.status_label.setText(f"⚠ Invalid config: {e}")
+            self.status_label.setStyleSheet("color: red;")
+            return
+
+        self._status_clear_timer.stop()
+        self._generation_id += 1
 
         self.generate_btn.setText("⏹  Stop")
         self.generate_btn.setStyleSheet("background-color: #cc3333; color: white;")
@@ -1801,9 +1782,9 @@ class MainWindow(QMainWindow):
         self._reset_generate_btn()
 
         # Short summary for the status bar
-        lines = [l for l in full_traceback.strip().splitlines() if l.strip()]
+        lines = [line for line in full_traceback.strip().splitlines() if line.strip()]
         last_line = lines[-1] if lines else "Unknown error"
-        self.status_label.setText(f"❌ Error — see details")
+        self.status_label.setText("❌ Error — see details")
         self.status_label.setStyleSheet("color: red;")
 
         # Full traceback in a scrollable dialog
@@ -1846,14 +1827,16 @@ class MainWindow(QMainWindow):
             try:
                 removed = clear_mflux_cache()
                 log.info("Cleared %d cached revision(s)", len(removed))
-            except Exception as exc:
+            except (OSError, ValueError) as exc:
                 log.error("Cache clear failed: %s", exc)
             self.quantize_combo.setCurrentIndex(
-                self.quantize_combo.findData(0))  # "None (full precision)"
+                self.quantize_combo.findData(0)
+            )  # "None (full precision)"
             self._on_generate()
         elif clicked == retry_btn:
             self.quantize_combo.setCurrentIndex(
-                self.quantize_combo.findData(0))  # "None (full precision)"
+                self.quantize_combo.findData(0)
+            )  # "None (full precision)"
             self._on_generate()
 
     def _stop_generation(self):
@@ -1861,7 +1844,7 @@ class MainWindow(QMainWindow):
         if self.worker is None or not self.worker.isRunning():
             return
         log.info("User requested generation stop (backend=%s)", self.worker.backend)
-        self.worker._cancelled.set()
+        self.worker.cancel()
 
         self.status_label.setText("Cancelling… (cleaning up safely)")
         self.status_label.setStyleSheet("color: orange;")
@@ -1873,7 +1856,6 @@ class MainWindow(QMainWindow):
         # whose pipeline does not expose cancel().
         if self.worker.backend in (BACKEND_BONSAI, BACKEND_COREML):
             self.worker.cancel()
-
         if self.worker.backend == BACKEND_MLX:
             # MLX has cooperative step-level interrupts and stops instantly
             pass
@@ -1902,10 +1884,13 @@ class MainWindow(QMainWindow):
 
     def _arm_status_autoclear(self):
         """Start a 5s timer to reset the status label to 'Ready'."""
+        self._autoclear_generation_id = self._generation_id
         self._status_clear_timer.start()
 
     def _clear_status(self):
         """Reset status to 'Ready' unless a new generation is in progress."""
+        if self._generation_id != self._autoclear_generation_id:
+            return
         if self.worker is not None and self.worker.isRunning():
             return
         self.status_label.setText("Ready")
@@ -1922,12 +1907,17 @@ class MainWindow(QMainWindow):
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
-    log.info("EyeGen GUI starting (Python %s, arch=%s)",
-             sys.version.split()[0], __import__("platform").machine())
+    log.info(
+        "EyeGen GUI starting (Python %s, arch=%s)",
+        sys.version.split()[0],
+        __import__("platform").machine(),
+    )
     app = QApplication(sys.argv)
     app.setApplicationName("EyeGen")
-    app.setFont(QFont(".AppleSystemUIFont", 13))
+    if sys.platform == "darwin":
+        app.setFont(QFont(".AppleSystemUIFont", 13))
     app.setStyleSheet("""
         [class="hint"]    { font-size: 11px; color: #666666; }
         [class="display"] { font-size: 16px; }
