@@ -12,7 +12,7 @@ from eyegen import (
     EyeGenConfig,
     load_config,
 )
-from eyegen.config import Backend
+from eyegen.config import Backend, pop_config_warnings
 from eyegen.gui.main_window_backend_handlers import MainWindowBackendHandlersMixin
 from eyegen.gui.main_window_controls import MainWindowControlsMixin
 from eyegen.gui.main_window_handlers import MainWindowHandlersMixin
@@ -39,6 +39,21 @@ class MainWindow(
     MainWindowLifecycleMixin,
     MainWindowStateMixin,
 ):
+    """Main window class for the EyeGen GUI.
+
+    This class coordinates the application's main interface by composing the
+    following mixin classes:
+    - MainWindowUIMixin: Builds and sets up UI components/layouts.
+    - MainWindowSettingsMixin: Manages inputs and updates configuration properties.
+    - MainWindowImg2ImgMixin: Validates and manages inputs for Image-to-Image mode.
+    - MainWindowControlsMixin: Populates combo-boxes and initializes controls values.
+    - MainWindowHandlersMixin: Triggers backend changes, prompts checks, and UI resets.
+    - MainWindowBackendHandlersMixin: Installs backends and triggers model download workers.
+    - MainWindowSaveModelMixin: Connects GUI actions to MFLUX local model saving logic.
+    - MainWindowLifecycleMixin: Handles elapsed time and state updates during generation.
+    - MainWindowStateMixin: Restores and saves UI state history.
+    """
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("EyeGen")
@@ -49,6 +64,10 @@ class MainWindow(
         self.pull_worker: Optional[object] = None
         self._save_worker: Optional[object] = None
         self.config = load_config()
+        for w in pop_config_warnings():
+            log.warning("Config warning: %s", w)
+            self.status_label.setText(f"⚠️ {w}")
+            self.status_label.setStyleSheet("color: orange;")
         self._gui_state = load_gui_state()
         self._log_file = CONFIG_DIR / "eyegen.log"
         self._pre_mflux_steps: Optional[int] = None

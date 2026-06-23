@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from PIL import Image
+
+from eyegen.backends.runner import BaseSubprocessRunner
 
 from .constants import (
     BONSAI_DEFAULT_GUIDANCE,
@@ -16,30 +17,41 @@ from .constants import (
     SUPPORTED_VARIANTS,
 )
 from .install import get_bonsai_dir, validate_bonsai_install
-from .models import _spawn_bonsai_subprocess
 
 log = logging.getLogger(__name__)
 
 
-class BonsaiWrapper:
+class BonsaiWrapper(BaseSubprocessRunner):
     """Adapter exposing EyeGen's uniform ``generate_image()`` over a bonsai subprocess."""
 
     def __init__(self, config: dict):
-        self.config = config
+        super().__init__(config)
         self.variant = self._resolve_variant(config)
         self._validate()
-        self._proc: Optional[subprocess.Popen] = None
 
     def _resolve_variant(self, config: dict) -> str:
         explicit = config.get("bonsai_model_path")
         model_name = config.get("model", "")
+        variant = DEFAULT_VARIANT
         if explicit:
-            return Path(explicit).expanduser().name.split("bonsai-image-4B-")[-1]
-        if model_name.startswith("bonsai-") or "bonsai-image-4B-" in model_name:
-            tail = model_name.split("bonsai-image-4B-")[-1] or model_name.replace("bonsai-", "")
-            if tail in SUPPORTED_VARIANTS:
-                return tail
-        return DEFAULT_VARIANT
+            name = Path(explicit).expanduser().name
+            if "bonsai-image-4B-" in name:
+                variant = name.split("bonsai-image-4B-")[-1]
+            else:
+                variant = name
+        elif "bonsai-image-4B-" in model_name:
+            variant = model_name.split("bonsai-image-4B-")[-1]
+        elif model_name.startswith("bonsai-"):
+            variant = model_name[len("bonsai-") :]
+        else:
+            variant = model_name
+
+        # Security validation for variant to avoid arbitrary arg/command injection
+        if variant not in SUPPORTED_VARIANTS:
+            raise ValueError(
+                f"Unsupported Bonsai variant: {variant!r}. Must be one of {SUPPORTED_VARIANTS}"
+            )
+        return variant
 
     def _validate(self) -> None:
         status = validate_bonsai_install()
@@ -54,18 +66,13 @@ class BonsaiWrapper:
                 f"Run: ./generate.py pull-bonsai {self.variant}"
             )
 
-    def generate_image(  # noqa: C901, PLR0915
+    def _check_log_warnings(
         self,
-        prompt: str,
         cfg_weight: float,
-        num_steps: int,
-        width: int,
-        height: int,
-        seed: Optional[int] = None,
-        negative_prompt: str = "",
-        image_path: Optional[str] = None,
-        denoise: float = 1.0,
-    ) -> Image.Image:
+        negative_prompt: str,
+        image_path: Optional[str],
+        denoise: float,
+    ) -> None:
         if cfg_weight not in (None, BONSAI_DEFAULT_GUIDANCE):
             log.warning(
                 "Bonsai backend ignores cfg_weight=%.2f; using fixed guidance=%.1f. "
@@ -82,10 +89,34 @@ class BonsaiWrapper:
         if denoise != 1.0:
             log.warning("Bonsai backend does not support img2img; ignoring denoise=%.2f", denoise)
 
-        if width % 32 or height % 32:
-            raise ValueError(
-                f"Bonsai requires width and height to be multiples of 32 (got {width}x{height})."
+    def generate_image(
+        self,
+        prompt: str,
+        cfg_weight: float,
+        num_steps: int,
+        width: int,
+        height: int,
+        seed: Optional[int] = None,
+        negative_prompt: str = "",
+        image_path: Optional[str] = None,
+        denoise: float = 1.0,
+    ) -> Image.Image:
+        self._check_log_warnings(cfg_weight, negative_prompt, image_path, denoise)
+
+        # Auto-adjust width and height to nearest multiple of 32
+        adjusted_width = max(32, ((width + 16) // 32) * 32)
+        adjusted_height = max(32, ((height + 16) // 32) * 32)
+        if adjusted_width != width or adjusted_height != height:
+            log.info(
+                "Auto-adjusting width/height for Bonsai from %dx%d to %dx%d (multiples of 32)",
+                width,
+                height,
+                adjusted_width,
+                adjusted_height,
             )
+            width = adjusted_width
+            height = adjusted_height
+
         if num_steps < 1:
             raise ValueError(f"num_steps must be >= 1, got {num_steps}")
 
@@ -110,67 +141,33 @@ class BonsaiWrapper:
         if seed is not None:
             cmd.extend(["--seed", str(seed)])
 
-        log.info("bonsai subprocess: %s", " ".join(cmd))
-        import threading
+        # Construct generation script command safely
+        status = validate_bonsai_install()
+        script_path = status.bonsai_dir / "scripts" / "generate.sh"
+        if not script_path.is_file():
+            raise FileNotFoundError(f"Bonsai script not found: {script_path}")
 
-        t: threading.Thread | None = None
-        self._proc = _spawn_bonsai_subprocess(["generate.sh", *cmd])
-        try:
-            if self._proc.stdout is None:
-                raise RuntimeError("bonsai subprocess stdout pipe was not created")
+        full_cmd = [str(script_path), *cmd]
 
-            def read_stdout():
-                try:
-                    for line in self._proc.stdout:
-                        log.info("[bonsai] %s", line.rstrip())
-                except Exception as e:
-                    log.debug("Error reading bonsai stdout: %s", e)
+        env = {"BONSAI_PACKAGE_MIN_AGE_DAYS": "0"}
 
-            t = threading.Thread(target=read_stdout, daemon=True)
-            t.start()
+        returncode, stdout_lines, stderr_lines = self._execute_subprocess(
+            full_cmd,
+            cwd=str(status.bonsai_dir),
+            env=env,
+            stream_stdout=True,
+            stream_stderr=False,
+            log_prefix="bonsai",
+        )
 
-            try:
-                self._proc.wait(timeout=300.0)
-            except subprocess.TimeoutExpired as exc:
-                log.warning("Bonsai subprocess timed out, terminating pid=%s", self._proc.pid)
-                self._proc.terminate()
-                try:
-                    self._proc.wait(timeout=5.0)
-                except subprocess.TimeoutExpired:
-                    log.warning(  # noqa: E501
-                        "Bonsai subprocess did not terminate, killing pid=%s", self._proc.pid
-                    )
-                    self._proc.kill()
-                    self._proc.wait(timeout=5.0)
-                raise RuntimeError("Bonsai subprocess timed out after 300 seconds") from exc
-            rc = self._proc.returncode
-        finally:
-            self._proc = None
-            if t is not None:
-                t.join(timeout=1.0)
-        if rc != 0:
+        if returncode != 0:
             raise RuntimeError(
-                f"Bonsai generation failed (exit {rc}). Inspect logs at {get_bonsai_dir()}/outputs/"
+                f"Bonsai generation failed (exit {returncode}). "
+                f"Inspect logs at {get_bonsai_dir()}/outputs/"
             )
         if not out_path.is_file():
             raise RuntimeError(f"Bonsai generation did not produce expected output: {out_path}")
         return Image.open(out_path).convert("RGB")
-
-    def cancel(self) -> None:
-        proc = self._proc
-        if proc is None or proc.poll() is not None:
-            return
-        log.info("bonsai cancel: terminating pid=%s", proc.pid)
-        try:
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                log.warning("bonsai cancel: terminate timed out, killing pid=%s", proc.pid)
-                proc.kill()
-                proc.wait(timeout=2.0)
-        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-            log.warning("bonsai cancel: %s", exc)
 
 
 def get_bonsai_pipeline(config: dict) -> BonsaiWrapper:

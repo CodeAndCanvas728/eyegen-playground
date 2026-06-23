@@ -33,10 +33,10 @@ def config_set(
         typer.echo(f"✓ Set {key} = {parsed_value}")
     except ValueError as val_err:
         typer.echo(f"❌ Configuration validation failed:\n   {val_err}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from val_err
     except OSError as e:
         typer.echo(f"❌ Failed to save config: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def config_reset():

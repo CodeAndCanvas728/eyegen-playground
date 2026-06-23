@@ -2,9 +2,8 @@
 
 from PySide6.QtWidgets import QFileDialog, QLabel, QVBoxLayout
 
-from eyegen import MODELS_DIR, list_mflux_models
+from eyegen import MODELS_DIR, hf_status, list_mflux_models
 from eyegen.gui.dialogs import HFLoginDialog
-from eyegen.gui.utils import _cached_hf_status
 
 
 class MainWindowSaveModelMixin:
@@ -157,7 +156,7 @@ class MainWindowSaveModelMixin:
         self._refresh_hf_button()
 
     def _refresh_hf_button(self):
-        info = _cached_hf_status()
+        info = hf_status()
         if info:
             name = info.get("name", "unknown")
             self.hf_btn.setText(f"✅  HuggingFace: {name}")

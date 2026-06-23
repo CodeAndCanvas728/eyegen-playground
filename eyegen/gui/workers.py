@@ -19,7 +19,12 @@ from eyegen import (
     save_mflux_model,
 )
 from eyegen.backends import bonsai, coreml
-from eyegen.gui.cache import _pipeline_cache, _pipeline_cache_lock
+from eyegen.gui.cache import (
+    _clear_pipeline_cache,
+    _pipeline_cache,
+    _pipeline_cache_lock,
+    get_cache_generation,
+)
 from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 
 log = logging.getLogger("eyegen")
@@ -45,13 +50,17 @@ def _load_pipeline_for_worker(worker):
     with _pipeline_cache_lock:
         cached_pipeline = _pipeline_cache["pipeline"]
         cached_key = _pipeline_cache["key"]
+        cached_gen = _pipeline_cache.get("generation", 0)
     if cached_pipeline is not None and cached_key == cache_key:
         log.info("Using cached pipeline (backend=%s)", backend)
         if backend == Backend.MLX:
             _patch_sample_euler(
                 lambda step, total: worker.progress.emit(step, total), worker._cancelled
             )
-        return cached_pipeline
+        return cached_pipeline, cached_gen
+
+    if worker._cancelled.is_set():
+        return None, None
 
     worker.status.emit("Loading model…")
     log.info(
@@ -75,9 +84,11 @@ def _load_pipeline_for_worker(worker):
         )
 
     with _pipeline_cache_lock:
-        _pipeline_cache["pipeline"] = pipeline
-        _pipeline_cache["key"] = cache_key
-    return pipeline
+        if not worker._cancelled.is_set():
+            _pipeline_cache["pipeline"] = pipeline
+            _pipeline_cache["key"] = cache_key
+        cached_gen = _pipeline_cache.get("generation", 0)
+    return pipeline, cached_gen
 
 
 class GenerationWorker(QThread):
@@ -120,9 +131,12 @@ class GenerationWorker(QThread):
         self.backend = backend
         self.mflux_quantize = mflux_quantize
         self.pipeline = None
+        self.pipeline_gen = None
 
     def cancel(self) -> None:
         self._cancelled.set()
+        # Clear cache on cancel so other workers don't reuse this pipeline.
+        _clear_pipeline_cache()
         pipeline = self.pipeline
         if pipeline is not None:
             cancel_fn = getattr(pipeline, "cancel", None)
@@ -132,17 +146,37 @@ class GenerationWorker(QThread):
                 except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
                     log.warning("pipeline.cancel() raised: %s", exc)
 
+    def _handle_cancel(self):
+        _clear_pipeline_cache()
+        self.pipeline = None
+        self.pipeline_gen = None
+        self.cancelled.emit(False)
+
+    def _save_and_finish(self, image):
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        out_path = OUTPUT_DIR / f"{timestamp}.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(out_path)
+        log.info("Saved: %s", out_path)
+        self.finished.emit(image, str(out_path))
+
     def run(self):
         try:
             if self._cancelled.is_set():
-                self.cancelled.emit(False)
+                self._handle_cancel()
                 return
 
-            pipeline = _load_pipeline_for_worker(self)
+            pipeline, gen_id = _load_pipeline_for_worker(self)
             self.pipeline = pipeline
+            self.pipeline_gen = gen_id
 
-            if self._cancelled.is_set():
-                self.cancelled.emit(False)
+            if self._cancelled.is_set() or pipeline is None:
+                self._handle_cancel()
+                return
+
+            if get_cache_generation() != self.pipeline_gen:
+                log.warning("Cache generation changed during pipeline load; aborting worker run")
+                self._handle_cancel()
                 return
 
             self.status.emit("Generating…")
@@ -169,33 +203,30 @@ class GenerationWorker(QThread):
                 backend=self.backend,
             )
 
-            if self._cancelled.is_set():
-                self.cancelled.emit(False)
+            if self._cancelled.is_set() or get_cache_generation() != self.pipeline_gen:
+                self._handle_cancel()
                 return
 
-            self.status.emit("Saving…")
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            out_path = OUTPUT_DIR / f"{timestamp}.png"
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            image.save(out_path)
-            log.info("Saved: %s", out_path)
-
-            self.finished.emit(image, str(out_path))
+            self._save_and_finish(image)
         except GenerationCancelled:
             log.info("Generation cancelled by user")
-            self.cancelled.emit(False)
+            self._handle_cancel()
         except (OSError, RuntimeError) as exc:
-            if self._cancelled.is_set():
+            stale = self.pipeline_gen is not None and get_cache_generation() != self.pipeline_gen
+            if self._cancelled.is_set() or stale:
                 log.info("Generation cancelled by user: %s", exc)
-                self.cancelled.emit(False)
+                self._handle_cancel()
             else:
                 full = traceback.format_exc()
                 log.error("Generation failed:\n%s", full)
                 self.error.emit(full)
-        except Exception:  # noqa: BLE001
+        except (ValueError, TypeError):
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
+        finally:
+            self.pipeline = None
+            self.pipeline_gen = None
 
 
 class PullWorker(QThread):

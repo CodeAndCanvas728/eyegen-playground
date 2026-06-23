@@ -10,6 +10,16 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+_config_warnings: list[str] = []
+
+
+def pop_config_warnings() -> list[str]:
+    """Return accumulated config-load warnings and clear them."""
+    warnings = list(_config_warnings)
+    _config_warnings.clear()
+    return warnings
+
+
 _BUNDLED = getattr(sys, "frozen", None) == "macosx_app"
 
 MODELS_DIR = Path.home() / "models" / "eyegen"
@@ -66,6 +76,9 @@ class EyeGenConfig:
     bonsai_model_path: Optional[str] = None
     coreml_model_path: Optional[str] = None
     coreml_compute_unit: str = "CPU_AND_NE"
+    subprocess_timeout: int = 300
+    download_timeout: int = 1800
+    convert_timeout: int = 1800
 
     def validate(self) -> list[str]:  # noqa: C901
         """Validate settings and return a list of error messages (empty if valid)."""
@@ -86,6 +99,12 @@ class EyeGenConfig:
         if self.model == "mlx-community/Lance-3B-AWQ-INT4":
             if self.backend not in (Backend.AUTO, Backend.MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
+        if self.subprocess_timeout <= 0:
+            errors.append("Subprocess timeout must be greater than 0.")
+        if self.download_timeout <= 0:
+            errors.append("Download timeout must be greater than 0.")
+        if self.convert_timeout <= 0:
+            errors.append("Convert timeout must be greater than 0.")
 
         from eyegen.validation import validate_safe_path
 
@@ -121,6 +140,9 @@ class EyeGenConfig:
         cls._coerce_int(kwargs, "num_inference_steps")
         cls._coerce_float(kwargs, "guidance_scale")
         cls._coerce_optional_int(kwargs, "mflux_quantize")
+        cls._coerce_int(kwargs, "subprocess_timeout")
+        cls._coerce_int(kwargs, "download_timeout")
+        cls._coerce_int(kwargs, "convert_timeout")
         cls._coerce_backend(kwargs)
         return cls(**kwargs)
 
@@ -143,10 +165,40 @@ class EyeGenConfig:
         else:
             kwargs[key] = int(kwargs[key])
 
-    @staticmethod
-    def _coerce_backend(kwargs: dict):
-        if "backend" in kwargs and kwargs["backend"] is not None:
-            kwargs["backend"] = Backend(kwargs["backend"])
+    @classmethod
+    def _coerce_backend(cls, kwargs: dict):
+        if "backend" not in kwargs or kwargs["backend"] is None:
+            return
+        val = kwargs["backend"]
+        if isinstance(val, Backend):
+            return
+        if not isinstance(val, str):
+            log.warning("Invalid backend type %r, migrating to AUTO", type(val))
+            kwargs["backend"] = Backend.AUTO
+            return
+
+        val_clean = val.strip().lower()
+        mapping = {
+            "auto": Backend.AUTO,
+            "": Backend.AUTO,
+            "mlx": Backend.MLX,
+            "ollama": Backend.OLLAMA,
+            "ollamadiffuser": Backend.OLLAMA,
+            "mflux": Backend.MFLUX,
+            "bonsai": Backend.BONSAI,
+            "prism": Backend.BONSAI,
+            "prismml": Backend.BONSAI,
+            "coreml": Backend.COREML,
+        }
+        if val_clean in mapping:
+            kwargs["backend"] = mapping[val_clean]
+            return
+
+        try:
+            kwargs["backend"] = Backend(val)
+        except ValueError:
+            log.warning("Unknown backend value %r, migrating to AUTO", val)
+            kwargs["backend"] = Backend.AUTO
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -157,17 +209,68 @@ class EyeGenConfig:
 DEFAULT_CONFIG = EyeGenConfig().to_dict()
 
 
+def _backup_corrupted_config(exc: Exception) -> None:
+    backup_file = CONFIG_FILE.with_suffix(".json.bak")
+    msg = f"Corrupted config.json backed up to {backup_file} and reset to defaults."
+    _config_warnings.append(msg)
+    log.error(
+        "Invalid JSON in config.json: %s. Backing up to %s and resetting to defaults.",
+        exc,
+        backup_file,
+        exc_info=True,
+    )
+    try:
+        if CONFIG_FILE.exists():
+            CONFIG_FILE.replace(backup_file)
+        save_config(EyeGenConfig().to_dict())
+    except Exception as write_err:
+        log.error("Failed to write default config: %s", write_err)
+
+
+def _handle_parse_error(exc: Exception) -> None:
+    msg = "Config file had invalid values and was reset to defaults."
+    _config_warnings.append(msg)
+    log.error(
+        "Failed to parse config.json, resetting to defaults: %s",
+        exc,
+        exc_info=True,
+    )
+    try:
+        save_config(EyeGenConfig().to_dict())
+    except Exception as write_err:
+        log.error("Failed to write default config: %s", write_err)
+
+
 def load_config() -> dict:
-    """Load configuration from config.json or return defaults."""
-    if CONFIG_FILE.exists():
+    """Load configuration from config.json, migrate/normalize it, or return defaults."""
+    if not CONFIG_FILE.exists():
+        return EyeGenConfig().to_dict()
+
+    try:
         with open(CONFIG_FILE, "r") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        _backup_corrupted_config(e)
+        return EyeGenConfig().to_dict()
+
+    if not isinstance(data, dict):
+        log.warning("config.json root is not a dictionary. Resetting to defaults.")
+        _handle_parse_error(ValueError("Root is not a dictionary"))
+        return EyeGenConfig().to_dict()
+
+    try:
+        cfg = EyeGenConfig.from_dict(data)
+        normalized = cfg.to_dict()
+        if normalized != data:
+            log.warning("Config required migration/normalization; saving config.")
             try:
-                data = json.load(f)
-                cfg = EyeGenConfig.from_dict(data)
-                return cfg.to_dict()
-            except (json.JSONDecodeError, ValueError, TypeError) as e:
-                log.warning("Failed to load config.json, resetting to defaults: %s", e)
-    return EyeGenConfig().to_dict()
+                save_config(normalized)
+            except Exception as save_err:
+                log.error("Failed to save migrated config: %s", save_err)
+        return normalized
+    except (ValueError, TypeError) as e:
+        _handle_parse_error(e)
+        return EyeGenConfig().to_dict()
 
 
 def save_config(config: dict):

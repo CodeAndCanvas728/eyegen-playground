@@ -198,7 +198,7 @@ def handle_quantization_error(
         typer.echo("   Or clear the model cache: ./generate.py clear-cache")
     except (OSError, ValueError, QuantizationError, RuntimeError) as retry_err:
         typer.echo(f"\n❌ Retry also failed: {retry_err}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from retry_err
 
 
 def build_generation_params(
@@ -229,7 +229,7 @@ def build_generation_params(
         err = validate_dimensions(w, h)
         if err:
             typer.echo(f"❌ {err}", err=True)
-            raise typer.Exit(1)
+        raise typer.Exit(1)
 
     output_path = resolve_output(output)
     return (

@@ -16,6 +16,7 @@ from eyegen import (
     load_config,
 )
 from eyegen.backends import bonsai, coreml
+from eyegen.config import pop_config_warnings
 
 
 def list_outputs():
@@ -153,5 +154,7 @@ def status():
     typer.echo(f"  Output directory: {OUTPUT_DIR}")
 
     config = load_config()
+    for w in pop_config_warnings():
+        typer.echo(f"⚠️  {w}", err=True)
     _print_backend_status(config)
     _print_installed_packages(config)

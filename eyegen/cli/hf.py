@@ -31,7 +31,7 @@ def hf_login_cmd(
         typer.echo(f"✅ Logged in as {info.get('name', 'unknown')}")
     except (OSError, ValueError) as e:
         typer.echo(f"❌ Login failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def hf_status_cmd():
@@ -50,4 +50,4 @@ def hf_logout_cmd():
         typer.echo("✅ Logged out from HuggingFace")
     except (OSError, ValueError) as e:
         typer.echo(f"❌ Logout failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import time
 from functools import lru_cache
@@ -95,6 +94,7 @@ def convert_to_coreml(
     attention_implementation: str = "SPLIT_EINSUM",
     quantize_nbits: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
+    timeout: Optional[float] = None,
 ) -> bool:
     if compute_unit not in VALID_COMPUTE_UNITS:
         raise ValueError(
@@ -126,11 +126,16 @@ def convert_to_coreml(
     if quantize_nbits is not None:
         cmd.extend(["--quantize-nbits", str(quantize_nbits)])
 
+    if timeout is None:
+        from eyegen.config import load_config
+
+        timeout = float(load_config().get("convert_timeout", 1800.0))
+
     log.info("coreml-convert: %s", " ".join(cmd))
-    returncode, timed_out = _run_conversion(cmd, progress_callback)
+    returncode, timed_out = _run_conversion(cmd, progress_callback, timeout=timeout)
 
     if timed_out:
-        raise subprocess.TimeoutExpired(cmd, 1800.0)
+        raise subprocess.TimeoutExpired(cmd, timeout)
 
     if returncode == 0:
         meta = {
@@ -146,57 +151,33 @@ def convert_to_coreml(
 def _run_conversion(
     cmd: list[str],
     progress_callback: Optional[Callable[[str], None]] = None,
+    timeout: Optional[float] = None,
 ) -> tuple[int, bool]:
-    """Run the CoreML conversion subprocess with a 30-minute hard timeout.
+    """Run the CoreML conversion subprocess.
 
     Streams combined stdout/stderr to the log and *progress_callback*. Returns
     ``(returncode, timed_out)``.
     """
-    import threading
+    from eyegen.backends.runner import BaseSubprocessRunner
+    from eyegen.config import load_config
 
-    env = os.environ.copy()
-    env.pop("PYTHONHOME", None)
-    proc = subprocess.Popen(  # noqa: S603
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        env=env,
-    )
-    if proc.stdout is None:
-        raise RuntimeError("CoreML conversion stdout pipe was not created")
+    cfg = load_config()
+    runner = BaseSubprocessRunner(cfg)
     timed_out = False
-
-    def target_timeout():
-        nonlocal timed_out
-        timed_out = True
-        log.error("CoreML conversion timed out after 1800 seconds. Terminating...")
-        _terminate(proc)
-
-    timer = threading.Timer(1800.0, target_timeout)
-    timer.start()
+    run_timeout = timeout if timeout is not None else float(cfg.get("convert_timeout", 1800.0))
     try:
-        for line in proc.stdout:
-            line = line.rstrip()
-            log.info("[coreml-convert] %s", line)
-            if progress_callback:
-                progress_callback(line)
-        proc.wait()
-    except Exception:
-        _terminate(proc)
-        raise
-    finally:
-        timer.cancel()
-    return proc.returncode, timed_out
-
-
-def _terminate(proc: subprocess.Popen, grace: float = 10.0) -> None:
-    """Terminate *proc*, escalating to kill if it does not exit within *grace*."""
-    proc.terminate()
-    try:
-        proc.wait(timeout=grace)
-    except subprocess.TimeoutExpired:
-        log.error("CoreML conversion terminate timed out. Killing...")
-        proc.kill()
-        proc.wait()
+        returncode, _, _ = runner._execute_subprocess(
+            cmd,
+            stream_stdout=True,
+            stream_stderr=True,
+            log_prefix="coreml-convert",
+            progress_callback=progress_callback,
+            timeout=run_timeout,
+        )
+    except RuntimeError as exc:
+        if "timed out" in str(exc):
+            timed_out = True
+            returncode = -1
+        else:
+            raise
+    return returncode, timed_out
