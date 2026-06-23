@@ -118,18 +118,20 @@ class TestDownloadBonsaiModel:
 
 class TestBonsaiWrapper:
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
-    @mock.patch("eyegen.backends.bonsai.pipeline._spawn_bonsai_subprocess")
+    @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
     @mock.patch("eyegen.backends.bonsai.pipeline.Image.open")
-    def test_seed_zero(self, mock_image_open, mock_spawn, mock_validate, tmp_path, monkeypatch):
+    def test_seed_zero(self, mock_image_open, mock_execute, mock_validate, tmp_path, monkeypatch):
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_status.has_models = True
+        mock_status.bonsai_dir = tmp_path
         mock_validate.return_value = mock_status
 
-        mock_proc = mock.Mock()
-        mock_proc.stdout = ["line1\n", "line2\n"]
-        mock_proc.returncode = 0
-        mock_spawn.return_value = mock_proc
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "generate.sh").touch()
+
+        mock_execute.return_value = (0, ["line1\n", "line2\n"], [])
 
         mock_image = mock.Mock()
         mock_image_open.return_value.convert.return_value = mock_image
@@ -148,23 +150,19 @@ class TestBonsaiWrapper:
         assert expected_path.is_file()
 
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
-    @mock.patch("eyegen.backends.bonsai.pipeline._spawn_bonsai_subprocess")
-    def test_subprocess_timeout(self, mock_spawn, mock_validate, tmp_path, monkeypatch):
+    @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
+    def test_subprocess_timeout(self, mock_execute, mock_validate, tmp_path, monkeypatch):
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_status.has_models = True
+        mock_status.bonsai_dir = tmp_path
         mock_validate.return_value = mock_status
 
-        mock_proc = mock.Mock()
-        mock_proc.stdout = ["line1\n"]
-        import subprocess
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "generate.sh").touch()
 
-        mock_proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="generate.sh", timeout=300.0),
-            subprocess.TimeoutExpired(cmd="generate.sh", timeout=5.0),
-            0,
-        ]
-        mock_spawn.return_value = mock_proc
+        mock_execute.side_effect = RuntimeError("Bonsai subprocess timed out after 300 seconds")
 
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
 
@@ -175,4 +173,49 @@ class TestBonsaiWrapper:
             wrapper.generate_image(
                 prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=42
             )
-        assert mock_proc.terminate.called
+
+    @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
+    @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
+    @mock.patch("eyegen.backends.bonsai.pipeline.Image.open")
+    def test_dimensions_auto_adjust(self, mock_image_open, mock_execute, mock_validate, tmp_path, monkeypatch):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_status.has_models = True
+        mock_status.bonsai_dir = tmp_path
+        mock_validate.return_value = mock_status
+
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "generate.sh").touch()
+
+        mock_execute.return_value = (0, [], [])
+        mock_image = mock.Mock()
+        mock_image_open.return_value.convert.return_value = mock_image
+
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+        expected_path = tmp_path / "bonsai_ternary-mlx_42.png"
+        expected_path.touch()
+
+        from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
+        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        # 500x500 should auto-adjust to nearest multiple of 32 (512x512)
+        wrapper.generate_image(
+            prompt="test", cfg_weight=1.0, num_steps=10, width=500, height=500, seed=42
+        )
+        called_cmd = mock_execute.call_args[0][0]
+        assert "--size" in called_cmd
+        size_idx = called_cmd.index("--size")
+        assert called_cmd[size_idx + 1] == "512x512"
+
+    @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
+    def test_invalid_variant_raises(self, mock_validate):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_status.has_models = True
+        mock_validate.return_value = mock_status
+
+        from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+        with pytest.raises(ValueError, match="Unsupported Bonsai variant"):
+            BonsaiWrapper({"model": "bonsai-invalid-variant-name"})
+

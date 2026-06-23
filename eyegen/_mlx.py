@@ -1,5 +1,7 @@
 """Internal MLX/diffusionkit compatibility helpers."""
 
+from __future__ import annotations
+
 import logging
 import threading
 
@@ -7,6 +9,16 @@ log = logging.getLogger(__name__)
 
 _patch_lock = threading.Lock()
 _patched_already = False
+
+
+def _make_patched(orig):
+    """Wrap *orig* function to strip out the removed keyword arg."""
+    _REMOVED = {"memory_efficient_threshold"}
+
+    def _patched(*args, **kwargs):
+        return orig(*args, **{k: v for k, v in kwargs.items() if k not in _REMOVED})
+
+    return _patched
 
 
 def _patch_mlx_attention():
@@ -23,14 +35,6 @@ def _patch_mlx_attention():
 
         import mlx.core
         import mlx.core.fast
-
-        _REMOVED = {"memory_efficient_threshold"}
-
-        def _make_patched(orig):
-            def _patched(*args, **kwargs):
-                return orig(*args, **{k: v for k, v in kwargs.items() if k not in _REMOVED})
-
-            return _patched
 
         if hasattr(mlx.core.fast, "scaled_dot_product_attention"):
             mlx.core.fast.scaled_dot_product_attention = _make_patched(

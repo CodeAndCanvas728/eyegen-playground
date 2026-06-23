@@ -53,6 +53,9 @@ def _load_pipeline_for_worker(worker):
             )
         return cached_pipeline
 
+    if worker._cancelled.is_set():
+        return None
+
     worker.status.emit("Loading model…")
     log.info(
         "Loading pipeline (model=%s, backend=%s, t5=%s)",
@@ -75,8 +78,9 @@ def _load_pipeline_for_worker(worker):
         )
 
     with _pipeline_cache_lock:
-        _pipeline_cache["pipeline"] = pipeline
-        _pipeline_cache["key"] = cache_key
+        if not worker._cancelled.is_set():
+            _pipeline_cache["pipeline"] = pipeline
+            _pipeline_cache["key"] = cache_key
     return pipeline
 
 
@@ -141,7 +145,7 @@ class GenerationWorker(QThread):
             pipeline = _load_pipeline_for_worker(self)
             self.pipeline = pipeline
 
-            if self._cancelled.is_set():
+            if self._cancelled.is_set() or pipeline is None:
                 self.cancelled.emit(False)
                 return
 
@@ -196,6 +200,8 @@ class GenerationWorker(QThread):
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
+        finally:
+            self.pipeline = None
 
 
 class PullWorker(QThread):

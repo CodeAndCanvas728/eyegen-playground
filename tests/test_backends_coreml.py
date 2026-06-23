@@ -108,18 +108,15 @@ class TestConvertToCoreml:
 class TestCoreMLWrapper:
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     @mock.patch("eyegen.backends.coreml.pipeline._sidecar_python")
-    @mock.patch("eyegen.backends.coreml.pipeline.subprocess.Popen")
-    def test_seed_zero(self, mock_popen, mock_sidecar, mock_validate, tmp_path, monkeypatch):
+    @mock.patch("eyegen.backends.coreml.pipeline.CoreMLWrapper._execute_subprocess")
+    def test_seed_zero(self, mock_execute, mock_sidecar, mock_validate, tmp_path, monkeypatch):
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_validate.return_value = mock_status
         mock_sidecar.return_value = Path("/fake/python")
-        mock_proc = mock.Mock()
-        mock_proc.pid = 1234
-        mock_proc.stderr = ["done\n"]
-        mock_proc.wait.return_value = 0
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
+
+        mock_execute.return_value = (0, [], ["done\n"])
+
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
         model_dir = tmp_path / "sd-2-1-base"
         model_dir.mkdir()
@@ -143,26 +140,16 @@ class TestCoreMLWrapper:
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     @mock.patch("eyegen.backends.coreml.pipeline._sidecar_python")
-    @mock.patch("eyegen.backends.coreml.pipeline.subprocess.Popen")
+    @mock.patch("eyegen.backends.coreml.pipeline.CoreMLWrapper._execute_subprocess")
     def test_subprocess_timeout(  # noqa: E501
-        self, mock_popen, mock_sidecar, mock_validate, tmp_path, monkeypatch
+        self, mock_execute, mock_sidecar, mock_validate, tmp_path, monkeypatch
     ):
-        from unittest import mock
-
         mock_status = mock.Mock()
         mock_status.installed = True
         mock_validate.return_value = mock_status
         mock_sidecar.return_value = Path("/fake/python")
 
-        mock_proc = mock.Mock()
-        mock_proc.pid = 1234
-        mock_proc.stderr = ["loading model...\n", "generating...\n"]
-        mock_proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="pipeline", timeout=300.0),
-            subprocess.TimeoutExpired(cmd="pipeline", timeout=5.0),
-            0,
-        ]
-        mock_popen.return_value = mock_proc
+        mock_execute.side_effect = RuntimeError("CoreML subprocess timed out after 300 seconds")
 
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
 
@@ -177,5 +164,39 @@ class TestCoreMLWrapper:
             wrapper.generate_image(
                 prompt="test", cfg_weight=7.5, num_steps=10, width=512, height=512, seed=42
             )
-        assert mock_proc.terminate.called
-        assert mock_proc.kill.called
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_reject_unsupported_options(self, mock_validate, tmp_path):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+
+        model_dir = tmp_path / "sd-2-1-base"
+        model_dir.mkdir()
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
+
+        # 1. Reject non-512 dimensions (e.g. 256x256)
+        with pytest.raises(ValueError, match="only support a fixed 512x512 resolution"):
+            wrapper.generate_image(
+                prompt="test", cfg_weight=7.5, num_steps=10, width=256, height=256
+            )
+
+        # 2. Reject img2img (non-None image_path)
+        with pytest.raises(ValueError, match="does not support img2img"):
+            wrapper.generate_image(
+                prompt="test", cfg_weight=7.5, num_steps=10, width=512, height=512, image_path="dummy.png"
+            )
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_invalid_characters_in_model_name(self, mock_validate):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_validate.return_value = mock_status
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        # Inject dangerous characters in model name
+        with pytest.raises(ValueError, match="Invalid characters in CoreML model name"):
+            CoreMLWrapper({"model": "sd-2-1-base; rm -rf /"})
+

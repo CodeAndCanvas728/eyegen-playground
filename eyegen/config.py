@@ -66,6 +66,7 @@ class EyeGenConfig:
     bonsai_model_path: Optional[str] = None
     coreml_model_path: Optional[str] = None
     coreml_compute_unit: str = "CPU_AND_NE"
+    subprocess_timeout: int = 300
 
     def validate(self) -> list[str]:  # noqa: C901
         """Validate settings and return a list of error messages (empty if valid)."""
@@ -86,6 +87,8 @@ class EyeGenConfig:
         if self.model == "mlx-community/Lance-3B-AWQ-INT4":
             if self.backend not in (Backend.AUTO, Backend.MLX):
                 errors.append("Lance-3B AWQ-INT4 model requires the MLX backend.")
+        if self.subprocess_timeout <= 0:
+            errors.append("Subprocess timeout must be greater than 0.")
 
         from eyegen.validation import validate_safe_path
 
@@ -121,6 +124,7 @@ class EyeGenConfig:
         cls._coerce_int(kwargs, "num_inference_steps")
         cls._coerce_float(kwargs, "guidance_scale")
         cls._coerce_optional_int(kwargs, "mflux_quantize")
+        cls._coerce_int(kwargs, "subprocess_timeout")
         cls._coerce_backend(kwargs)
         return cls(**kwargs)
 
@@ -143,10 +147,35 @@ class EyeGenConfig:
         else:
             kwargs[key] = int(kwargs[key])
 
-    @staticmethod
-    def _coerce_backend(kwargs: dict):
+    @classmethod
+    def _coerce_backend(cls, kwargs: dict):
         if "backend" in kwargs and kwargs["backend"] is not None:
-            kwargs["backend"] = Backend(kwargs["backend"])
+            val = kwargs["backend"]
+            if isinstance(val, Backend):
+                return
+            if isinstance(val, str):
+                val_clean = val.strip().lower()
+                if val_clean in ("auto", ""):
+                    kwargs["backend"] = Backend.AUTO
+                elif val_clean in ("mlx",):
+                    kwargs["backend"] = Backend.MLX
+                elif val_clean in ("ollama", "ollamadiffuser"):
+                    kwargs["backend"] = Backend.OLLAMA
+                elif val_clean in ("mflux",):
+                    kwargs["backend"] = Backend.MFLUX
+                elif val_clean in ("bonsai", "prism", "prismml"):
+                    kwargs["backend"] = Backend.BONSAI
+                elif val_clean in ("coreml",):
+                    kwargs["backend"] = Backend.COREML
+                else:
+                    try:
+                        kwargs["backend"] = Backend(val)
+                    except ValueError:
+                        log.warning("Unknown backend value %r, migrating to AUTO", val)
+                        kwargs["backend"] = Backend.AUTO
+            else:
+                log.warning("Invalid backend type %r, migrating to AUTO", type(val))
+                kwargs["backend"] = Backend.AUTO
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -166,7 +195,7 @@ def load_config() -> dict:
                 cfg = EyeGenConfig.from_dict(data)
                 return cfg.to_dict()
             except (json.JSONDecodeError, ValueError, TypeError) as e:
-                log.warning("Failed to load config.json, resetting to defaults: %s", e)
+                log.error("Failed to load config.json, resetting to defaults: %s", e, exc_info=True)
     return EyeGenConfig().to_dict()
 
 
