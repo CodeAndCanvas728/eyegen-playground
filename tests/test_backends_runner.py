@@ -2,6 +2,7 @@
 
 import subprocess
 from unittest import mock
+
 import pytest
 
 from eyegen.backends.runner import BaseSubprocessRunner
@@ -47,7 +48,7 @@ def test_runner_cancel():
 
     mock_proc = mock.Mock()
     mock_proc.pid = 1234
-    
+
     # We trigger runner.cancel() during the self._proc.wait() call
     def mock_wait(*args, **kwargs):
         runner.cancel()
@@ -57,7 +58,7 @@ def test_runner_cancel():
 
     with mock.patch("eyegen.backends.runner.subprocess.Popen") as mock_popen:
         mock_popen.return_value = mock_proc
-        
+
         with pytest.raises(RuntimeError, match="generation was cancelled by the user"):
             runner._execute_subprocess(["dummy_cmd"])
         assert mock_proc.terminate.called

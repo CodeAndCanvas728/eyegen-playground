@@ -10,6 +10,7 @@ from typing import Optional
 from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
+
 from .constants import (
     BONSAI_DEFAULT_GUIDANCE,
     DEFAULT_VARIANT,

@@ -2,7 +2,6 @@
 
 import io
 import logging
-import time
 from typing import Optional
 
 from PySide6.QtGui import QImage, QPixmap

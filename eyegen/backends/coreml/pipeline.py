@@ -11,6 +11,7 @@ from typing import Optional
 from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
+
 from .constants import VALID_COMPUTE_UNITS
 from .install import (
     _sidecar_python,

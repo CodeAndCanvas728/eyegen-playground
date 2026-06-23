@@ -2,7 +2,6 @@
 
 import sys
 from unittest.mock import MagicMock, patch
-import pytest
 
 # Mock mlx and mflux before importing the module under test
 mock_mflux = MagicMock()
@@ -47,9 +46,9 @@ mock_mflux.QwenImage = type("QwenImage", (), {})
 mock_mflux.SeedVR2 = type("SeedVR2", (), {})
 
 from eyegen._mflux import (
+    _format_mflux_model_error,
     _get_mflux_aliases,
     _resolve_mflux_class,
-    _format_mflux_model_error,
 )
 from eyegen._mlx import (
     _make_patched,
