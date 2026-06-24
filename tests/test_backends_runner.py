@@ -12,7 +12,8 @@ from eyegen.config import EyeGenConfig
 class DummyRunner(BaseSubprocessRunner):
     """Subclass of BaseSubprocessRunner for testing."""
 
-    pass
+    def _validate_cmd_args(self, cmd):
+        super()._validate_cmd_args(cmd)
 
 
 def test_runner_execute_success():
@@ -75,12 +76,13 @@ def test_runner_integration_real_process():
         "-c",
         "import sys; print('hello from stdout'); print('hello from stderr', file=sys.stderr)",
     ]
-    rc, out, err = runner._execute_subprocess(
-        cmd,
-        stream_stdout=True,
-        stream_stderr=True,
-        log_prefix="test-integration",
-    )
+    with mock.patch.object(runner, "_validate_cmd_args"):
+        rc, out, err = runner._execute_subprocess(
+            cmd,
+            stream_stdout=True,
+            stream_stderr=True,
+            log_prefix="test-integration",
+        )
     assert rc == 0
     assert any("hello from stdout" in line for line in out)
     assert any("hello from stderr" in line for line in err)
@@ -95,8 +97,9 @@ def test_runner_integration_timeout():
         "-c",
         "import time; time.sleep(10)",
     ]
-    with pytest.raises(RuntimeError, match="subprocess timed out after 0.5 seconds"):
-        runner._execute_subprocess(cmd, log_prefix="test-timeout")
+    with mock.patch.object(runner, "_validate_cmd_args"):
+        with pytest.raises(RuntimeError, match="subprocess timed out after 0.5 seconds"):
+            runner._execute_subprocess(cmd, log_prefix="test-timeout")
 
 
 def test_runner_integration_cancel():
@@ -118,8 +121,9 @@ def test_runner_integration_cancel():
     t = threading.Thread(target=trigger_cancel)
     t.start()
     try:
-        with pytest.raises(RuntimeError, match="generation was cancelled by the user"):
-            runner._execute_subprocess(cmd, log_prefix="test-cancel")
+        with mock.patch.object(runner, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="generation was cancelled by the user"):
+                runner._execute_subprocess(cmd, log_prefix="test-cancel")
     finally:
         t.join()
 

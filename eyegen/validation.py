@@ -43,11 +43,8 @@ def validate_safe_path(path: str | Path, name: str) -> Path:
         Path.home().resolve(),
         Path.cwd().resolve(),
         Path("/tmp").resolve(),  # noqa: S108
-        Path("/var").resolve(),  # noqa: S108
-        Path("/private/var").resolve(),  # noqa: S108
-        Path("/var/tmp").resolve(),  # noqa: S108
         Path("/private/tmp").resolve(),  # noqa: S108
-        Path("/Volumes").resolve(),  # noqa: S108
+        Path("/private/var/folders").resolve(),  # macOS per-user temp (pytest, Xcode)
     ]
 
     is_under_allowed = False

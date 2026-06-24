@@ -83,18 +83,18 @@ def test_validate_safe_path_allows_tmp():
     assert p == Path("/tmp").resolve()  # noqa: S108
 
 
-def test_validate_safe_path_allows_var():
+def test_validate_safe_path_rejects_var():
     from eyegen.validation import validate_safe_path
 
-    p = validate_safe_path("/var", "var_path")
-    assert p == Path("/var").resolve()
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/var", "var_path")
 
 
-def test_validate_safe_path_allows_volumes():
+def test_validate_safe_path_rejects_volumes():
     from eyegen.validation import validate_safe_path
 
-    p = validate_safe_path("/Volumes", "volumes_path")
-    assert p == Path("/Volumes").resolve()
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/Volumes", "volumes_path")
 
 
 def test_validate_safe_path_subdir_of_allowed():
@@ -110,3 +110,24 @@ def test_validate_safe_path_rejects_explicit_traversal():
 
     with pytest.raises(ValueError, match="Directory traversal"):
         validate_safe_path("/safe/../../etc/passwd", "bad_path")
+
+
+def test_validate_safe_path_allows_var_folders():
+    from eyegen.validation import validate_safe_path
+
+    p = validate_safe_path("/private/var/folders/some/temp/path", "temp_path")
+    assert p == Path("/private/var/folders/some/temp/path").resolve()
+
+
+def test_validate_safe_path_rejects_var_raw():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/var", "var_raw")
+
+
+def test_validate_safe_path_rejects_private_var():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/private/var/log", "private_var_log")

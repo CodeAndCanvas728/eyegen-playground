@@ -219,9 +219,10 @@ class TestCoreMLSubprocessIntegration:
             EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
         )
 
-        returncode, stdout, stderr = wrapper._execute_subprocess(
-            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
-        )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            returncode, stdout, stderr = wrapper._execute_subprocess(
+                [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
+            )
         assert returncode == 0
         assert any("ok" in line for line in stdout)
 
@@ -242,15 +243,16 @@ class TestCoreMLSubprocessIntegration:
             EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
         )
 
-        with pytest.raises(RuntimeError, match="timed out"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
-                ],
-                timeout=0.5,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="timed out"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
+                    ],
+                    timeout=0.5,
+                )
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     def test_coreml_subprocess_cancellation(self, mock_validate, tmp_path):
@@ -278,13 +280,14 @@ class TestCoreMLSubprocessIntegration:
         t = threading.Thread(target=cancel_after_delay)
         t.start()
 
-        with pytest.raises(RuntimeError, match="cancelled"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
-                ],
-                timeout=3.0,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="cancelled"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
+                    ],
+                    timeout=3.0,
+                )
         t.join()

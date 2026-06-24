@@ -265,9 +265,10 @@ class TestBonsaiSubprocessIntegration:
 
         wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
-        returncode, stdout, stderr = wrapper._execute_subprocess(
-            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
-        )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            returncode, stdout, stderr = wrapper._execute_subprocess(
+                [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
+            )
         assert returncode == 0
         assert any("ok" in line for line in stdout)
 
@@ -289,15 +290,16 @@ class TestBonsaiSubprocessIntegration:
 
         wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
-        with pytest.raises(RuntimeError, match="timed out"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
-                ],
-                timeout=0.5,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="timed out"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
+                    ],
+                    timeout=0.5,
+                )
 
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
     def test_bonsai_subprocess_cancellation(self, mock_validate, tmp_path):
@@ -326,13 +328,14 @@ class TestBonsaiSubprocessIntegration:
         t = threading.Thread(target=cancel_after_delay)
         t.start()
 
-        with pytest.raises(RuntimeError, match="cancelled"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
-                ],
-                timeout=3.0,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="cancelled"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
+                    ],
+                    timeout=3.0,
+                )
         t.join()

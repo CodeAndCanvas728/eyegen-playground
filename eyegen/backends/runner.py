@@ -26,7 +26,6 @@ class BaseSubprocessRunner:
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Validate cmd arguments to prevent option/argument injection."""
         ALLOWED_FLAGS = {
-            "-c",
             "-m",
             "--model",
             "--prompt",

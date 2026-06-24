@@ -6,12 +6,8 @@ from typing import Optional
 
 from eyegen._mflux import _format_mflux_model_error, _get_mflux_aliases, _resolve_mflux_class
 from eyegen._mlx import _get_mlx_supported_models, _patch_mlx_attention
-from eyegen.config import (
-    DEFAULT_CONFIG,
-    HF_CACHE_DIR,
-    Backend,
-    EyeGenConfig,
-)
+from eyegen.config import DEFAULT_CONFIG, HF_CACHE_DIR, Backend, EyeGenConfig
+from eyegen.errors import UnsupportedModelError
 
 log = logging.getLogger(__name__)
 
@@ -81,30 +77,35 @@ def detect_backend(
 ) -> Backend:
     """Resolve which backend to use.
 
-    If *override* is ``Backend.AUTO``:
-      1. ``"gguf"`` in model name (case-insensitive) → OLLAMA
-      2. bonsai (PrismML) identifier → BONSAI
+    If *override* is ``Backend.AUTO`` (priority order):
+      1. ``"gguf"`` in model name → OLLAMA  (substr match first — bonsai/hf "gguf" can't hijack)
+      2. Bonsai/PrismML identifier pattern → BONSAI
       3. CoreML bundle / pre-converted HF id / coreml_model_path set → COREML
-      4. model name matches a known MFLUX alias → MFLUX
-      5. model name is registered in diffusionkit's MMDIT_CKPT → MLX
-      6. otherwise → raises ValueError with the list of supported models per backend
+      4. Known MFLUX alias → MFLUX
+      5. diffusionkit MMDIT_CKPT entry → MLX
+      6. otherwise → UnsupportedModelError
     """
     if isinstance(override, str):
         override = Backend(override)
     if override != Backend.AUTO:
         return override
+    # (1) GGUF check first — substring match so it must run before other patterns
     if "gguf" in model.lower():
         return Backend.OLLAMA
+    # (2) Bonsai — model names start with "bonsai-" or "prism-"
     if _is_bonsai_model(model):
         return Backend.BONSAI
+    # (3) CoreML — known aliases or coreml_model_path set in config
     if _is_coreml_model(model, config=config):
         return Backend.COREML
+    # (4) MFLUX — check live aliases from package, fall back to static set
     if model in _get_mflux_aliases():
         return Backend.MFLUX
+    # (5) MLX/diffusionkit — registered MMDIT_CKPT keys
     mlx_keys = _get_mlx_supported_models()
     if mlx_keys is not None and model in mlx_keys:
         return Backend.MLX
-    raise ValueError(_format_unsupported_error(model, "auto-detected"))
+    raise UnsupportedModelError(_format_unsupported_error(model, "auto-detected"))
 
 
 def _apply_hf_cache(config: EyeGenConfig):
