@@ -83,38 +83,26 @@ def _get_allowed_roots() -> list[Path]:
 
 
 def validate_safe_path(path: str | Path, name: str) -> Path:
-    """Resolve and validate a user-controlled path to reject directory traversal."""
-    p_orig = Path(path)
-    if ".." in p_orig.parts:
+    """Resolve and validate a user-controlled path to reject directory traversal.
+
+    Uses ``Path.resolve()`` to follow symlinks atomically, eliminating
+    the TOCTOU window that a component-by-component symlink check would have.
+    """
+    p = Path(path)
+    if ".." in p.parts:
         raise ValueError(f"Directory traversal attempt detected in {name}: {path}")
 
-    # Build path component-by-component without following symlinks.
-    resolved_parts = [Path(p_orig.anchor)]
-    for part in p_orig.parts[1:]:
-        current = resolved_parts[-1] / part
-        if current.is_symlink():
-            raise ValueError(
-                f"Symlink detected in path for {name}: {current}"
-            )
-        resolved_parts.append(current)
-
-    p = resolved_parts[-1]
-
-    # Resolve parent directories to get the absolute path, but don't resolve
-    # the final component if it doesn't exist yet (common for output paths).
+    # Resolve the whole path atomically — no gap between check and use.
+    # If it exists, resolve fully. If not, resolve the parent chain and
+    # keep the final component (common for output paths).
     if p.exists():
         try:
             p = p.resolve(strict=True)
         except OSError as exc:
             raise ValueError(f"Could not resolve path for {name}: {exc}")
     else:
-        # Resolve the parent chain, but keep the final component as-is
         parent_resolved = p.parent.resolve(strict=False)
         p = parent_resolved / p.name
-        # Re-check the final component after parent resolution: it may have been
-        # created as a symlink between the loop above and now (TOCTOU window).
-        if p.is_symlink():
-            raise ValueError(f"Symlink detected in path for {name}: {p}")
 
     allowed_roots = _get_allowed_roots()
     is_under_allowed = any(

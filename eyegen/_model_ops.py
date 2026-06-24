@@ -158,6 +158,7 @@ def validate_saved_model(path: str | Path) -> SavedModelValidation:
 
     found_safetensors = False
     read_any = False
+    read_failures: list[str] = []
     quant_levels: set = set()
     versions: set = set()
 
@@ -179,6 +180,7 @@ def validate_saved_model(path: str | Path) -> SavedModelValidation:
                     m = f.metadata() or {}
             except (OSError, ValueError, SafetensorError) as exc:
                 log.debug("Could not read safetensors metadata from %s: %s", sf, exc)
+                read_failures.append(str(sf))
                 continue
             read_any = True
             ql = m.get("quantization_level")
@@ -190,6 +192,11 @@ def validate_saved_model(path: str | Path) -> SavedModelValidation:
     if not read_any:
         return SavedModelValidation(
             valid=False, error="Could not read safetensors metadata"
+        )
+    if read_failures:
+        return SavedModelValidation(
+            valid=False,
+            error=f"Could not read safetensors metadata from: {', '.join(read_failures)}",
         )
     if len(quant_levels) > 1:
         return SavedModelValidation(
