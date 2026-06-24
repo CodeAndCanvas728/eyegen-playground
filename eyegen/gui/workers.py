@@ -225,6 +225,10 @@ class GenerationWorker(QThread):
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
             self.error.emit(full)
+        except Exception:  # noqa: BLE001 — last resort so the GUI never hangs silently
+            full = traceback.format_exc()
+            log.error("Generation failed (unexpected):\n%s", full)
+            self.error.emit(full)
         finally:
             self.pipeline = None
             self.pipeline_gen = None

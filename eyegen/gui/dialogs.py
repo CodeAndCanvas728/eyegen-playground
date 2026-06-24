@@ -2,6 +2,7 @@
 
 import html
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -33,6 +34,7 @@ class HFLoginDialog(QDialog):
         self._has_unsaved_token = False
         self._cached_hf_status: Optional[dict] = None
         self._cached_hf_time = 0.0
+        self._hf_status_lock = threading.Lock()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -74,11 +76,15 @@ class HFLoginDialog(QDialog):
 
     def _get_hf_status(self) -> Optional[dict]:
         """Return cached HF status if within TTL, otherwise fetch fresh."""
-        now = time.time()
-        if self._cached_hf_status is None or now - self._cached_hf_time > self._HF_STATUS_TTL:
-            self._cached_hf_status = hf_status()
-            self._cached_hf_time = now
-        return self._cached_hf_status
+        with self._hf_status_lock:
+            now = time.time()
+            if (
+                self._cached_hf_status is None
+                or now - self._cached_hf_time > self._HF_STATUS_TTL
+            ):
+                self._cached_hf_status = hf_status()
+                self._cached_hf_time = now
+            return self._cached_hf_status
 
     def _on_token_changed(self, text: str):
         self._has_unsaved_token = bool(text.strip())

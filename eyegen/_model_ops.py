@@ -156,8 +156,10 @@ def validate_saved_model(path: str | Path) -> SavedModelValidation:
             valid=False, error=f"Not a directory: {path}"
         )
 
-    meta: dict = {"quantization_level": None, "mflux_version": None}
     found_safetensors = False
+    read_any = False
+    quant_levels: set = set()
+    versions: set = set()
 
     try:
         from safetensors import SafetensorError, safe_open  # type: ignore[import-untyped]
@@ -175,19 +177,35 @@ def validate_saved_model(path: str | Path) -> SavedModelValidation:
             try:
                 with safe_open(str(sf), framework="mlx") as f:
                     m = f.metadata() or {}
-                    ql = m.get("quantization_level")
-                    meta["quantization_level"] = int(ql) if ql and ql != "None" else None
-                    meta["mflux_version"] = m.get("mflux_version")
-                return SavedModelValidation(valid=True, meta=meta)
             except (OSError, ValueError, SafetensorError) as exc:
                 log.debug("Could not read safetensors metadata from %s: %s", sf, exc)
                 continue
+            read_any = True
+            ql = m.get("quantization_level")
+            quant_levels.add(int(ql) if ql and ql != "None" else None)
+            versions.add(m.get("mflux_version"))
 
     if not found_safetensors:
+        return SavedModelValidation(valid=False, error="No .safetensors files found")
+    if not read_any:
         return SavedModelValidation(
-            valid=False, error="No .safetensors files found"
+            valid=False, error="Could not read safetensors metadata"
+        )
+    if len(quant_levels) > 1:
+        return SavedModelValidation(
+            valid=False,
+            error=f"Inconsistent quantization across shards: {sorted(map(str, quant_levels))}",
+        )
+    if len(versions) > 1:
+        return SavedModelValidation(
+            valid=False,
+            error=f"Inconsistent mflux_version across shards: {sorted(map(str, versions))}",
         )
 
     return SavedModelValidation(
-        valid=False, error="Could not read safetensors metadata"
+        valid=True,
+        meta={
+            "quantization_level": next(iter(quant_levels)),
+            "mflux_version": next(iter(versions)),
+        },
     )

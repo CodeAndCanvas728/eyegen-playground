@@ -111,6 +111,10 @@ def validate_safe_path(path: str | Path, name: str) -> Path:
         # Resolve the parent chain, but keep the final component as-is
         parent_resolved = p.parent.resolve(strict=False)
         p = parent_resolved / p.name
+        # Re-check the final component after parent resolution: it may have been
+        # created as a symlink between the loop above and now (TOCTOU window).
+        if p.is_symlink():
+            raise ValueError(f"Symlink detected in path for {name}: {p}")
 
     allowed_roots = _get_allowed_roots()
     is_under_allowed = any(
