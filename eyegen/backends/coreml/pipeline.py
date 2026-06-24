@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-import uuid
+import secrets
 from pathlib import Path
 from typing import Optional
 
@@ -90,15 +90,27 @@ class CoreMLWrapper(BaseSubprocessRunner):
     ) -> Image.Image:
         self._check_request(width, height, image_path)
 
+        if num_steps < 1:
+            raise ValueError(f"num_steps must be >= 1, got {num_steps}")
+        if cfg_weight < 0:
+            raise ValueError(f"cfg_weight must be >= 0, got {cfg_weight}")
+        if seed is not None and not isinstance(seed, int):
+            raise ValueError(f"seed must be an integer, got {type(seed).__name__}")
+        if not (0.0 <= denoise <= 1.0):
+            raise ValueError(f"denoise must be in [0, 1], got {denoise}")
+
         from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
         out_path = OUTPUT_DIR / f"coreml_{seed_str}.png"
+
+        from eyegen.validation import validate_safe_path
 
         py = _sidecar_python()
         if py is None:
             raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
+        py = validate_safe_path(py, "coreml_sidecar_python")
         cmd = [
             str(py),
             "-m",
@@ -147,10 +159,12 @@ class CoreMLWrapper(BaseSubprocessRunner):
         """Reject unsupported options and invalid dimensions."""
         if image_path:
             raise ValueError("CoreML backend's SD 1.x/2.x pipeline does not support img2img.")
-        if width != 512 or height != 512:
+        # Support SDXL (1024x1024) in addition to SD 1.x/2.x (512x512)
+        SUPPORTED_RESOLUTIONS = [(512, 512), (1024, 1024)]
+        if (width, height) not in SUPPORTED_RESOLUTIONS:
             raise ValueError(
-                "CoreML SD 1.x/2.x models only support a fixed 512x512 resolution "
-                f"(got {width}x{height})."
+                "CoreML models only support these resolutions: "
+                f"{SUPPORTED_RESOLUTIONS} (got {width}x{height})."
             )
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import uuid
+import secrets
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +11,7 @@ from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
 from eyegen.config import EyeGenConfig
+from eyegen.validation import validate_safe_path
 
 from .constants import (
     BONSAI_DEFAULT_GUIDANCE,
@@ -118,7 +119,7 @@ class BonsaiWrapper(BaseSubprocessRunner):
         from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
         out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed_str}.png"
 
         cmd = [
@@ -141,6 +142,7 @@ class BonsaiWrapper(BaseSubprocessRunner):
         script_path = status.bonsai_dir / "scripts" / "generate.sh"
         if not script_path.is_file():
             raise FileNotFoundError(f"Bonsai script not found: {script_path}")
+        script_path = validate_safe_path(script_path, "bonsai_script")
 
         full_cmd = [str(script_path), *cmd]
 

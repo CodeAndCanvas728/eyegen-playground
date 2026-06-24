@@ -62,6 +62,9 @@ def setup_img2img(
 
     image_path = str(image)
     denoise_value = denoise if denoise is not None else 0.75
+    if not (0.0 <= denoise_value <= 1.0):
+        typer.echo(f"❌ denoise must be between 0.0 and 1.0, got {denoise_value}", err=True)
+        raise typer.Exit(1)
     if resolved_backend == Backend.MLX:
         typer.echo(
             "⚠  Note: img2img with 4-bit quantized MLX models is known to produce "
@@ -199,6 +202,43 @@ def handle_quantization_error(
         raise typer.Exit(1) from retry_err
 
 
+def _resolve_backend_and_model(backend: str) -> tuple[Backend, str, EyeGenConfig]:
+    """Validate backend and resolve model + backend from config."""
+    validate_cli_backend(backend)
+    config = load_config()
+    model = config.model or DEFAULT_CONFIG.model
+    resolved_backend = detect_backend(model, backend, config=config)
+    return resolved_backend, model, config
+
+
+def _resolve_generation_params(
+    config: EyeGenConfig,
+    steps: Optional[int],
+    guidance: Optional[float],
+    height: Optional[int],
+    width: Optional[int],
+) -> tuple[int, float, int, int]:
+    """Resolve generation parameters from CLI args or config defaults."""
+    num_steps = steps or config.num_inference_steps
+    guidance_scale = guidance or config.guidance_scale
+    h = height or config.height
+    w = width or config.width
+    return num_steps, guidance_scale, h, w
+
+
+def _validate_generation_params(
+    resolved_backend: Backend,
+    w: int,
+    h: int,
+    image_path: Optional[str],
+) -> Optional[str]:
+    """Validate dimensions for generation. Returns error message or None."""
+    if image_path is not None:
+        # img2img: some backends still have dimension requirements
+        return None
+    return validate_dimensions(w, h)
+
+
 def build_generation_params(
     backend: str,
     output: Optional[Path],
@@ -210,24 +250,17 @@ def build_generation_params(
     denoise: Optional[float],
     quantize: Optional[int],
 ):
-    validate_cli_backend(backend)
-    config = load_config()
+    """Resolve and validate all generation parameters."""
+    resolved_backend, model, config = _resolve_backend_and_model(backend)
+    num_steps, guidance_scale, h, w = _resolve_generation_params(
+        config, steps, guidance, height, width
+    )
+    image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, h, w)
 
-    model = config.model or DEFAULT_CONFIG.model
-    resolved_backend = detect_backend(model, backend, config=config)
-
-    num_steps = steps or config.num_inference_steps
-    guidance_scale = guidance or config.guidance_scale
-    h = height or config.height
-    w = width or config.width
-
-    image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, height, width)
-
-    if image_path is None:
-        err = validate_dimensions(w, h)
-        if err:
-            typer.echo(f"❌ {err}", err=True)
-            raise typer.Exit(1)
+    err = _validate_generation_params(resolved_backend, w, h, image_path)
+    if err:
+        typer.echo(f"❌ {err}", err=True)
+        raise typer.Exit(1)
 
     output_path = resolve_output(output)
     return (
