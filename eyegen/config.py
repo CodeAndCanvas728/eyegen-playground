@@ -70,7 +70,7 @@ class EyeGenConfig:
     num_inference_steps: int = 30
     guidance_scale: float = 7.5
     backend: Backend = Backend.AUTO
-    mflux_quantize: Optional[int] = 4
+    mflux_quantize: Optional[int] = None
     mflux_model_path: Optional[str] = None
     hf_cache_dir: Optional[str] = None
     bonsai_model_path: Optional[str] = None
@@ -91,6 +91,10 @@ class EyeGenConfig:
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
+        if self.mflux_model_path:
+            p = Path(self.mflux_model_path).expanduser()
+            if not p.is_dir():
+                errors.append(f"mflux_model_path does not exist: {p}")
         if self.coreml_compute_unit not in ("CPU_ONLY", "CPU_AND_GPU", "CPU_AND_NE", "ALL"):
             errors.append(
                 f"Invalid coreml_compute_unit '{self.coreml_compute_unit}'. "

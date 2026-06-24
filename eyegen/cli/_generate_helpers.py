@@ -227,7 +227,7 @@ def build_generation_params(
         err = validate_dimensions(w, h)
         if err:
             typer.echo(f"❌ {err}", err=True)
-        raise typer.Exit(1)
+            raise typer.Exit(1)
 
     output_path = resolve_output(output)
     return (

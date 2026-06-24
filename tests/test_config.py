@@ -45,6 +45,17 @@ def test_config_validate_catches_invalid_backend():
     assert any("Backend" in e for e in errors)
 
 
+def test_config_validate_mflux_model_path_must_exist(tmp_path):
+    cfg = EyeGenConfig(mflux_model_path=str(tmp_path / "nonexistent"))
+    errors = cfg.validate()
+    assert any("does not exist" in e for e in errors)
+
+    sub = tmp_path / "my_model"
+    sub.mkdir()
+    cfg_ok = EyeGenConfig(mflux_model_path=str(sub))
+    assert not any("does not exist" in e for e in cfg_ok.validate())
+
+
 def test_config_from_dict_coerces_mflux_quantize_none():
     cfg = EyeGenConfig.from_dict({"mflux_quantize": "null"})
     assert cfg.mflux_quantize is None

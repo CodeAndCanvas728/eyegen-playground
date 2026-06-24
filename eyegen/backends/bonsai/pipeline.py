@@ -104,19 +104,13 @@ class BonsaiWrapper(BaseSubprocessRunner):
     ) -> Image.Image:
         self._check_log_warnings(cfg_weight, negative_prompt, image_path, denoise)
 
-        # Auto-adjust width and height to nearest multiple of 32
-        adjusted_width = max(32, ((width + 16) // 32) * 32)
-        adjusted_height = max(32, ((height + 16) // 32) * 32)
-        if adjusted_width != width or adjusted_height != height:
-            log.info(
-                "Auto-adjusting width/height for Bonsai from %dx%d to %dx%d (multiples of 32)",
-                width,
-                height,
-                adjusted_width,
-                adjusted_height,
+        # Bonsai/PrismML requires dimensions to be multiples of 32
+        if width % 32 != 0 or height % 32 != 0:
+            raise ValueError(
+                f"Bonsai/PrismML requires width and height to be multiples of 32, "
+                f"got {width}x{height}. Adjust your dimensions (nearest: "
+                f"{((width + 16) // 32) * 32}x{((height + 16) // 32) * 32})."
             )
-            width = adjusted_width
-            height = adjusted_height
 
         if num_steps < 1:
             raise ValueError(f"num_steps must be >= 1, got {num_steps}")
@@ -157,14 +151,16 @@ class BonsaiWrapper(BaseSubprocessRunner):
             cwd=str(status.bonsai_dir),
             env=env,
             stream_stdout=True,
-            stream_stderr=False,
+            stream_stderr=True,
             log_prefix="bonsai",
         )
 
         if returncode != 0:
+            stderr_tail = "".join(stderr_lines[-20:])
             raise RuntimeError(
                 f"Bonsai generation failed (exit {returncode}). "
-                f"Inspect logs at {get_bonsai_dir()}/outputs/"
+                f"Stderr:\n{stderr_tail}"
+                f"\nInspect logs at {get_bonsai_dir()}/outputs/"
             )
         if not out_path.is_file():
             raise RuntimeError(f"Bonsai generation did not produce expected output: {out_path}")

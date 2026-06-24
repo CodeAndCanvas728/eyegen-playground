@@ -1,5 +1,6 @@
 """Tests for the five uncovered internal functions in eyegen."""
 
+import importlib.metadata
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -51,6 +52,7 @@ from eyegen._mflux import (  # noqa: E402
     _resolve_mflux_class,
 )
 from eyegen._mlx import (  # noqa: E402
+    _check_mlx_version,
     _make_patched,
     _patch_mlx_attention,
 )
@@ -143,3 +145,13 @@ def test_patch_mlx_attention():
             mock_mlx_core.scaled_dot_product_attention
             != mock_mlx_core_fast.scaled_dot_product_attention
         )
+
+
+@patch("importlib.metadata.version", return_value="0.20.0")
+def test_check_mlx_version_found(mock_version):
+    assert _check_mlx_version() == "0.20.0"
+
+
+@patch("importlib.metadata.version", side_effect=importlib.metadata.PackageNotFoundError)
+def test_check_mlx_version_not_found(mock_version):
+    assert _check_mlx_version() is None
