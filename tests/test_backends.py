@@ -5,7 +5,8 @@ from unittest.mock import patch
 import pytest
 
 from eyegen.backends import _is_bonsai_model, _is_coreml_model, detect_backend
-from eyegen.config import Backend
+from eyegen.config import Backend, EyeGenConfig
+from eyegen.errors import UnsupportedModelError
 
 
 def test_detect_backend_gguf():
@@ -34,7 +35,7 @@ def test_detect_backend_unsupported_raises():
         patch("eyegen.backends._get_mflux_aliases", return_value=set()),
         patch("eyegen.backends._get_mlx_supported_models", return_value=set()),
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(UnsupportedModelError):
             detect_backend("totally-unknown-model", Backend.AUTO)
 
 
@@ -43,7 +44,7 @@ def test_detect_backend_mlx_missing_raises():
         patch("eyegen.backends._get_mflux_aliases", return_value=set()),
         patch("eyegen.backends._get_mlx_supported_models", return_value=None),
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(UnsupportedModelError):
             detect_backend("totally-unknown-model", Backend.AUTO)
 
 
@@ -53,4 +54,4 @@ def test_is_bonsai_model():
 
 
 def test_is_coreml_model_with_path():
-    assert _is_coreml_model("anything", config={"coreml_model_path": "/some/path"})
+    assert _is_coreml_model("anything", config=EyeGenConfig(coreml_model_path="/some/path"))

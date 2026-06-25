@@ -7,6 +7,7 @@ import pytest
 
 from eyegen.backends import bonsai
 from eyegen.backends.bonsai import BonsaiInstallStatus
+from eyegen.config import EyeGenConfig
 
 
 class TestBonsaiDir:
@@ -135,7 +136,7 @@ class TestBonsaiWrapper:
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
-        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
         img = wrapper.generate_image(
             prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=0
         )
@@ -161,7 +162,7 @@ class TestBonsaiWrapper:
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
-        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
         with pytest.raises(RuntimeError, match="Bonsai subprocess timed out"):
             wrapper.generate_image(
                 prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=42
@@ -193,15 +194,44 @@ class TestBonsaiWrapper:
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
-        wrapper = BonsaiWrapper({"model": "bonsai-ternary-mlx"})
-        # 500x500 should auto-adjust to nearest multiple of 32 (512x512)
-        wrapper.generate_image(
-            prompt="test", cfg_weight=1.0, num_steps=10, width=500, height=500, seed=42
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
+        # Bonsai requires multiples of 32; non-compliant dims raise ValueError
+        with pytest.raises(ValueError, match="multiples of 32"):
+            wrapper.generate_image(
+                prompt="test", cfg_weight=1.0, num_steps=10, width=500, height=500, seed=42
+            )
+
+    @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
+    @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
+    @mock.patch("eyegen.backends.bonsai.pipeline.Image.open")
+    def test_dimensions_accepts_32_multiple(
+        self, mock_image_open, mock_execute, mock_validate, tmp_path, monkeypatch
+    ):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_status.has_models = True
+        mock_status.bonsai_dir = tmp_path
+        mock_validate.return_value = mock_status
+
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "generate.sh").touch()
+
+        mock_execute.return_value = (0, ["line1\n", "line2\n"], [])
+        mock_image = mock.Mock()
+        mock_image_open.return_value.convert.return_value = mock_image
+
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+        expected_path = tmp_path / "bonsai_ternary-mlx_42.png"
+        expected_path.touch()
+
+        from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
+        img = wrapper.generate_image(
+            prompt="test", cfg_weight=1.0, num_steps=10, width=512, height=512, seed=42
         )
-        called_cmd = mock_execute.call_args[0][0]
-        assert "--size" in called_cmd
-        size_idx = called_cmd.index("--size")
-        assert called_cmd[size_idx + 1] == "512x512"
+        assert img == mock_image
 
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
     def test_invalid_variant_raises(self, mock_validate):
@@ -213,7 +243,7 @@ class TestBonsaiWrapper:
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
 
         with pytest.raises(ValueError, match="Unsupported Bonsai variant"):
-            BonsaiWrapper({"model": "bonsai-invalid-variant-name"})
+            BonsaiWrapper(EyeGenConfig(model="bonsai-invalid-variant-name"))
 
 
 class TestBonsaiSubprocessIntegration:
@@ -233,11 +263,12 @@ class TestBonsaiSubprocessIntegration:
         scripts_dir.mkdir(parents=True, exist_ok=True)
         (scripts_dir / "generate.sh").touch()
 
-        wrapper = BonsaiWrapper({"subprocess_timeout": 5, "model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
-        returncode, stdout, stderr = wrapper._execute_subprocess(
-            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
-        )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            returncode, stdout, stderr = wrapper._execute_subprocess(
+                [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
+            )
         assert returncode == 0
         assert any("ok" in line for line in stdout)
 
@@ -257,17 +288,18 @@ class TestBonsaiSubprocessIntegration:
         scripts_dir.mkdir(parents=True, exist_ok=True)
         (scripts_dir / "generate.sh").touch()
 
-        wrapper = BonsaiWrapper({"subprocess_timeout": 5, "model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
-        with pytest.raises(RuntimeError, match="timed out"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
-                ],
-                timeout=0.5,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="timed out"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
+                    ],
+                    timeout=0.5,
+                )
 
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
     def test_bonsai_subprocess_cancellation(self, mock_validate, tmp_path):
@@ -287,7 +319,7 @@ class TestBonsaiSubprocessIntegration:
         scripts_dir.mkdir(parents=True, exist_ok=True)
         (scripts_dir / "generate.sh").touch()
 
-        wrapper = BonsaiWrapper({"subprocess_timeout": 5, "model": "bonsai-ternary-mlx"})
+        wrapper = BonsaiWrapper(EyeGenConfig(subprocess_timeout=5, model="bonsai-ternary-mlx"))
 
         def cancel_after_delay():
             time.sleep(0.2)
@@ -296,13 +328,14 @@ class TestBonsaiSubprocessIntegration:
         t = threading.Thread(target=cancel_after_delay)
         t.start()
 
-        with pytest.raises(RuntimeError, match="cancelled"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
-                ],
-                timeout=3.0,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="cancelled"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
+                    ],
+                    timeout=3.0,
+                )
         t.join()

@@ -129,7 +129,7 @@ def convert_to_coreml(
     if timeout is None:
         from eyegen.config import load_config
 
-        timeout = float(load_config().get("convert_timeout", 1800.0))
+        timeout = float(load_config().convert_timeout)
 
     log.info("coreml-convert: %s", " ".join(cmd))
     returncode, timed_out = _run_conversion(cmd, progress_callback, timeout=timeout)
@@ -164,7 +164,7 @@ def _run_conversion(
     cfg = load_config()
     runner = BaseSubprocessRunner(cfg)
     timed_out = False
-    run_timeout = timeout if timeout is not None else float(cfg.get("convert_timeout", 1800.0))
+    run_timeout = timeout if timeout is not None else float(cfg.convert_timeout)
     try:
         returncode, _, _ = runner._execute_subprocess(
             cmd,

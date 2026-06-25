@@ -10,6 +10,7 @@ from eyegen import (
     DEFAULT_CONFIG,
     OUTPUT_DIR,
     Backend,
+    EyeGenConfig,
     QuantizationError,
     detect_backend,
     generate_image,
@@ -61,6 +62,9 @@ def setup_img2img(
 
     image_path = str(image)
     denoise_value = denoise if denoise is not None else 0.75
+    if not (0.0 <= denoise_value <= 1.0):
+        typer.echo(f"❌ denoise must be between 0.0 and 1.0, got {denoise_value}", err=True)
+        raise typer.Exit(1)
     if resolved_backend == Backend.MLX:
         typer.echo(
             "⚠  Note: img2img with 4-bit quantized MLX models is known to produce "
@@ -77,7 +81,7 @@ def setup_img2img(
 def print_generation_settings(
     model: str,
     resolved_backend: Backend,
-    config: dict,
+    config: EyeGenConfig,
     prompt: str,
     image_path: Optional[str],
     denoise_value: float,
@@ -98,18 +102,15 @@ def print_generation_settings(
     typer.echo("✨ Generating image...")
     typer.echo(f"   Backend: {backend_label}")
     typer.echo(f"   Model: {model}")
-    local_model = config.get("mflux_model_path")
-    if local_model and resolved_backend == Backend.MFLUX:
-        typer.echo(f"   Local model: {local_model}")
+    if config.mflux_model_path and resolved_backend == Backend.MFLUX:
+        typer.echo(f"   Local model: {config.mflux_model_path}")
     if resolved_backend == Backend.COREML:
-        coreml_path = config.get("coreml_model_path")
-        if coreml_path:
-            typer.echo(f"   CoreML model: {coreml_path}")
-        typer.echo(f"   Compute unit: {config.get('coreml_compute_unit', 'CPU_AND_NE')}")
+        if config.coreml_model_path:
+            typer.echo(f"   CoreML model: {config.coreml_model_path}")
+        typer.echo(f"   Compute unit: {config.coreml_compute_unit or 'CPU_AND_NE'}")
     if resolved_backend == Backend.BONSAI:
-        bonsai_path = config.get("bonsai_model_path")
-        if bonsai_path:
-            typer.echo(f"   Bonsai model: {bonsai_path}")
+        if config.bonsai_model_path:
+            typer.echo(f"   Bonsai model: {config.bonsai_model_path}")
     typer.echo(f"   Prompt: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
     if image_path:
         typer.echo(f"   Mode: img2img | Denoise: {denoise_value:.2f} | Input: {image_path}")
@@ -119,12 +120,12 @@ def print_generation_settings(
         typer.echo(f"   Seed: {seed}")
 
 
-def load_pipeline(resolved_backend: Backend, config: dict, quantize: Optional[int]):
+def load_pipeline(resolved_backend: Backend, config: EyeGenConfig, quantize: Optional[int]):
     typer.echo("📦 Loading model...")
     if resolved_backend == Backend.OLLAMA:
         return get_ollama_pipeline(config)
     if resolved_backend == Backend.MFLUX:
-        q = quantize if quantize is not None else config.get("mflux_quantize", 4)
+        q = quantize if quantize is not None else config.mflux_quantize
         if q is not None:
             typer.echo(f"   Quantize: {q}-bit")
         return get_mflux_pipeline(config, quantize=q)
@@ -164,7 +165,7 @@ def handle_import_error(resolved_backend: Backend):
 
 def handle_quantization_error(
     qe: QuantizationError,
-    config: dict,
+    config: EyeGenConfig,
     prompt: str,
     guidance_scale: float,
     num_steps: int,
@@ -201,6 +202,43 @@ def handle_quantization_error(
         raise typer.Exit(1) from retry_err
 
 
+def _resolve_backend_and_model(backend: str) -> tuple[Backend, str, EyeGenConfig]:
+    """Validate backend and resolve model + backend from config."""
+    validate_cli_backend(backend)
+    config = load_config()
+    model = config.model or DEFAULT_CONFIG.model
+    resolved_backend = detect_backend(model, backend, config=config)
+    return resolved_backend, model, config
+
+
+def _resolve_generation_params(
+    config: EyeGenConfig,
+    steps: Optional[int],
+    guidance: Optional[float],
+    height: Optional[int],
+    width: Optional[int],
+) -> tuple[int, float, int, int]:
+    """Resolve generation parameters from CLI args or config defaults."""
+    num_steps = steps or config.num_inference_steps
+    guidance_scale = guidance or config.guidance_scale
+    h = height or config.height
+    w = width or config.width
+    return num_steps, guidance_scale, h, w
+
+
+def _validate_generation_params(
+    resolved_backend: Backend,
+    w: int,
+    h: int,
+    image_path: Optional[str],
+) -> Optional[str]:
+    """Validate dimensions for generation. Returns error message or None."""
+    if image_path is not None:
+        # img2img: some backends still have dimension requirements
+        return None
+    return validate_dimensions(w, h)
+
+
 def build_generation_params(
     backend: str,
     output: Optional[Path],
@@ -212,23 +250,16 @@ def build_generation_params(
     denoise: Optional[float],
     quantize: Optional[int],
 ):
-    validate_cli_backend(backend)
-    config = load_config()
+    """Resolve and validate all generation parameters."""
+    resolved_backend, model, config = _resolve_backend_and_model(backend)
+    num_steps, guidance_scale, h, w = _resolve_generation_params(
+        config, steps, guidance, height, width
+    )
+    image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, h, w)
 
-    model = config.get("model", DEFAULT_CONFIG["model"])
-    resolved_backend = detect_backend(model, backend, config=config)
-
-    num_steps = steps or config.get("num_inference_steps", 30)
-    guidance_scale = guidance or config.get("guidance_scale", 7.5)
-    h = height or config.get("height", 1024)
-    w = width or config.get("width", 1024)
-
-    image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, height, width)
-
-    if image_path is None:
-        err = validate_dimensions(w, h)
-        if err:
-            typer.echo(f"❌ {err}", err=True)
+    err = _validate_generation_params(resolved_backend, w, h, image_path)
+    if err:
+        typer.echo(f"❌ {err}", err=True)
         raise typer.Exit(1)
 
     output_path = resolve_output(output)

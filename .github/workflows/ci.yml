@@ -24,3 +24,12 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
+
+# >>> esper-stack:python (ci) — add under `jobs:` in .github/workflows/ci.yml
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --all-extras
+      - run: uv run python -m pytest --cov --cov-fail-under=0

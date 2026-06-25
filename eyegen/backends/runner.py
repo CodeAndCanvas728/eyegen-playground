@@ -9,23 +9,23 @@ import threading
 from contextlib import suppress
 from typing import Callable, List, Optional, Tuple
 
+from eyegen.config import EyeGenConfig
+
 log = logging.getLogger(__name__)
 
 
 class BaseSubprocessRunner:
     """Base class for running and managing subprocesses with timeouts and cancellation."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: EyeGenConfig):
         self.config = config
         self._proc: Optional[subprocess.Popen] = None
         self._cancelled = False
-        # Make timeout configurable. Default to 300.0.
-        self.timeout = float(config.get("subprocess_timeout", 300.0))
+        self.timeout = float(config.subprocess_timeout)
 
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Validate cmd arguments to prevent option/argument injection."""
         ALLOWED_FLAGS = {
-            "-c",
             "-m",
             "--model",
             "--prompt",

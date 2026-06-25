@@ -67,3 +67,67 @@ def test_validate_safe_path_not_under_root():
 
     with pytest.raises(ValueError, match="not under any expected root"):
         validate_safe_path("/usr/bin/somefile", "test_path")
+
+
+def test_validate_safe_path_allows_home():
+    from eyegen.validation import validate_safe_path
+
+    p = validate_safe_path(str(Path.home()), "home_path")
+    assert p == Path.home().resolve()
+
+
+def test_validate_safe_path_allows_tmp():
+    from eyegen.validation import validate_safe_path
+
+    p = validate_safe_path("/tmp", "tmp_path")  # noqa: S108
+    assert p == Path("/tmp").resolve()  # noqa: S108
+
+
+def test_validate_safe_path_rejects_var():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/var", "var_path")
+
+
+def test_validate_safe_path_rejects_volumes():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/Volumes", "volumes_path")
+
+
+def test_validate_safe_path_subdir_of_allowed():
+    from eyegen.validation import validate_safe_path
+
+    sub = Path.home() / "Documents" / "test_projects" / "mygen-playground"
+    p = validate_safe_path(str(sub), "project_root")
+    assert p == sub.resolve()
+
+
+def test_validate_safe_path_rejects_explicit_traversal():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="Directory traversal"):
+        validate_safe_path("/safe/../../etc/passwd", "bad_path")
+
+
+def test_validate_safe_path_allows_var_folders():
+    from eyegen.validation import validate_safe_path
+
+    p = validate_safe_path("/private/var/folders/some/temp/path", "temp_path")
+    assert p == Path("/private/var/folders/some/temp/path").resolve()
+
+
+def test_validate_safe_path_rejects_var_raw():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/var", "var_raw")
+
+
+def test_validate_safe_path_rejects_private_var():
+    from eyegen.validation import validate_safe_path
+
+    with pytest.raises(ValueError, match="not under any expected root"):
+        validate_safe_path("/private/var/log", "private_var_log")

@@ -4,14 +4,14 @@ import json
 
 import typer
 
-from eyegen import CONFIG_FILE, load_config, save_config
+from eyegen import CONFIG_FILE, EyeGenConfig, load_config, save_config
 
 
 def config_show():
     """Display current configuration."""
     config = load_config()
     typer.echo("📋 Current Configuration:")
-    typer.echo(json.dumps(config, indent=2))
+    typer.echo(json.dumps(config.to_dict(), indent=2))
 
 
 def config_set(
@@ -26,9 +26,10 @@ def config_set(
     except json.JSONDecodeError:
         parsed_value = value
 
-    config[key] = parsed_value
+    data = config.to_dict()
+    data[key] = parsed_value
     try:
-        save_config(config)
+        save_config(EyeGenConfig.from_dict(data))
         typer.echo(f"✓ Config saved to {CONFIG_FILE}")
         typer.echo(f"✓ Set {key} = {parsed_value}")
     except ValueError as val_err:

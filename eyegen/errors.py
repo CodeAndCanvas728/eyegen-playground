@@ -1,6 +1,10 @@
 """Custom exceptions used across EyeGen."""
 
 
+class UnsupportedModelError(ValueError):
+    """Raised when *detect_backend* cannot resolve a model name to any backend."""
+
+
 class QuantizationError(RuntimeError):
     """Raised when MLX quantized-weight dequantization fails at inference.
 

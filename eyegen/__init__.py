@@ -29,7 +29,7 @@ from eyegen.config import (
     load_config,
     save_config,
 )
-from eyegen.errors import QuantizationError
+from eyegen.errors import QuantizationError, UnsupportedModelError
 from eyegen.generation import generate_image
 from eyegen.hf import hf_login, hf_logout, hf_status
 from eyegen.validation import (
@@ -51,6 +51,7 @@ __all__ = [
     "OUTPUT_DIR",
     "PROJECT_ROOT",
     "QuantizationError",
+    "UnsupportedModelError",
     "clear_mflux_cache",
     "detect_backend",
     "generate_image",

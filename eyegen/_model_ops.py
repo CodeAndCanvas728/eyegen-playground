@@ -1,25 +1,46 @@
 """Model download, listing, caching, and saving operations."""
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from eyegen._mflux import _get_mflux_aliases, _resolve_mflux_class
-from eyegen.backends import _apply_hf_cache
+from eyegen.validation import validate_safe_path
 
 log = logging.getLogger(__name__)
 
 
-def pull_model(model_name: str, progress_callback=None, hf_cache_dir: str | None = None) -> bool:
-    """Download a GGUF model via ollamadiffuser."""
+@dataclass
+class SavedModelValidation:
+    valid: bool
+    meta: dict | None = None
+    error: str | None = None
+
+
+def _apply_hf_cache_safe(hf_cache_dir: str | None) -> None:
+    """Validate and apply the HuggingFace cache directory."""
+    if hf_cache_dir:
+        validate_safe_path(hf_cache_dir, "hf_cache_dir")
+    from eyegen.backends import _apply_hf_cache
+
     _apply_hf_cache({"hf_cache_dir": hf_cache_dir})
-    from ollamadiffuser.core.models.manager import model_manager
+
+
+def pull_model(
+    model_name: str,
+    progress_callback=None,
+    hf_cache_dir: str | None = None,
+) -> bool:
+    """Download a GGUF model via ollamadiffuser."""
+    _apply_hf_cache_safe(hf_cache_dir)
+    from ollamadiffuser.core.models.manager import model_manager  # type: ignore[import-untyped]
 
     return model_manager.pull_model(model_name, progress_callback=progress_callback)
 
 
 def list_ollama_models() -> dict:
     """Return dicts of available and installed ollamadiffuser models."""
-    from ollamadiffuser.core.models.manager import model_manager
+    from ollamadiffuser.core.models.manager import model_manager  # type: ignore[import-untyped]
 
     return {
         "installed": model_manager.list_installed_models(),
@@ -30,28 +51,37 @@ def list_ollama_models() -> dict:
 def list_mflux_models() -> list[dict]:
     """Return a list of available MFLUX model dicts with alias and HF name."""
     try:
-        from mflux.models.common.config.model_config import AVAILABLE_MODELS
+        from mflux.models.common.config.model_config import (
+            AVAILABLE_MODELS,  # type: ignore[import-untyped]
+        )
 
         return [
             {"alias": alias, "model_name": cfg.model_name}
             for alias, cfg in sorted(AVAILABLE_MODELS.items(), key=lambda x: x[1].priority)
         ]
     except (ImportError, AttributeError) as exc:
-        log.debug("Could not load MFLUX models from package, falling back to static list: %s", exc)
+        log.warning(
+            "Could not load MFLUX models from package, falling back to static list: %s", exc
+        )
         aliases = sorted(_get_mflux_aliases())
         return [{"alias": a, "model_name": a} for a in aliases]
 
 
-def clear_mflux_cache(model_alias: str | None = None) -> list[str]:
+def clear_mflux_cache(model_alias: str | None = None, *, force: bool = False) -> list[str]:
     """Delete cached MFLUX / HuggingFace model files and return removed paths."""
-    from huggingface_hub import scan_cache_dir
+    if model_alias is None and not force:
+        raise ValueError("Must provide model_alias or set force=True to clear all flux models")
+
+    from huggingface_hub import scan_cache_dir  # type: ignore[import-untyped]
 
     removed: list[str] = []
     repo_id: str | None = None
 
     if model_alias:
         try:
-            from mflux.models.common.config.model_config import ModelConfig
+            from mflux.models.common.config.model_config import (
+                ModelConfig,  # type: ignore[import-untyped]
+            )
 
             mc = ModelConfig.from_name(model_name=model_alias)
             repo_id = mc.model_name
@@ -87,11 +117,14 @@ def save_mflux_model(
     hf_cache_dir: str | None = None,
 ) -> Path:
     """Download an MFLUX model, quantize it, and save to *output_path*."""
-    _apply_hf_cache({"hf_cache_dir": hf_cache_dir})
-    from mflux.models.common.config.model_config import ModelConfig
+    _apply_hf_cache_safe(hf_cache_dir)
+    from mflux.models.common.config.model_config import ModelConfig  # type: ignore[import-untyped]
 
-    output_path = Path(output_path).expanduser()
-    output_path.mkdir(parents=True, exist_ok=True)
+    if quantize is not None and not (1 <= quantize <= 16):
+        raise ValueError(f"Invalid quantize value: {quantize}. Must be between 1 and 16.")
+
+    out = Path(validate_safe_path(str(output_path), "output_path"))
+    out.mkdir(parents=True, exist_ok=True)
 
     model_config = ModelConfig.from_name(model_name=model_alias)
     cls = _resolve_mflux_class(model_config)
@@ -99,37 +132,32 @@ def save_mflux_model(
     q_label = f"{quantize}-bit" if quantize else "full precision"
     if progress_callback:
         progress_callback(f"Downloading & quantizing '{model_alias}' ({q_label})…")
-    log.info("Saving MFLUX model '%s' (%s) to %s", model_alias, q_label, output_path)
+    log.info("Saving MFLUX model '%s' (%s) to %s", model_alias, q_label, out)
 
     model = cls(model_config=model_config, quantize=quantize)
 
     if progress_callback:
-        progress_callback(f"Saving to {output_path}…")
-    model.save_model(str(output_path))
+        progress_callback(f"Saving to {out}…")
+    model.save_model(str(out))
 
-    if not any(f.is_file() for f in output_path.glob("**/*")):
-        raise RuntimeError(f"MFLUX model save failed: no files were written to {output_path}")
+    if not any(f.is_file() for f in out.glob("**/*")):
+        raise RuntimeError(f"MFLUX model save failed: no files were written to {out}")
 
-    log.info("Model saved: %s", output_path)
+    log.info("Model saved: %s", out)
     if progress_callback:
-        progress_callback(f"✅ Model saved to {output_path}")
-    return output_path
+        progress_callback(f"✅ Model saved to {out}")
+    return out
 
 
-def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
-    """Check whether *path* contains a valid mflux-saved model."""
-    p = Path(path).expanduser()
-    if not p.is_dir():
-        return False, None
+def _scan_safetensors_dir(p: Path):
+    """Scan *p* for safetensors files and return collected metadata."""
+    from safetensors import SafetensorError, safe_open  # type: ignore[import-untyped]
 
-    meta: dict = {"quantization_level": None, "mflux_version": None}
     found_safetensors = False
-
-    try:
-        from safetensors import SafetensorError, safe_open
-    except ImportError:
-        log.debug("safetensors not installed, cannot validate model")
-        return False, None
+    read_any = False
+    read_failures: list[str] = []
+    quant_levels: set = set()
+    versions: set = set()
 
     for subdir in sorted(p.iterdir()):
         if not subdir.is_dir():
@@ -139,15 +167,58 @@ def validate_saved_model(path: str | Path) -> tuple[bool, dict | None]:
             try:
                 with safe_open(str(sf), framework="mlx") as f:
                     m = f.metadata() or {}
-                    ql = m.get("quantization_level")
-                    meta["quantization_level"] = int(ql) if ql and ql != "None" else None
-                    meta["mflux_version"] = m.get("mflux_version")
-                return True, meta
             except (OSError, ValueError, SafetensorError) as exc:
                 log.debug("Could not read safetensors metadata from %s: %s", sf, exc)
+                read_failures.append(str(sf))
                 continue
+            read_any = True
+            ql = m.get("quantization_level")
+            quant_levels.add(int(ql) if ql and ql != "None" else None)
+            versions.add(m.get("mflux_version"))
+
+    return found_safetensors, read_any, read_failures, quant_levels, versions
+
+
+def validate_saved_model(path: str | Path) -> SavedModelValidation:
+    """Check whether *path* contains a valid mflux-saved model."""
+    p = Path(str(path)).expanduser()
+    if not p.is_dir():
+        return SavedModelValidation(valid=False, error=f"Not a directory: {path}")
+
+    try:
+        found_safetensors, read_any, read_failures, quant_levels, versions = _scan_safetensors_dir(
+            p
+        )
+    except ImportError:
+        log.debug("safetensors not installed, cannot validate model")
+        return SavedModelValidation(
+            valid=False, error="safetensors not installed, cannot validate model"
+        )
 
     if not found_safetensors:
-        return False, None
+        return SavedModelValidation(valid=False, error="No .safetensors files found")
+    if not read_any:
+        return SavedModelValidation(valid=False, error="Could not read safetensors metadata")
+    if read_failures:
+        return SavedModelValidation(
+            valid=False,
+            error=f"Could not read safetensors metadata from: {', '.join(read_failures)}",
+        )
+    if len(quant_levels) > 1:
+        return SavedModelValidation(
+            valid=False,
+            error=f"Inconsistent quantization across shards: {sorted(map(str, quant_levels))}",
+        )
+    if len(versions) > 1:
+        return SavedModelValidation(
+            valid=False,
+            error=f"Inconsistent mflux_version across shards: {sorted(map(str, versions))}",
+        )
 
-    return True, meta
+    return SavedModelValidation(
+        valid=True,
+        meta={
+            "quantization_level": next(iter(quant_levels)),
+            "mflux_version": next(iter(versions)),
+        },
+    )

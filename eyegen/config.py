@@ -70,7 +70,7 @@ class EyeGenConfig:
     num_inference_steps: int = 30
     guidance_scale: float = 7.5
     backend: Backend = Backend.AUTO
-    mflux_quantize: Optional[int] = 4
+    mflux_quantize: Optional[int] = None
     mflux_model_path: Optional[str] = None
     hf_cache_dir: Optional[str] = None
     bonsai_model_path: Optional[str] = None
@@ -91,6 +91,10 @@ class EyeGenConfig:
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
+        if self.mflux_model_path:
+            p = Path(self.mflux_model_path).expanduser()
+            if not p.is_dir():
+                errors.append(f"mflux_model_path does not exist: {p}")
         if self.coreml_compute_unit not in ("CPU_ONLY", "CPU_AND_GPU", "CPU_AND_NE", "ALL"):
             errors.append(
                 f"Invalid coreml_compute_unit '{self.coreml_compute_unit}'. "
@@ -206,7 +210,7 @@ class EyeGenConfig:
         return data
 
 
-DEFAULT_CONFIG = EyeGenConfig().to_dict()
+DEFAULT_CONFIG = EyeGenConfig()
 
 
 def _backup_corrupted_config(exc: Exception) -> None:
@@ -222,7 +226,7 @@ def _backup_corrupted_config(exc: Exception) -> None:
     try:
         if CONFIG_FILE.exists():
             CONFIG_FILE.replace(backup_file)
-        save_config(EyeGenConfig().to_dict())
+        save_config(EyeGenConfig())
     except Exception as write_err:
         log.error("Failed to write default config: %s", write_err)
 
@@ -236,48 +240,47 @@ def _handle_parse_error(exc: Exception) -> None:
         exc_info=True,
     )
     try:
-        save_config(EyeGenConfig().to_dict())
+        save_config(EyeGenConfig())
     except Exception as write_err:
         log.error("Failed to write default config: %s", write_err)
 
 
-def load_config() -> dict:
+def load_config() -> EyeGenConfig:
     """Load configuration from config.json, migrate/normalize it, or return defaults."""
     if not CONFIG_FILE.exists():
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
     try:
         with open(CONFIG_FILE, "r") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
         _backup_corrupted_config(e)
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
     if not isinstance(data, dict):
         log.warning("config.json root is not a dictionary. Resetting to defaults.")
         _handle_parse_error(ValueError("Root is not a dictionary"))
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
     try:
         cfg = EyeGenConfig.from_dict(data)
-        normalized = cfg.to_dict()
-        if normalized != data:
+        normalized_dict = cfg.to_dict()
+        if normalized_dict != data:
             log.warning("Config required migration/normalization; saving config.")
             try:
-                save_config(normalized)
+                save_config(cfg)
             except Exception as save_err:
                 log.error("Failed to save migrated config: %s", save_err)
-        return normalized
+        return cfg
     except (ValueError, TypeError) as e:
         _handle_parse_error(e)
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
 
-def save_config(config: dict):
+def save_config(config: EyeGenConfig):
     """Save configuration to config.json after running EyeGenConfig validation."""
-    cfg = EyeGenConfig.from_dict(config)
-    errors = cfg.validate()
+    errors = config.validate()
     if errors:
         raise ValueError("; ".join(errors))
     with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg.to_dict(), f, indent=2)
+        json.dump(config.to_dict(), f, indent=2)
