@@ -1,8 +1,6 @@
 """Input validation helpers for EyeGen."""
 
 import logging
-import os
-import re
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -43,15 +41,14 @@ def sanitize_prompt(prompt: str) -> str:
     # Normalize Unicode
     prompt = unicodedata.normalize("NFKC", prompt)
     # Remove any remaining characters from insecure categories
-    prompt = "".join(ch for ch in prompt if unicodedata
-                       .category(ch) not in _INSECURE_CATS)
+    prompt = "".join(ch for ch in prompt if unicodedata.category(ch) not in _INSECURE_CATS)
     return (
-        prompt.replace("\u2014", "-")   # em dash
-        .replace("\u2013", "-")   # en dash
-        .replace("\u2018", "'")   # left single quote
-        .replace("\u2019", "'")   # right single quote
-        .replace("\u201c", '"')   # left double quote
-        .replace("\u201d", '"')   # right double quote
+        prompt.replace("\u2014", "-")  # em dash
+        .replace("\u2013", "-")  # en dash
+        .replace("\u2018", "'")  # left single quote
+        .replace("\u2019", "'")  # right single quote
+        .replace("\u201c", '"')  # left double quote
+        .replace("\u201d", '"')  # right double quote
         .replace("\u2026", "...")  # ellipsis
     )
 
@@ -99,20 +96,16 @@ def validate_safe_path(path: str | Path, name: str) -> Path:
         try:
             p = p.resolve(strict=True)
         except OSError as exc:
-            raise ValueError(f"Could not resolve path for {name}: {exc}")
+            raise ValueError(f"Could not resolve path for {name}: {exc}") from exc
     else:
         parent_resolved = p.parent.resolve(strict=False)
         p = parent_resolved / p.name
 
     allowed_roots = _get_allowed_roots()
-    is_under_allowed = any(
-        _is_relative_to_safe(p, root) for root in allowed_roots
-    )
+    is_under_allowed = any(_is_relative_to_safe(p, root) for root in allowed_roots)
 
     if not is_under_allowed:
-        raise ValueError(
-            f"Path '{path}' for '{name}' is not under any expected root directory."
-        )
+        raise ValueError(f"Path '{path}' for '{name}' is not under any expected root directory.")
 
     return p
 

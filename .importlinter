@@ -1,0 +1,23 @@
+# import-linter — Python PER-STACK TEMPLATE for vertical boundaries (§2) +
+# dependency direction (§2). Include ONLY in Python projects.
+# Run: lint-imports   (add `import-linter` as a dev dependency)
+# TODO: replace root_package and the layer/module names with THIS project's.
+
+[importlinter]
+root_package = your_package          # TODO
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Layered: deps flow inward
+type = layers
+layers =
+    your_package.api                 # TODO: outermost
+    your_package.services
+    your_package.data                # TODO: innermost
+
+[importlinter:contract:verticals]
+name = Verticals are independent
+type = independence
+modules =
+    your_package.feature_a           # TODO: your verticals
+    your_package.feature_b

@@ -38,3 +38,19 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+# >>> esper-stack:python (pre-commit) — append under `repos:` in .pre-commit-config.yaml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4  # autoupdate
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter
+        entry: lint-imports
+        language: system
+        pass_filenames: false
+        types: [python]
