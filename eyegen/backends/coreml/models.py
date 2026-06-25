@@ -129,7 +129,7 @@ def convert_to_coreml(
     if timeout is None:
         from eyegen.config import load_config
 
-        timeout = float(load_config().get("convert_timeout", 1800.0))
+        timeout = float(load_config().convert_timeout)
 
     log.info("coreml-convert: %s", " ".join(cmd))
     returncode, timed_out = _run_conversion(cmd, progress_callback, timeout=timeout)

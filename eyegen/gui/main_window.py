@@ -182,7 +182,7 @@ class MainWindow(
             if errors:
                 self._set_status(f"⚠ {errors[0]}", "red")
                 return None, False
-            return cfg_obj.to_dict(), True
+            return cfg_obj, True
         except (ValueError, TypeError) as e:
             log.warning("Config cast failed: %s", e)
             self._set_status(f"⚠ Invalid config: {e}", "red")

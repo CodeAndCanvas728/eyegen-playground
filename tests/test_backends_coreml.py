@@ -117,8 +117,9 @@ class TestCoreMLWrapper:
         expected_path.touch()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
-        wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
+        wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
         with mock.patch("eyegen.backends.coreml.pipeline.Image.open") as mock_img_open:
             mock_img_open.return_value.convert.return_value = mock.Mock()
             wrapper.generate_image(
@@ -150,8 +151,9 @@ class TestCoreMLWrapper:
         model_dir.mkdir()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
-        wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
+        wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
 
         with pytest.raises(RuntimeError, match="CoreML subprocess timed out"):
             wrapper.generate_image(
@@ -168,8 +170,9 @@ class TestCoreMLWrapper:
         model_dir.mkdir()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
-        wrapper = CoreMLWrapper({"coreml_model_path": str(model_dir)})
+        wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
 
         # 1. Reject non-512 dimensions (e.g. 256x256)
         with pytest.raises(ValueError, match="only support a fixed 512x512 resolution"):
@@ -195,9 +198,10 @@ class TestCoreMLWrapper:
         mock_validate.return_value = mock_status
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
         with pytest.raises(ValueError, match="Invalid characters in CoreML model name"):
-            CoreMLWrapper({"model": "sd-2-1-base; rm -rf /"})
+            CoreMLWrapper(EyeGenConfig(model="sd-2-1-base; rm -rf /"))
 
 
 class TestCoreMLSubprocessIntegration:
@@ -206,6 +210,7 @@ class TestCoreMLSubprocessIntegration:
         import sys
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
         mock_status = mock.Mock()
         mock_status.installed = True
@@ -214,7 +219,9 @@ class TestCoreMLSubprocessIntegration:
         model_dir = tmp_path / "sd-2-1-base"
         model_dir.mkdir()
 
-        wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
+        wrapper = CoreMLWrapper(
+            EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
+        )
 
         returncode, stdout, stderr = wrapper._execute_subprocess(
             [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
@@ -227,6 +234,7 @@ class TestCoreMLSubprocessIntegration:
         import sys
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
         mock_status = mock.Mock()
         mock_status.installed = True
@@ -235,7 +243,9 @@ class TestCoreMLSubprocessIntegration:
         model_dir = tmp_path / "sd-2-1-base"
         model_dir.mkdir()
 
-        wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
+        wrapper = CoreMLWrapper(
+            EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
+        )
 
         with pytest.raises(RuntimeError, match="timed out"):
             wrapper._execute_subprocess(
@@ -254,6 +264,7 @@ class TestCoreMLSubprocessIntegration:
         import time
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
+        from eyegen.config import EyeGenConfig
 
         mock_status = mock.Mock()
         mock_status.installed = True
@@ -262,7 +273,9 @@ class TestCoreMLSubprocessIntegration:
         model_dir = tmp_path / "sd-2-1-base"
         model_dir.mkdir()
 
-        wrapper = CoreMLWrapper({"subprocess_timeout": 5, "coreml_model_path": str(model_dir)})
+        wrapper = CoreMLWrapper(
+            EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
+        )
 
         def cancel_after_delay():
             time.sleep(0.2)

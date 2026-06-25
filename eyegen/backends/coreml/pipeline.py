@@ -6,11 +6,15 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
+from eyegen.config import EyeGenConfig
+
+if TYPE_CHECKING:
+    pass
 
 from .constants import VALID_COMPUTE_UNITS
 from .install import (
@@ -25,14 +29,14 @@ log = logging.getLogger(__name__)
 class CoreMLWrapper(BaseSubprocessRunner):
     """Adapter that runs Apple's Stable Diffusion pipeline via subprocess."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: EyeGenConfig):
         super().__init__(config)
         self.model_path = self._resolve_model_path(config)
         self.compute_unit = self._resolve_compute_unit(config)
         self._validate()
 
-    def _resolve_model_path(self, config: dict) -> Path:
-        explicit = config.get("coreml_model_path")
+    def _resolve_model_path(self, config: EyeGenConfig) -> Path:
+        explicit = config.coreml_model_path
         if explicit:
             from eyegen.validation import validate_safe_path
 
@@ -44,7 +48,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
                     "or ./generate.py convert-coreml <hf-model> --output <dir>."
                 )
             return p
-        model_name = config.get("model", "")
+        model_name = config.model
         if not model_name:
             raise RuntimeError(
                 "No model selected. Set a model name or provide a coreml_model_path."
@@ -59,8 +63,8 @@ class CoreMLWrapper(BaseSubprocessRunner):
             "Run ./generate.py pull-coreml <alias> to download it."
         )
 
-    def _resolve_compute_unit(self, config: dict) -> str:
-        cu = config.get("coreml_compute_unit", "CPU_AND_NE")
+    def _resolve_compute_unit(self, config: EyeGenConfig) -> str:
+        cu = config.coreml_compute_unit
         if cu not in VALID_COMPUTE_UNITS:
             raise ValueError(
                 f"Unsupported CoreML compute unit: {cu!r}. Must be one of {VALID_COMPUTE_UNITS}."
@@ -155,6 +159,6 @@ class CoreMLWrapper(BaseSubprocessRunner):
             )
 
 
-def get_coreml_pipeline(config: dict) -> CoreMLWrapper:
+def get_coreml_pipeline(config: EyeGenConfig) -> CoreMLWrapper:
     """Build a CoreMLWrapper. The subprocess runs lazily on first generate call."""
     return CoreMLWrapper(config)

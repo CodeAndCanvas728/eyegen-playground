@@ -5,11 +5,15 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
+from eyegen.config import EyeGenConfig
+
+if TYPE_CHECKING:
+    pass
 
 from .constants import (
     BONSAI_DEFAULT_GUIDANCE,
@@ -24,14 +28,14 @@ log = logging.getLogger(__name__)
 class BonsaiWrapper(BaseSubprocessRunner):
     """Adapter exposing EyeGen's uniform ``generate_image()`` over a bonsai subprocess."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: EyeGenConfig):
         super().__init__(config)
         self.variant = self._resolve_variant(config)
         self._validate()
 
-    def _resolve_variant(self, config: dict) -> str:
-        explicit = config.get("bonsai_model_path")
-        model_name = config.get("model", "")
+    def _resolve_variant(self, config: EyeGenConfig) -> str:
+        explicit = config.bonsai_model_path
+        model_name = config.model
         variant = DEFAULT_VARIANT
         if explicit:
             name = Path(explicit).expanduser().name
@@ -170,7 +174,7 @@ class BonsaiWrapper(BaseSubprocessRunner):
         return Image.open(out_path).convert("RGB")
 
 
-def get_bonsai_pipeline(config: dict) -> BonsaiWrapper:
+def get_bonsai_pipeline(config: EyeGenConfig) -> BonsaiWrapper:
     """Build a BonsaiWrapper. The subprocess model load happens lazily on first
     ``generate_image()`` call."""
     return BonsaiWrapper(config)

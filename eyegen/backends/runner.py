@@ -7,7 +7,12 @@ import os
 import subprocess
 import threading
 from contextlib import suppress
-from typing import Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
+
+from eyegen.config import EyeGenConfig
+
+if TYPE_CHECKING:
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -15,15 +20,15 @@ log = logging.getLogger(__name__)
 class BaseSubprocessRunner:
     """Base class for running and managing subprocesses with timeouts and cancellation."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: EyeGenConfig):
         self.config = config
         self._proc: Optional[subprocess.Popen] = None
         self._cancelled = False
-        # Make timeout configurable. Default to 300.0.
-        self.timeout = float(config.get("subprocess_timeout", 300.0))
+        self.timeout = float(config.subprocess_timeout)
 
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Validate cmd arguments to prevent option/argument injection."""
+
         ALLOWED_FLAGS = {
             "-c",
             "-m",
@@ -70,10 +75,10 @@ class BaseSubprocessRunner:
                 container.append(line)
                 if progress_callback:
                     progress_callback(line_stripped)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             log.debug("Error reading %s stream: %s", log_prefix, e)
         finally:
-            with suppress(Exception):
+            with suppress(OSError):
                 stream.close()
 
     def _prep_env_and_pipes(
@@ -100,6 +105,7 @@ class BaseSubprocessRunner:
         timeout: Optional[float] = None,
     ) -> Tuple[int, List[str], List[str]]:
         """Run command as subprocess, stream logs, handle timeout/cancellation."""
+
         self._validate_cmd_args(cmd)
         self._cancelled = False
         run_timeout = timeout if timeout is not None else self.timeout
@@ -126,7 +132,13 @@ class BaseSubprocessRunner:
         if stream_stdout and self._proc.stdout:
             t_out = threading.Thread(
                 target=self._read_stream_target,
-                args=(self._proc.stdout, stdout_lines, exit_event, log_prefix, progress_callback),
+                args=(
+                    self._proc.stdout,
+                    stdout_lines,
+                    exit_event,
+                    log_prefix,
+                    progress_callback,
+                ),
                 daemon=True,
             )
             t_out.start()
@@ -135,7 +147,13 @@ class BaseSubprocessRunner:
         if stream_stderr and self._proc.stderr:
             t_err = threading.Thread(
                 target=self._read_stream_target,
-                args=(self._proc.stderr, stderr_lines, exit_event, log_prefix, progress_callback),
+                args=(
+                    self._proc.stderr,
+                    stderr_lines,
+                    exit_event,
+                    log_prefix,
+                    progress_callback,
+                ),
                 daemon=True,
             )
             t_err.start()
@@ -157,7 +175,7 @@ class BaseSubprocessRunner:
                 ) from exc
 
             returncode = self._proc.returncode
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             self._terminate_proc()
             raise
         finally:
@@ -166,7 +184,7 @@ class BaseSubprocessRunner:
             if self._proc:
                 for stream in (self._proc.stdout, self._proc.stderr):
                     if stream:
-                        with suppress(Exception):
+                        with suppress(OSError):
                             stream.close()
             self._proc = None
             for t in threads:
@@ -193,7 +211,7 @@ class BaseSubprocessRunner:
                 )
                 proc.kill()
                 proc.wait(timeout=grace)
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             log.warning("Error during process termination: %s", exc)
 
     def cancel(self) -> None:

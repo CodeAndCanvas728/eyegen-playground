@@ -11,6 +11,7 @@ from PySide6.QtCore import QThread, Signal
 from eyegen import (
     OUTPUT_DIR,
     Backend,
+    EyeGenConfig,
     generate_image,
     get_mflux_pipeline,
     get_ollama_pipeline,
@@ -22,7 +23,6 @@ from eyegen.backends import bonsai, coreml
 from eyegen.gui.cache import (
     _clear_pipeline_cache,
     _pipeline_cache,
-    _pipeline_cache_lock,
     get_cache_generation,
 )
 from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
@@ -30,16 +30,16 @@ from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
 log = logging.getLogger("eyegen")
 
 
-def _make_cache_key(backend, config, mflux_quantize, use_t5):
+def _make_cache_key(backend, config: EyeGenConfig, mflux_quantize, use_t5):
     return (
         backend,
-        config.get("model"),
+        config.model,
         mflux_quantize,
         use_t5,
-        config.get("mflux_model_path"),
-        config.get("bonsai_model_path"),
-        config.get("coreml_model_path"),
-        config.get("coreml_compute_unit"),
+        config.mflux_model_path,
+        config.bonsai_model_path,
+        config.coreml_model_path,
+        config.coreml_compute_unit,
     )
 
 
@@ -47,10 +47,7 @@ def _load_pipeline_for_worker(worker):
     backend = worker.backend
     config = worker.config
     cache_key = _make_cache_key(backend, config, worker.mflux_quantize, worker.use_t5)
-    with _pipeline_cache_lock:
-        cached_pipeline = _pipeline_cache["pipeline"]
-        cached_key = _pipeline_cache["key"]
-        cached_gen = _pipeline_cache.get("generation", 0)
+    cached_pipeline, cached_key, cached_gen = _pipeline_cache.get_cached()
     if cached_pipeline is not None and cached_key == cache_key:
         log.info("Using cached pipeline (backend=%s)", backend)
         if backend == Backend.MLX:
@@ -65,7 +62,7 @@ def _load_pipeline_for_worker(worker):
     worker.status.emit("Loading model…")
     log.info(
         "Loading pipeline (model=%s, backend=%s, t5=%s)",
-        config.get("model", "default"),
+        config.model or "default",
         backend,
         worker.use_t5,
     )
@@ -79,15 +76,11 @@ def _load_pipeline_for_worker(worker):
         pipeline = coreml.get_coreml_pipeline(config)
     else:
         pipeline = get_pipeline(config, use_t5=worker.use_t5)
-        _patch_sample_euler(
-            lambda step, total: worker.progress.emit(step, total), worker._cancelled
-        )
+    _patch_sample_euler(lambda step, total: worker.progress.emit(step, total), worker._cancelled)
 
-    with _pipeline_cache_lock:
-        if not worker._cancelled.is_set():
-            _pipeline_cache["pipeline"] = pipeline
-            _pipeline_cache["key"] = cache_key
-        cached_gen = _pipeline_cache.get("generation", 0)
+    if not worker._cancelled.is_set():
+        _pipeline_cache.set_cached(pipeline, cache_key)
+    cached_gen = get_cache_generation()
     return pipeline, cached_gen
 
 

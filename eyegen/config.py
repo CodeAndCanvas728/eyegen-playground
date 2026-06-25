@@ -222,8 +222,8 @@ def _backup_corrupted_config(exc: Exception) -> None:
     try:
         if CONFIG_FILE.exists():
             CONFIG_FILE.replace(backup_file)
-        save_config(EyeGenConfig().to_dict())
-    except Exception as write_err:
+        save_config(EyeGenConfig())
+    except (OSError, PermissionError, ValueError) as write_err:
         log.error("Failed to write default config: %s", write_err)
 
 
@@ -236,27 +236,27 @@ def _handle_parse_error(exc: Exception) -> None:
         exc_info=True,
     )
     try:
-        save_config(EyeGenConfig().to_dict())
-    except Exception as write_err:
+        save_config(EyeGenConfig())
+    except (OSError, PermissionError, ValueError) as write_err:
         log.error("Failed to write default config: %s", write_err)
 
 
-def load_config() -> dict:
+def load_config() -> EyeGenConfig:
     """Load configuration from config.json, migrate/normalize it, or return defaults."""
     if not CONFIG_FILE.exists():
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
     try:
         with open(CONFIG_FILE, "r") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
         _backup_corrupted_config(e)
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
     if not isinstance(data, dict):
         log.warning("config.json root is not a dictionary. Resetting to defaults.")
         _handle_parse_error(ValueError("Root is not a dictionary"))
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
     try:
         cfg = EyeGenConfig.from_dict(data)
@@ -264,20 +264,19 @@ def load_config() -> dict:
         if normalized != data:
             log.warning("Config required migration/normalization; saving config.")
             try:
-                save_config(normalized)
-            except Exception as save_err:
+                save_config(cfg)
+            except (OSError, PermissionError, ValueError) as save_err:
                 log.error("Failed to save migrated config: %s", save_err)
-        return normalized
+        return cfg
     except (ValueError, TypeError) as e:
         _handle_parse_error(e)
-        return EyeGenConfig().to_dict()
+        return EyeGenConfig()
 
 
-def save_config(config: dict):
+def save_config(config: EyeGenConfig):
     """Save configuration to config.json after running EyeGenConfig validation."""
-    cfg = EyeGenConfig.from_dict(config)
-    errors = cfg.validate()
+    errors = config.validate()
     if errors:
         raise ValueError("; ".join(errors))
     with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg.to_dict(), f, indent=2)
+        json.dump(config.to_dict(), f, indent=2)

@@ -19,7 +19,7 @@ class _ScriptWorker(QThread):
             from eyegen.config import load_config
 
             cfg = load_config()
-            timeout = float(cfg.get("subprocess_timeout", 600.0))
+            timeout = float(cfg.subprocess_timeout)
             r = subprocess.run([self.script_path], capture_output=True, text=True, timeout=timeout)  # noqa: S603
             if r.returncode == 0:
                 self.finished.emit(True, self._success_message())

@@ -48,7 +48,7 @@ def _run_bonsai_script(
 
     cfg = load_config()
     runner = BaseSubprocessRunner(cfg)
-    run_timeout = timeout if timeout is not None else float(cfg.get("download_timeout", 1800.0))
+    run_timeout = timeout if timeout is not None else float(cfg.download_timeout)
     try:
         returncode, _, _ = runner._execute_subprocess(
             cmd,
