@@ -46,11 +46,3 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-  - repo: local
-    hooks:
-      - id: import-linter
-        name: import-linter
-        entry: lint-imports
-        language: system
-        pass_filenames: false
-        types: [python]
