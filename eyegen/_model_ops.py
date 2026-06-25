@@ -22,6 +22,7 @@ def _apply_hf_cache_safe(hf_cache_dir: str | None) -> None:
     if hf_cache_dir:
         validate_safe_path(hf_cache_dir, "hf_cache_dir")
     from eyegen.backends import _apply_hf_cache
+
     _apply_hf_cache({"hf_cache_dir": hf_cache_dir})
 
 
@@ -50,7 +51,9 @@ def list_ollama_models() -> dict:
 def list_mflux_models() -> list[dict]:
     """Return a list of available MFLUX model dicts with alias and HF name."""
     try:
-        from mflux.models.common.config.model_config import AVAILABLE_MODELS  # type: ignore[import-untyped]
+        from mflux.models.common.config.model_config import (
+            AVAILABLE_MODELS,  # type: ignore[import-untyped]
+        )
 
         return [
             {"alias": alias, "model_name": cfg.model_name}
@@ -64,14 +67,10 @@ def list_mflux_models() -> list[dict]:
         return [{"alias": a, "model_name": a} for a in aliases]
 
 
-def clear_mflux_cache(
-    model_alias: str | None = None, *, force: bool = False
-) -> list[str]:
+def clear_mflux_cache(model_alias: str | None = None, *, force: bool = False) -> list[str]:
     """Delete cached MFLUX / HuggingFace model files and return removed paths."""
     if model_alias is None and not force:
-        raise ValueError(
-            "Must provide model_alias or set force=True to clear all flux models"
-        )
+        raise ValueError("Must provide model_alias or set force=True to clear all flux models")
 
     from huggingface_hub import scan_cache_dir  # type: ignore[import-untyped]
 
@@ -80,7 +79,9 @@ def clear_mflux_cache(
 
     if model_alias:
         try:
-            from mflux.models.common.config.model_config import ModelConfig  # type: ignore[import-untyped]
+            from mflux.models.common.config.model_config import (
+                ModelConfig,  # type: ignore[import-untyped]
+            )
 
             mc = ModelConfig.from_name(model_name=model_alias)
             repo_id = mc.model_name
@@ -148,27 +149,15 @@ def save_mflux_model(
     return out
 
 
-def validate_saved_model(path: str | Path) -> SavedModelValidation:
-    """Check whether *path* contains a valid mflux-saved model."""
-    p = Path(str(path)).expanduser()
-    if not p.is_dir():
-        return SavedModelValidation(
-            valid=False, error=f"Not a directory: {path}"
-        )
+def _scan_safetensors_dir(p: Path):
+    """Scan *p* for safetensors files and return collected metadata."""
+    from safetensors import SafetensorError, safe_open  # type: ignore[import-untyped]
 
     found_safetensors = False
     read_any = False
     read_failures: list[str] = []
     quant_levels: set = set()
     versions: set = set()
-
-    try:
-        from safetensors import SafetensorError, safe_open  # type: ignore[import-untyped]
-    except ImportError:
-        log.debug("safetensors not installed, cannot validate model")
-        return SavedModelValidation(
-            valid=False, error="safetensors not installed, cannot validate model"
-        )
 
     for subdir in sorted(p.iterdir()):
         if not subdir.is_dir():
@@ -187,12 +176,29 @@ def validate_saved_model(path: str | Path) -> SavedModelValidation:
             quant_levels.add(int(ql) if ql and ql != "None" else None)
             versions.add(m.get("mflux_version"))
 
+    return found_safetensors, read_any, read_failures, quant_levels, versions
+
+
+def validate_saved_model(path: str | Path) -> SavedModelValidation:
+    """Check whether *path* contains a valid mflux-saved model."""
+    p = Path(str(path)).expanduser()
+    if not p.is_dir():
+        return SavedModelValidation(valid=False, error=f"Not a directory: {path}")
+
+    try:
+        found_safetensors, read_any, read_failures, quant_levels, versions = _scan_safetensors_dir(
+            p
+        )
+    except ImportError:
+        log.debug("safetensors not installed, cannot validate model")
+        return SavedModelValidation(
+            valid=False, error="safetensors not installed, cannot validate model"
+        )
+
     if not found_safetensors:
         return SavedModelValidation(valid=False, error="No .safetensors files found")
     if not read_any:
-        return SavedModelValidation(
-            valid=False, error="Could not read safetensors metadata"
-        )
+        return SavedModelValidation(valid=False, error="Could not read safetensors metadata")
     if read_failures:
         return SavedModelValidation(
             valid=False,
