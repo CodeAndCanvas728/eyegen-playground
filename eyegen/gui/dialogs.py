@@ -78,10 +78,7 @@ class HFLoginDialog(QDialog):
         """Return cached HF status if within TTL, otherwise fetch fresh."""
         with self._hf_status_lock:
             now = time.time()
-            if (
-                self._cached_hf_status is None
-                or now - self._cached_hf_time > self._HF_STATUS_TTL
-            ):
+            if self._cached_hf_status is None or now - self._cached_hf_time > self._HF_STATUS_TTL:
                 self._cached_hf_status = hf_status()
                 self._cached_hf_time = now
             return self._cached_hf_status
