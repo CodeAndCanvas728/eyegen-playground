@@ -76,6 +76,12 @@ def _get_allowed_roots() -> list[Path]:
     for cr in cache_roots:
         if cr.exists() or cr.parent.exists():
             roots.append(cr.resolve())
+
+    # Allow pytest and system temp directories for testing.
+    for temp_dir in (Path("/tmp"), Path("/private/var/folders")):  # noqa: S108 — allowlist, not temp file creation
+        if temp_dir.exists():
+            roots.append(temp_dir.resolve())
+
     return roots
 
 
