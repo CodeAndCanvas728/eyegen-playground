@@ -173,7 +173,7 @@ class TestCoreMLWrapper:
         wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
 
         # 1. Reject non-512 dimensions (e.g. 256x256)
-        with pytest.raises(ValueError, match="only support a fixed 512x512 resolution"):
+        with pytest.raises(ValueError, match="CoreML models only support these resolutions"):
             wrapper.generate_image(
                 prompt="test", cfg_weight=7.5, num_steps=10, width=256, height=256
             )

@@ -136,14 +136,14 @@ class TestClearMfluxCache:
 
 class TestValidateSavedModel:
     def test_not_a_directory(self, tmp_path):
-        valid, meta = validate_saved_model(str(tmp_path / "nonexistent"))
-        assert valid is False
-        assert meta is None
+        result = validate_saved_model(str(tmp_path / "nonexistent"))
+        assert result.valid is False
+        assert result.meta is None
 
     def test_empty_directory(self, tmp_path):
-        valid, meta = validate_saved_model(str(tmp_path))
-        assert valid is False
-        assert meta is None
+        result = validate_saved_model(str(tmp_path))
+        assert result.valid is False
+        assert result.meta is None
 
     def test_with_safetensors(self, tmp_path):
         sub = tmp_path / "diffusion_pytorch_model-00001-of-00002"
@@ -157,16 +157,16 @@ class TestValidateSavedModel:
         mock_safe.safe_open.return_value.__enter__.return_value = mock_f
         mock_safe.SafetensorError = Exception
         with patch.dict("sys.modules", {"safetensors": mock_safe}):
-            valid, meta = validate_saved_model(str(tmp_path))
-            assert valid is True
-            assert meta["quantization_level"] == 4
-            assert meta["mflux_version"] == "0.1.0"
+            result = validate_saved_model(str(tmp_path))
+            assert result.valid is True
+            assert result.meta["quantization_level"] == 4
+            assert result.meta["mflux_version"] == "0.1.0"
 
     def test_safetensors_not_installed(self, tmp_path):
         with patch.dict("sys.modules", {"safetensors": None}):
-            valid, meta = validate_saved_model(str(tmp_path))
-            assert valid is False
-            assert meta is None
+            result = validate_saved_model(str(tmp_path))
+            assert result.valid is False
+            assert result.meta is None
 
 
 class TestSaveMfluxModel:
@@ -193,7 +193,7 @@ class TestSaveMfluxModel:
             else:
                 sys.modules.pop(key, None)
 
-    @patch("eyegen._model_ops._apply_hf_cache")
+    @patch("eyegen._model_ops._apply_hf_cache_safe")
     @patch("eyegen._model_ops._resolve_mflux_class")
     def test_save_minimal(self, mock_resolve, mock_hf_cache, tmp_path):
         mock_cfg = MagicMock()
