@@ -72,7 +72,7 @@ class TestClearMfluxCache:
         mock_cache = MagicMock()
         mock_cache.repos = []
         _mock_hf_hub.return_value = mock_cache
-        result = clear_mflux_cache()
+        result = clear_mflux_cache(force=True)
         assert result == []
 
     def test_removes_flux_repos(self, _mock_hf_hub):
@@ -86,7 +86,7 @@ class TestClearMfluxCache:
         _mock_hf_hub.return_value = mock_cache
         mock_cache.delete_revisions.return_value = mock_cache
 
-        result = clear_mflux_cache()
+        result = clear_mflux_cache(force=True)
         assert len(result) == 1
         assert "FLUX.1-dev" in result[0]
 
