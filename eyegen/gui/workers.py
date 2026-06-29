@@ -101,7 +101,7 @@ class GenerationWorker(QThread):
         width,
         height,
         seed,
-        config,
+        config: EyeGenConfig,
         use_t5,
         image_path=None,
         denoise=1.0,
@@ -128,7 +128,6 @@ class GenerationWorker(QThread):
 
     def cancel(self) -> None:
         self._cancelled.set()
-        # Clear cache on cancel so other workers don't reuse this pipeline.
         _clear_pipeline_cache()
         pipeline = self.pipeline
         if pipeline is not None:
@@ -153,54 +152,56 @@ class GenerationWorker(QThread):
         log.info("Saved: %s", out_path)
         self.finished.emit(image, str(out_path))
 
+    def _generate(self):
+        if self._cancelled.is_set():
+            self._handle_cancel()
+            return
+        pipeline, gen_id = _load_pipeline_for_worker(self)
+        self.pipeline = pipeline
+        self.pipeline_gen = gen_id
+
+        if self._cancelled.is_set() or pipeline is None:
+            self._handle_cancel()
+            return
+
+        if get_cache_generation() != self.pipeline_gen:
+            log.warning("Cache generation changed during pipeline load; aborting worker run")
+            self._handle_cancel()
+            return
+
+        self.status.emit("Generating…")
+        log.info(
+            "Generating: steps=%d guidance=%.1f size=%dx%d seed=%s backend=%s",
+            self.num_steps,
+            self.cfg_weight,
+            self.width,
+            self.height,
+            self.seed,
+            self.backend,
+        )
+        image = generate_image(
+            pipeline,
+            self.prompt,
+            self.cfg_weight,
+            self.num_steps,
+            self.width,
+            self.height,
+            self.seed,
+            negative_prompt=self.negative_prompt,
+            image_path=self.image_path,
+            denoise=self.denoise,
+            backend=self.backend,
+        )
+
+        if self._cancelled.is_set() or get_cache_generation() != self.pipeline_gen:
+            self._handle_cancel()
+            return
+
+        self._save_and_finish(image)
+
     def run(self):
         try:
-            if self._cancelled.is_set():
-                self._handle_cancel()
-                return
-
-            pipeline, gen_id = _load_pipeline_for_worker(self)
-            self.pipeline = pipeline
-            self.pipeline_gen = gen_id
-
-            if self._cancelled.is_set() or pipeline is None:
-                self._handle_cancel()
-                return
-
-            if get_cache_generation() != self.pipeline_gen:
-                log.warning("Cache generation changed during pipeline load; aborting worker run")
-                self._handle_cancel()
-                return
-
-            self.status.emit("Generating…")
-            log.info(
-                "Generating: steps=%d guidance=%.1f size=%dx%d seed=%s backend=%s",
-                self.num_steps,
-                self.cfg_weight,
-                self.width,
-                self.height,
-                self.seed,
-                self.backend,
-            )
-            image = generate_image(
-                pipeline,
-                self.prompt,
-                self.cfg_weight,
-                self.num_steps,
-                self.width,
-                self.height,
-                self.seed,
-                negative_prompt=self.negative_prompt,
-                image_path=self.image_path,
-                denoise=self.denoise,
-                backend=self.backend,
-            )
-
-            if self._cancelled.is_set() or get_cache_generation() != self.pipeline_gen:
-                self._handle_cancel()
-                return
-
-            self._save_and_finish(image)
+            self._generate()
         except GenerationCancelled:
             log.info("Generation cancelled by user")
             self._handle_cancel()
@@ -216,6 +217,10 @@ class GenerationWorker(QThread):
         except (ValueError, TypeError):
             full = traceback.format_exc()
             log.error("Generation failed:\n%s", full)
+            self.error.emit(full)
+        except Exception:  # noqa: BLE001 — last resort so the GUI never hangs silently
+            full = traceback.format_exc()
+            log.error("Generation failed (unexpected):\n%s", full)
             self.error.emit(full)
         finally:
             self.pipeline = None

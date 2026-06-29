@@ -91,6 +91,10 @@ class EyeGenConfig:
             errors.append("Height and width must be multiples of 8.")
         if self.mflux_quantize not in (4, 8, None):
             errors.append("Quantization level must be 4, 8, or None.")
+        if self.mflux_model_path:
+            p = Path(self.mflux_model_path).expanduser()
+            if not p.is_dir():
+                errors.append(f"mflux_model_path does not exist: {p}")
         if self.coreml_compute_unit not in ("CPU_ONLY", "CPU_AND_GPU", "CPU_AND_NE", "ALL"):
             errors.append(
                 f"Invalid coreml_compute_unit '{self.coreml_compute_unit}'. "
@@ -206,7 +210,7 @@ class EyeGenConfig:
         return data
 
 
-DEFAULT_CONFIG = EyeGenConfig().to_dict()
+DEFAULT_CONFIG = EyeGenConfig()
 
 
 def _backup_corrupted_config(exc: Exception) -> None:
@@ -260,8 +264,8 @@ def load_config() -> EyeGenConfig:
 
     try:
         cfg = EyeGenConfig.from_dict(data)
-        normalized = cfg.to_dict()
-        if normalized != data:
+        normalized_dict = cfg.to_dict()
+        if normalized_dict != data:
             log.warning("Config required migration/normalization; saving config.")
             try:
                 save_config(cfg)

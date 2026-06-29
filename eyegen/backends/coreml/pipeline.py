@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
-import uuid
+import secrets
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
 from eyegen.config import EyeGenConfig
-
-if TYPE_CHECKING:
-    pass
 
 from .constants import VALID_COMPUTE_UNITS
 from .install import (
@@ -36,11 +33,10 @@ class CoreMLWrapper(BaseSubprocessRunner):
         self._validate()
 
     def _resolve_model_path(self, config: EyeGenConfig) -> Path:
-        explicit = config.coreml_model_path
-        if explicit:
+        if config.coreml_model_path:
             from eyegen.validation import validate_safe_path
 
-            p = validate_safe_path(explicit, "coreml_model_path")
+            p = validate_safe_path(config.coreml_model_path, "coreml_model_path")
             if not p.is_dir():
                 raise FileNotFoundError(
                     f"coreml_model_path {p} is not a directory. "
@@ -48,23 +44,22 @@ class CoreMLWrapper(BaseSubprocessRunner):
                     "or ./generate.py convert-coreml <hf-model> --output <dir>."
                 )
             return p
-        model_name = config.model
-        if not model_name:
+        if not config.model:
             raise RuntimeError(
                 "No model selected. Set a model name or provide a coreml_model_path."
             )
-        if not re.match(r"^[a-zA-Z0-9_\-\.]+$", model_name):
-            raise ValueError(f"Invalid characters in CoreML model name: {model_name}")
-        candidate = get_coreml_models_dir() / model_name
+        if not re.match(r"^[a-zA-Z0-9_\-\.]+$", config.model):
+            raise ValueError(f"Invalid characters in CoreML model name: {config.model}")
+        candidate = get_coreml_models_dir() / config.model
         if candidate.is_dir():
             return candidate
         raise RuntimeError(
-            f"CoreML model '{model_name}' not found at {candidate}. "
+            f"CoreML model '{config.model}' not found at {candidate}. "
             "Run ./generate.py pull-coreml <alias> to download it."
         )
 
     def _resolve_compute_unit(self, config: EyeGenConfig) -> str:
-        cu = config.coreml_compute_unit
+        cu = config.coreml_compute_unit or "CPU_AND_NE"
         if cu not in VALID_COMPUTE_UNITS:
             raise ValueError(
                 f"Unsupported CoreML compute unit: {cu!r}. Must be one of {VALID_COMPUTE_UNITS}."
@@ -95,15 +90,27 @@ class CoreMLWrapper(BaseSubprocessRunner):
     ) -> Image.Image:
         self._check_request(width, height, image_path)
 
+        if num_steps < 1:
+            raise ValueError(f"num_steps must be >= 1, got {num_steps}")
+        if cfg_weight < 0:
+            raise ValueError(f"cfg_weight must be >= 0, got {cfg_weight}")
+        if seed is not None and not isinstance(seed, int):
+            raise ValueError(f"seed must be an integer, got {type(seed).__name__}")
+        if not (0.0 <= denoise <= 1.0):
+            raise ValueError(f"denoise must be in [0, 1], got {denoise}")
+
         from eyegen.config import OUTPUT_DIR
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        seed_str = str(seed) if seed is not None else uuid.uuid4().hex[:8]
+        seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
         out_path = OUTPUT_DIR / f"coreml_{seed_str}.png"
+
+        from eyegen.validation import validate_safe_path
 
         py = _sidecar_python()
         if py is None:
             raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
+        py = validate_safe_path(py, "coreml_sidecar_python")
         cmd = [
             str(py),
             "-m",
@@ -152,10 +159,12 @@ class CoreMLWrapper(BaseSubprocessRunner):
         """Reject unsupported options and invalid dimensions."""
         if image_path:
             raise ValueError("CoreML backend's SD 1.x/2.x pipeline does not support img2img.")
-        if width != 512 or height != 512:
+        # Support SDXL (1024x1024) in addition to SD 1.x/2.x (512x512)
+        SUPPORTED_RESOLUTIONS = [(512, 512), (1024, 1024)]
+        if (width, height) not in SUPPORTED_RESOLUTIONS:
             raise ValueError(
-                "CoreML SD 1.x/2.x models only support a fixed 512x512 resolution "
-                f"(got {width}x{height})."
+                "CoreML models only support these resolutions: "
+                f"{SUPPORTED_RESOLUTIONS} (got {width}x{height})."
             )
 
 

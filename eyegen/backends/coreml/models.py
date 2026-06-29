@@ -164,7 +164,7 @@ def _run_conversion(
     cfg = load_config()
     runner = BaseSubprocessRunner(cfg)
     timed_out = False
-    run_timeout = timeout if timeout is not None else float(cfg.get("convert_timeout", 1800.0))
+    run_timeout = timeout if timeout is not None else float(cfg.convert_timeout)
     try:
         returncode, _, _ = runner._execute_subprocess(
             cmd,

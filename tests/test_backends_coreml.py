@@ -8,6 +8,7 @@ import pytest
 
 from eyegen.backends import coreml
 from eyegen.backends.coreml import CoreMLInstallStatus
+from eyegen.config import EyeGenConfig
 
 
 @pytest.fixture(autouse=True)
@@ -117,7 +118,6 @@ class TestCoreMLWrapper:
         expected_path.touch()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
         with mock.patch("eyegen.backends.coreml.pipeline.Image.open") as mock_img_open:
@@ -151,7 +151,6 @@ class TestCoreMLWrapper:
         model_dir.mkdir()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
 
@@ -170,12 +169,11 @@ class TestCoreMLWrapper:
         model_dir.mkdir()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(model_dir)))
 
         # 1. Reject non-512 dimensions (e.g. 256x256)
-        with pytest.raises(ValueError, match="only support a fixed 512x512 resolution"):
+        with pytest.raises(ValueError, match="CoreML models only support these resolutions"):
             wrapper.generate_image(
                 prompt="test", cfg_weight=7.5, num_steps=10, width=256, height=256
             )
@@ -198,7 +196,6 @@ class TestCoreMLWrapper:
         mock_validate.return_value = mock_status
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         with pytest.raises(ValueError, match="Invalid characters in CoreML model name"):
             CoreMLWrapper(EyeGenConfig(model="sd-2-1-base; rm -rf /"))
@@ -210,7 +207,6 @@ class TestCoreMLSubprocessIntegration:
         import sys
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         mock_status = mock.Mock()
         mock_status.installed = True
@@ -223,9 +219,10 @@ class TestCoreMLSubprocessIntegration:
             EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
         )
 
-        returncode, stdout, stderr = wrapper._execute_subprocess(
-            [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
-        )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            returncode, stdout, stderr = wrapper._execute_subprocess(
+                [sys.executable, "-c", "import sys; print('ok'); sys.stdout.flush()"], timeout=2.0
+            )
         assert returncode == 0
         assert any("ok" in line for line in stdout)
 
@@ -234,7 +231,6 @@ class TestCoreMLSubprocessIntegration:
         import sys
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         mock_status = mock.Mock()
         mock_status.installed = True
@@ -247,15 +243,16 @@ class TestCoreMLSubprocessIntegration:
             EyeGenConfig(subprocess_timeout=5, coreml_model_path=str(model_dir))
         )
 
-        with pytest.raises(RuntimeError, match="timed out"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
-                ],
-                timeout=0.5,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="timed out"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('running'); sys.stdout.flush(); time.sleep(10)",
+                    ],
+                    timeout=0.5,
+                )
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     def test_coreml_subprocess_cancellation(self, mock_validate, tmp_path):
@@ -264,7 +261,6 @@ class TestCoreMLSubprocessIntegration:
         import time
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
-        from eyegen.config import EyeGenConfig
 
         mock_status = mock.Mock()
         mock_status.installed = True
@@ -284,13 +280,14 @@ class TestCoreMLSubprocessIntegration:
         t = threading.Thread(target=cancel_after_delay)
         t.start()
 
-        with pytest.raises(RuntimeError, match="cancelled"):
-            wrapper._execute_subprocess(
-                [
-                    sys.executable,
-                    "-c",
-                    "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
-                ],
-                timeout=3.0,
-            )
+        with mock.patch.object(wrapper, "_validate_cmd_args"):
+            with pytest.raises(RuntimeError, match="cancelled"):
+                wrapper._execute_subprocess(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time, sys; print('waiting'); sys.stdout.flush(); time.sleep(5)",
+                    ],
+                    timeout=3.0,
+                )
         t.join()

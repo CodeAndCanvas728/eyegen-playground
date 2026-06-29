@@ -158,31 +158,31 @@ class MainWindow(
         self.status_label.setStyleSheet(f"color: {color};")
 
     def _build_generation_config(self, width: int, height: int):
-        config = dict(self.config)
-        config["model"] = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
-        config["height"] = height
-        config["width"] = width
-        config["num_inference_steps"] = self.steps_spin.value()
-        config["guidance_scale"] = self.guidance_spin.value()
-        config["backend"] = self.backend_combo.currentData()
-        config["mflux_quantize"] = self.quantize_combo.currentData()
+        data = self.config.to_dict()
+        data["model"] = self.model_input.text().strip() or DEFAULT_CONFIG.model
+        data["height"] = height
+        data["width"] = width
+        data["num_inference_steps"] = self.steps_spin.value()
+        data["guidance_scale"] = self.guidance_spin.value()
+        data["backend"] = self.backend_combo.currentData()
+        data["mflux_quantize"] = self.quantize_combo.currentData()
 
         resolved_backend = self._resolved_backend()
         model_path = self.model_path_input.text().strip()
         if model_path and resolved_backend == Backend.MFLUX:
-            config["mflux_model_path"] = model_path
+            data["mflux_model_path"] = model_path
         else:
-            config["mflux_model_path"] = None
+            data["mflux_model_path"] = None
 
-        config["hf_cache_dir"] = self.hf_cache_input.text().strip() or None
+        data["hf_cache_dir"] = self.hf_cache_input.text().strip() or None
 
         try:
-            cfg_obj = EyeGenConfig.from_dict(config)
-            errors = cfg_obj.validate()
+            cfg = EyeGenConfig.from_dict(data)
+            errors = cfg.validate()
             if errors:
                 self._set_status(f"⚠ {errors[0]}", "red")
                 return None, False
-            return cfg_obj, True
+            return cfg, True
         except (ValueError, TypeError) as e:
             log.warning("Config cast failed: %s", e)
             self._set_status(f"⚠ Invalid config: {e}", "red")

@@ -7,6 +7,7 @@ import pytest
 
 from eyegen.backends import bonsai
 from eyegen.backends.bonsai import BonsaiInstallStatus
+from eyegen.config import EyeGenConfig
 
 
 class TestBonsaiDir:
@@ -197,14 +198,43 @@ class TestBonsaiWrapper:
         from eyegen.config import EyeGenConfig
 
         wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
-        # 500x500 should auto-adjust to nearest multiple of 32 (512x512)
-        wrapper.generate_image(
-            prompt="test", cfg_weight=1.0, num_steps=10, width=500, height=500, seed=42
+        # Bonsai requires multiples of 32; non-compliant dims raise ValueError
+        with pytest.raises(ValueError, match="multiples of 32"):
+            wrapper.generate_image(
+                prompt="test", cfg_weight=1.0, num_steps=10, width=500, height=500, seed=42
+            )
+
+    @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
+    @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
+    @mock.patch("eyegen.backends.bonsai.pipeline.Image.open")
+    def test_dimensions_accepts_32_multiple(
+        self, mock_image_open, mock_execute, mock_validate, tmp_path, monkeypatch
+    ):
+        mock_status = mock.Mock()
+        mock_status.installed = True
+        mock_status.has_models = True
+        mock_status.bonsai_dir = tmp_path
+        mock_validate.return_value = mock_status
+
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "generate.sh").touch()
+
+        mock_execute.return_value = (0, ["line1\n", "line2\n"], [])
+        mock_image = mock.Mock()
+        mock_image_open.return_value.convert.return_value = mock_image
+
+        monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
+        expected_path = tmp_path / "bonsai_ternary-mlx_42.png"
+        expected_path.touch()
+
+        from eyegen.backends.bonsai.pipeline import BonsaiWrapper
+
+        wrapper = BonsaiWrapper(EyeGenConfig(model="bonsai-ternary-mlx"))
+        img = wrapper.generate_image(
+            prompt="test", cfg_weight=1.0, num_steps=10, width=512, height=512, seed=42
         )
-        called_cmd = mock_execute.call_args[0][0]
-        assert "--size" in called_cmd
-        size_idx = called_cmd.index("--size")
-        assert called_cmd[size_idx + 1] == "512x512"
+        assert img == mock_image
 
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
     def test_invalid_variant_raises(self, mock_validate):
