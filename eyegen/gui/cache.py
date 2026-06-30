@@ -1,18 +1,42 @@
 """Pipeline cache to avoid reloading models between generations."""
 
 import threading
+from typing import Any, Optional, Tuple
 
-_pipeline_cache: dict = {"pipeline": None, "key": None, "generation": 0}
-_pipeline_cache_lock = threading.Lock()
+
+class _PipelineCache:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._pipeline: Optional[Any] = None
+        self._key: Optional[Any] = None
+        self._generation: int = 0
+
+    def clear(self) -> None:
+        with self._lock:
+            self._pipeline = None
+            self._key = None
+            self._generation += 1
+
+    def get_generation(self) -> int:
+        with self._lock:
+            return self._generation
+
+    def get_cached(self) -> Tuple[Optional[Any], Optional[Any], int]:
+        with self._lock:
+            return self._pipeline, self._key, self._generation
+
+    def set_cached(self, pipeline: Any, key: Any) -> None:
+        with self._lock:
+            self._pipeline = pipeline
+            self._key = key
+
+
+_pipeline_cache = _PipelineCache()
 
 
 def _clear_pipeline_cache():
-    with _pipeline_cache_lock:
-        _pipeline_cache["pipeline"] = None
-        _pipeline_cache["key"] = None
-        _pipeline_cache["generation"] += 1
+    _pipeline_cache.clear()
 
 
 def get_cache_generation() -> int:
-    with _pipeline_cache_lock:
-        return _pipeline_cache.get("generation", 0)
+    return _pipeline_cache.get_generation()

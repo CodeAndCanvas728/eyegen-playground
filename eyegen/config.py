@@ -70,7 +70,7 @@ class EyeGenConfig:
     num_inference_steps: int = 30
     guidance_scale: float = 7.5
     backend: Backend = Backend.AUTO
-    mflux_quantize: Optional[int] = None
+    mflux_quantize: Optional[int] = 4
     mflux_model_path: Optional[str] = None
     hf_cache_dir: Optional[str] = None
     bonsai_model_path: Optional[str] = None
@@ -227,7 +227,7 @@ def _backup_corrupted_config(exc: Exception) -> None:
         if CONFIG_FILE.exists():
             CONFIG_FILE.replace(backup_file)
         save_config(EyeGenConfig())
-    except Exception as write_err:
+    except (OSError, PermissionError, ValueError) as write_err:
         log.error("Failed to write default config: %s", write_err)
 
 
@@ -241,7 +241,7 @@ def _handle_parse_error(exc: Exception) -> None:
     )
     try:
         save_config(EyeGenConfig())
-    except Exception as write_err:
+    except (OSError, PermissionError, ValueError) as write_err:
         log.error("Failed to write default config: %s", write_err)
 
 
@@ -269,7 +269,7 @@ def load_config() -> EyeGenConfig:
             log.warning("Config required migration/normalization; saving config.")
             try:
                 save_config(cfg)
-            except Exception as save_err:
+            except (OSError, PermissionError, ValueError) as save_err:
                 log.error("Failed to save migrated config: %s", save_err)
         return cfg
     except (ValueError, TypeError) as e:

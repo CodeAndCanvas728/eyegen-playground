@@ -17,7 +17,8 @@ class DummyRunner(BaseSubprocessRunner):
 
 
 def test_runner_execute_success():
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
 
     mock_proc = mock.Mock()
     mock_proc.returncode = 0
@@ -33,7 +34,8 @@ def test_runner_execute_success():
 
 
 def test_runner_timeout():
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=0.1))
+    cfg = EyeGenConfig(subprocess_timeout=0.1)
+    runner = DummyRunner(cfg)
 
     mock_proc = mock.Mock()
     mock_proc.pid = 9999
@@ -47,21 +49,29 @@ def test_runner_timeout():
 
 
 def test_runner_cancel():
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
 
     mock_proc = mock.Mock()
     mock_proc.pid = 1234
+    mock_proc.returncode = 0
 
     # We trigger runner.cancel() during the self._proc.wait() call
+    # Use a flag to avoid infinite recursion
+    cancel_called = False
+
     def mock_wait(*args, **kwargs):
-        runner.cancel()
+        nonlocal cancel_called
+        if not cancel_called:
+            cancel_called = True
+            runner.cancel()
+        # For subsequent calls from _terminate_proc, just return
         return 0
 
     mock_proc.wait.side_effect = mock_wait
 
     with mock.patch("eyegen.backends.runner.subprocess.Popen") as mock_popen:
         mock_popen.return_value = mock_proc
-
         with pytest.raises(RuntimeError, match="generation was cancelled by the user"):
             runner._execute_subprocess(["dummy_cmd"])
         assert mock_proc.terminate.called
@@ -70,7 +80,8 @@ def test_runner_cancel():
 def test_runner_integration_real_process():
     import sys
 
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
     cmd = [
         sys.executable,
         "-c",
@@ -91,7 +102,8 @@ def test_runner_integration_real_process():
 def test_runner_integration_timeout():
     import sys
 
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=0.5))
+    cfg = EyeGenConfig(subprocess_timeout=0.5)
+    runner = DummyRunner(cfg)
     cmd = [
         sys.executable,
         "-c",
@@ -107,7 +119,8 @@ def test_runner_integration_cancel():
     import threading
     import time
 
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
     cmd = [
         sys.executable,
         "-c",
@@ -131,7 +144,8 @@ def test_runner_integration_cancel():
 def test_runner_integration_injection_rejection():
     import sys
 
-    runner = DummyRunner(EyeGenConfig(subprocess_timeout=5))
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
     cmd = [
         sys.executable,
         "--unsafe-flag",
