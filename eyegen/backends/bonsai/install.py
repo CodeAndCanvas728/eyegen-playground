@@ -37,7 +37,7 @@ def validate_bonsai_install() -> BonsaiInstallStatus:
     models_dir = bonsai_dir / "models"
     if models_dir.is_dir():
         for child in sorted(models_dir.iterdir()):
-            if child.is_dir() and any(child.glob("*.safetensors")):
+            if child.is_dir() and any(child.glob("**/*.safetensors")):
                 models.append(child.name)
 
     installed = has_generate_sh and has_download_sh
