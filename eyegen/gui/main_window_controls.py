@@ -23,8 +23,10 @@ class MainWindowControlsMixin:
         as "unresolved" — generation is blocked but the GUI stays alive.
         """
         override = self.backend_combo.currentData()
-        model = self.model_input.text().strip() or DEFAULT_CONFIG["model"]
-        config = {"model": model}
+        model = self.model_input.text().strip() or DEFAULT_CONFIG.model
+        import dataclasses
+
+        config = dataclasses.replace(self.config, model=model)
         try:
             return detect_backend(model, override, config=config)
         except ValueError:
