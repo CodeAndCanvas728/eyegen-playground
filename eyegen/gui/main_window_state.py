@@ -30,9 +30,9 @@ class MainWindowStateMixin:
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
-            "bonsai_model_path": self.config.get("bonsai_model_path", ""),
-            "coreml_model_path": self.config.get("coreml_model_path", ""),
-            "coreml_compute_unit": self.config.get("coreml_compute_unit", "CPU_AND_NE"),
+            "bonsai_model_path": self.config.bonsai_model_path or "",
+            "coreml_model_path": self.config.coreml_model_path or "",
+            "coreml_compute_unit": self.config.coreml_compute_unit or "CPU_AND_NE",
         }
 
     def _restore_state(self):

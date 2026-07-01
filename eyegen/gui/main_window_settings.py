@@ -49,7 +49,7 @@ class MainWindowSettingsMixin:
         row.addWidget(QLabel("Steps"))
         self.steps_spin = QSpinBox()
         self.steps_spin.setRange(1, 100)
-        self.steps_spin.setValue(self.config.get("num_inference_steps", 30))
+        self.steps_spin.setValue(self.config.num_inference_steps)
         row.addWidget(self.steps_spin)
         layout.addLayout(row)
 
@@ -66,7 +66,7 @@ class MainWindowSettingsMixin:
         self.guidance_spin = QDoubleSpinBox()
         self.guidance_spin.setRange(1.0, 15.0)
         self.guidance_spin.setSingleStep(0.5)
-        self.guidance_spin.setValue(self.config.get("guidance_scale", 7.5))
+        self.guidance_spin.setValue(self.config.guidance_scale)
         row.addWidget(self.guidance_spin)
         layout.addLayout(row)
 
@@ -85,7 +85,7 @@ class MainWindowSettingsMixin:
         self.width_combo = QComboBox()
         for d in DIMENSION_PRESETS:
             self.width_combo.addItem(str(d), d)
-        self.width_combo.setCurrentText(str(self.config.get("width", 1024)))
+        self.width_combo.setCurrentText(str(self.config.width))
         row.addWidget(self.width_combo)
         layout.addLayout(row)
 
@@ -95,7 +95,7 @@ class MainWindowSettingsMixin:
         self.height_combo = QComboBox()
         for d in DIMENSION_PRESETS:
             self.height_combo.addItem(str(d), d)
-        self.height_combo.setCurrentText(str(self.config.get("height", 1024)))
+        self.height_combo.setCurrentText(str(self.config.height))
         row.addWidget(self.height_combo)
         layout.addLayout(row)
 
@@ -116,7 +116,7 @@ class MainWindowSettingsMixin:
         layout.addWidget(QLabel("Model"))
         model_row = QHBoxLayout()
         self.model_input = QLineEdit()
-        self.model_input.setText(self.config.get("model", DEFAULT_CONFIG["model"]))
+        self.model_input.setText(self.config.model or DEFAULT_CONFIG.model)
         self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
         self.model_input.editingFinished.connect(lambda: self._update_backend_dependent_controls())
         model_row.addWidget(self.model_input)
