@@ -96,7 +96,7 @@ class MainWindowBackendHandlersMixin:
         try:
             from eyegen.backends import coreml
 
-            status = coreml.validate_coreml_install()
+            status = coreml.validate_coreml_install(force=True)
             self.coreml_status_label.setText(status.message)
             self.coreml_pull_btn.setEnabled(status.installed)
         except (OSError, ValueError, ImportError, AttributeError) as exc:
@@ -139,7 +139,7 @@ class MainWindowBackendHandlersMixin:
         self._refresh_coreml_status()
 
     def _on_coreml_pull(self):
-        status = coreml.validate_coreml_install()
+        status = coreml.validate_coreml_install(force=True)
         if not status.installed:
             self.status_label.setText("⚠ CoreML not installed. Click 'Setup CoreML…' first.")
             self.status_label.setStyleSheet("color: orange;")

@@ -67,7 +67,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
         return cu
 
     def _validate(self) -> None:
-        status = validate_coreml_install()
+        status = validate_coreml_install(force=True)
         if not status.installed:
             raise RuntimeError(
                 f"{status.message} "
