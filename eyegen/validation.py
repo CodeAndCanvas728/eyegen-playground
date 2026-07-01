@@ -66,8 +66,10 @@ def _get_allowed_roots() -> list[Path]:
     """Return the list of allowed root directories for safe path validation."""
     roots = [
         Path.home().resolve(),
-        Path.cwd().resolve(),
     ]
+    cwd = Path.cwd().resolve()
+    if cwd != Path("/"):
+        roots.append(cwd)
     # Per-user cache directories (never world-writable temp dirs)
     cache_roots = [
         Path.home() / ".cache" / "eyegen",
