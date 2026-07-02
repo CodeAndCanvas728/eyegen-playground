@@ -95,5 +95,15 @@ def _validate_coreml_install_uncached() -> CoreMLInstallStatus:
 
 
 @lru_cache(maxsize=1)
-def validate_coreml_install() -> CoreMLInstallStatus:
+def _validate_coreml_install_cached() -> CoreMLInstallStatus:
     return _validate_coreml_install_uncached()
+
+
+def validate_coreml_install(force: bool = False) -> CoreMLInstallStatus:
+    """Validate CoreML installation status, using a 1-entry cache unless force is True."""
+    if force:
+        _validate_coreml_install_cached.cache_clear()
+    return _validate_coreml_install_cached()
+
+
+validate_coreml_install.cache_clear = _validate_coreml_install_cached.cache_clear

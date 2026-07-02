@@ -113,8 +113,8 @@ class BonsaiWrapper(BaseSubprocessRunner):
                 f"{((width + 16) // 32) * 32}x{((height + 16) // 32) * 32})."
             )
 
-        if num_steps < 1:
-            raise ValueError(f"num_steps must be >= 1, got {num_steps}")
+        if num_steps < 2:
+            raise ValueError(f"num_steps must be >= 2 for Bonsai/PrismML, got {num_steps}")
 
         from eyegen.config import OUTPUT_DIR
 

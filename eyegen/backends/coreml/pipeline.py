@@ -29,8 +29,27 @@ class CoreMLWrapper(BaseSubprocessRunner):
     def __init__(self, config: EyeGenConfig):
         super().__init__(config)
         self.model_path = self._resolve_model_path(config)
+        self.model_version = self._resolve_model_version(config)
         self.compute_unit = self._resolve_compute_unit(config)
         self._validate()
+
+    def _resolve_model_version(self, config: EyeGenConfig) -> str:
+        meta_path = self.model_path / "model_index.json"
+        if meta_path.is_file():
+            try:
+                import json
+
+                meta = json.loads(meta_path.read_text())
+                if "model_version" in meta:
+                    return meta["model_version"]
+            except (OSError, ValueError) as exc:
+                log.debug("Failed to read model_index.json: %s", exc)
+        name = self.model_path.name
+        if name.startswith("models--"):
+            name = name[len("models--") :]
+            if "--" in name:
+                name = name.replace("--", "/")
+        return name
 
     def _resolve_model_path(self, config: EyeGenConfig) -> Path:
         if config.coreml_model_path:
@@ -67,7 +86,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
         return cu
 
     def _validate(self) -> None:
-        status = validate_coreml_install()
+        status = validate_coreml_install(force=True)
         if not status.installed:
             raise RuntimeError(
                 f"{status.message} "
@@ -105,12 +124,9 @@ class CoreMLWrapper(BaseSubprocessRunner):
         seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
         out_path = OUTPUT_DIR / f"coreml_{seed_str}.png"
 
-        from eyegen.validation import validate_safe_path
-
         py = _sidecar_python()
         if py is None:
             raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
-        py = validate_safe_path(py, "coreml_sidecar_python")
         cmd = [
             str(py),
             "-m",
@@ -123,10 +139,8 @@ class CoreMLWrapper(BaseSubprocessRunner):
             str(num_steps),
             "--guidance-scale",
             str(cfg_weight),
-            "--image-height",
-            str(height),
-            "--image-width",
-            str(width),
+            "--model-version",
+            self.model_version,
             "-i",
             str(self.model_path),
             "-o",
