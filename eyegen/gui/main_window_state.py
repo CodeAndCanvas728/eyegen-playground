@@ -47,7 +47,7 @@ class MainWindowStateMixin:
         self._restore_image_state(s)
         self._restore_optional_fields(s)
         self._restoring_state = False
-        self._update_backend_dependent_controls()
+        self._on_backend_changed(self.backend_combo.currentIndex())
 
     def _restore_text_state(self, s: dict):
         if "prompt" in s:
