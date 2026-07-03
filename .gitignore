@@ -2,8 +2,10 @@
 venv/
 env/
 .venv/
+.pyenv/
 
-# Python
+# Python bytecode
+cache/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -12,6 +14,17 @@ __pycache__/
 pip-log.txt
 pip-delete-this-directory.txt
 *.egg-info/
+*.pyc
+*.pyo
+.coverage
+.pytest_cache/
+coverage.xml
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg
 
 # Generated images
 outputs/
@@ -40,7 +53,82 @@ icon.icns
 .env
 .env.local
 
+# Claude AI tools - these should NOT be committed but Claude may include them in PRs
+CLAUDE.md
+AGENTS.md
+
+# Git config overrides (.gitignore meant to be committed)
+.gitconfig
+.gitignore.local
+
+# Project config (version controlled)
 config/config.json
-CLAUDE.md
-CLAUDE.md
-CLAUDE.md
+
+# Temporary files
+tmp*
+*.tmp
+*.temp
+
+# Cache directories
+.cache/
+.nox/
+
+# macOS system files
+.DS_Store
+*.DS_Store
+
+# Permissions (executable files) - not critical
+chmod*
+
+# Security - don't commit secrets
+*.pem
+*.key
+*.secret
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Session files
+.session
+*.session
+
+# VS Code temporary server files
+.vscode-server-*
+.h5
+.hdf5
+http-requests.log
+
+# PrimeHub data
+primehub_*.json
+
+# Local environment files and directories (for pyenv)
+.python-version
+
+# Houdini stick
+site-packages/Houdini
+
+# Symlink to Houdini stick
+Houdini-Stick
+
+# Gitingo reports
+gitingo-report.json
+
+# Spellcheck reports
+termarines-cli.gz
+
+# WASI SDK installation directory (/home/wasi/sdk/*/)
+/home/wasi/sdk/
+
+# Nix/NixOS
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*
+home-manager/flake*

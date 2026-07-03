@@ -114,7 +114,7 @@ class TestCoreMLWrapper:
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
         model_dir = tmp_path / "sd-2-1-base"
         model_dir.mkdir()
-        expected_path = tmp_path / "coreml_0.png"
+        expected_path = tmp_path / ".tmp_coreml_0.png"
         expected_path.touch()
 
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
@@ -130,7 +130,8 @@ class TestCoreMLWrapper:
                 height=512,
                 seed=0,
             )
-        assert expected_path.is_file()
+        # Temp file was read and cleaned up
+        assert not expected_path.exists()
 
     @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
     @mock.patch("eyegen.backends.coreml.pipeline._sidecar_python")

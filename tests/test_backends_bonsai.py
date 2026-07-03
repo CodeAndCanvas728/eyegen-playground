@@ -131,7 +131,7 @@ class TestBonsaiWrapper:
         mock_image_open.return_value.convert.return_value = mock_image
 
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
-        expected_path = tmp_path / "bonsai_ternary-mlx_0.png"
+        expected_path = tmp_path / ".tmp_bonsai_ternary-mlx_0.png"
         expected_path.touch()
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
@@ -142,7 +142,8 @@ class TestBonsaiWrapper:
             prompt="test", cfg_weight=1.0, num_steps=10, width=64, height=64, seed=0
         )
         assert img == mock_image
-        assert expected_path.is_file()
+        # Temp file was read and cleaned up
+        assert not expected_path.exists()
 
     @mock.patch("eyegen.backends.bonsai.pipeline.validate_bonsai_install")
     @mock.patch("eyegen.backends.bonsai.pipeline.BonsaiWrapper._execute_subprocess")
@@ -191,7 +192,7 @@ class TestBonsaiWrapper:
         mock_image_open.return_value.convert.return_value = mock_image
 
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
-        expected_path = tmp_path / "bonsai_ternary-mlx_42.png"
+        expected_path = tmp_path / ".tmp_bonsai_ternary-mlx_42.png"
         expected_path.touch()
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper
@@ -225,7 +226,7 @@ class TestBonsaiWrapper:
         mock_image_open.return_value.convert.return_value = mock_image
 
         monkeypatch.setattr("eyegen.config.OUTPUT_DIR", tmp_path)
-        expected_path = tmp_path / "bonsai_ternary-mlx_42.png"
+        expected_path = tmp_path / ".tmp_bonsai_ternary-mlx_42.png"
         expected_path.touch()
 
         from eyegen.backends.bonsai.pipeline import BonsaiWrapper

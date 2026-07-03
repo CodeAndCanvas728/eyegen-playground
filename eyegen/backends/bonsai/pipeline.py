@@ -120,7 +120,8 @@ class BonsaiWrapper(BaseSubprocessRunner):
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
-        out_path = OUTPUT_DIR / f"bonsai_{self.variant}_{seed_str}.png"
+        # Use a temporary output path so worker's _save_and_finish is the only final save
+        out_path = OUTPUT_DIR / f".tmp_bonsai_{self.variant}_{seed_str}.png"
 
         cmd = [
             "--model",
@@ -166,7 +167,14 @@ class BonsaiWrapper(BaseSubprocessRunner):
             )
         if not out_path.is_file():
             raise RuntimeError(f"Bonsai generation did not produce expected output: {out_path}")
-        return Image.open(out_path).convert("RGB")
+        try:
+            return Image.open(out_path).convert("RGB")
+        finally:
+            # Clean up temp file so worker._save_and_finish is the only final save
+            try:
+                out_path.unlink(missing_ok=True)
+            except (OSError, PermissionError):
+                pass
 
 
 def get_bonsai_pipeline(config: EyeGenConfig) -> BonsaiWrapper:

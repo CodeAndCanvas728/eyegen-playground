@@ -23,6 +23,7 @@ class MainWindowStateMixin:
             "seed": self.seed_input.text(),
             "use_t5": self.t5_check.isChecked(),
             "model": self.model_input.text(),
+            "model_source": "dropdown" if self.model_stack.currentIndex() == 0 else "custom",
             "mode_tab": self.mode_tabs.currentIndex(),
             "image_path": self.image_path_input.text(),
             "denoise": self.denoise_spin.value(),
@@ -87,6 +88,11 @@ class MainWindowStateMixin:
             idx = self.quantize_combo.findData(s["mflux_quantize"])
             if idx >= 0:
                 self.quantize_combo.setCurrentIndex(idx)
+        # Restore model dropdown vs custom input state
+        if "model_source" in s and s["model_source"] == "custom":
+            self.model_stack.setCurrentIndex(1)
+        else:
+            self.model_stack.setCurrentIndex(0)
 
     def _restore_image_state(self, s: dict):
         if "image_path" not in s:
