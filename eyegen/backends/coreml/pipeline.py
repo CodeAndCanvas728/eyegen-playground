@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import pathlib
 import re
 import secrets
 from pathlib import Path
@@ -109,6 +110,14 @@ class CoreMLWrapper(BaseSubprocessRunner):
     ) -> Image.Image:
         self._check_request(width, height, image_path)
 
+        self._validate_parameters(num_steps, cfg_weight, seed, denoise)
+        return self._run_coreml_pipeline(
+            prompt, cfg_weight, num_steps, width, height, seed, negative_prompt
+        )
+
+    def _validate_parameters(
+        self, num_steps: int, cfg_weight: float, seed: Optional[int], denoise: float
+    ) -> None:
         if num_steps < 1:
             raise ValueError(f"num_steps must be >= 1, got {num_steps}")
         if cfg_weight < 0:
@@ -118,17 +127,51 @@ class CoreMLWrapper(BaseSubprocessRunner):
         if not (0.0 <= denoise <= 1.0):
             raise ValueError(f"denoise must be in [0, 1], got {denoise}")
 
+    def _run_coreml_pipeline(
+        self,
+        prompt: str,
+        cfg_weight: float,
+        num_steps: int,
+        width: int,
+        height: int,
+        seed: Optional[int],
+        negative_prompt: str,
+    ) -> Image.Image:
         from eyegen.config import OUTPUT_DIR
 
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
-        out_path = OUTPUT_DIR / f"coreml_{seed_str}.png"
+        output_dir = OUTPUT_DIR
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         py = _sidecar_python()
         if py is None:
             raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
+
+        seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
+        out_path = output_dir / f".tmp_coreml_{seed_str}.png"
+        self._temp_output_path = out_path
+
+        cmd = self._build_coreml_command(
+            prompt, cfg_weight, num_steps, seed, negative_prompt, out_path
+        )
+
+        returncode, stdout_lines, stderr_lines = self._execute_subprocess(
+            cmd, stream_stdout=False, stream_stderr=True, log_prefix="coreml"
+        )
+
+        self._handle_coreml_result(returncode, stderr_lines, out_path)
+        return self._load_and_cleanup_image(out_path)
+
+    def _build_coreml_command(
+        self,
+        prompt: str,
+        cfg_weight: float,
+        num_steps: int,
+        seed: Optional[int],
+        negative_prompt: str,
+        out_path: pathlib.Path,
+    ) -> list:
         cmd = [
-            str(py),
+            str(_sidecar_python()),
             "-m",
             "python_coreml_stable_diffusion.pipeline",
             "--prompt",
@@ -150,23 +193,29 @@ class CoreMLWrapper(BaseSubprocessRunner):
             cmd.extend(["--seed", str(seed)])
         if negative_prompt:
             cmd.extend(["--negative-prompt", negative_prompt])
+        return cmd
 
-        returncode, stdout_lines, stderr_lines = self._execute_subprocess(
-            cmd,
-            stream_stdout=False,
-            stream_stderr=True,
-            log_prefix="coreml",
-        )
-
+    def _handle_coreml_result(
+        self, returncode: int, stderr_lines: list, out_path: pathlib.Path
+    ) -> None:
         if returncode != 0:
             stderr = "".join(stderr_lines)
             log.error("coreml stderr: %s", stderr[-2000:])
             raise RuntimeError(
-                f"CoreML generation failed (exit {returncode}). See eyegen.log for details."
+                f"CoreML generation failed (exit {returncode}). "
+                f"Stderr: {stderr[-500:] if len(stderr) <= 500 else stderr[-500:]}"
             )
         if not out_path.is_file():
             raise RuntimeError(f"CoreML pipeline did not produce expected output: {out_path}")
-        return Image.open(out_path).convert("RGB")
+
+    def _load_and_cleanup_image(self, out_path: pathlib.Path) -> Image.Image:
+        try:
+            return Image.open(out_path).convert("RGB")
+        finally:
+            try:
+                out_path.unlink(missing_ok=True)
+            except (OSError, PermissionError):
+                pass
 
     @staticmethod
     def _check_request(width: int, height: int, image_path: Optional[str]) -> None:

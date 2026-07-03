@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -115,11 +116,26 @@ class MainWindowSettingsMixin:
     def _build_model_row(self, layout: QVBoxLayout):
         layout.addWidget(QLabel("Model"))
         model_row = QHBoxLayout()
+
+        # Stacked widget for dropdown (presets) vs custom text
+        self.model_stack = QStackedWidget()
+        self.model_stack.setMaximumWidth(310)
+
+        # Dropdown for known models
+        self.model_dropdown = QComboBox()
+        self.model_dropdown.setToolTip("Select a discovered model or 'Custom...' to type your own")
+        self.model_dropdown.currentIndexChanged.connect(self._on_model_dropdown_changed)
+        self.model_stack.addWidget(self.model_dropdown)
+
+        # Custom text input
         self.model_input = QLineEdit()
         self.model_input.setText(self.config.model or DEFAULT_CONFIG.model)
         self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
         self.model_input.editingFinished.connect(lambda: self._update_backend_dependent_controls())
-        model_row.addWidget(self.model_input)
+        self.model_stack.addWidget(self.model_input)
+
+        model_row.addWidget(self.model_stack)
+
         self.pull_btn = QPushButton("Pull…")
         self.pull_btn.setFixedWidth(50)
         self.pull_btn.setToolTip("Download this GGUF model via OllamaDiffuser")

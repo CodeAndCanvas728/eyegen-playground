@@ -18,6 +18,7 @@ from eyegen.gui.main_window_controls import MainWindowControlsMixin
 from eyegen.gui.main_window_handlers import MainWindowHandlersMixin
 from eyegen.gui.main_window_img2img import MainWindowImg2ImgMixin
 from eyegen.gui.main_window_lifecycle import MainWindowLifecycleMixin
+from eyegen.gui.main_window_model_dropdown import MainWindowModelDropdownMixin
 from eyegen.gui.main_window_save_model import MainWindowSaveModelMixin
 from eyegen.gui.main_window_settings import MainWindowSettingsMixin
 from eyegen.gui.main_window_state import MainWindowStateMixin
@@ -37,6 +38,7 @@ class MainWindow(
     MainWindowBackendHandlersMixin,
     MainWindowSaveModelMixin,
     MainWindowLifecycleMixin,
+    MainWindowModelDropdownMixin,
     MainWindowStateMixin,
 ):
     """Main window class for the EyeGen GUI.
@@ -45,6 +47,7 @@ class MainWindow(
     following mixin classes:
     - MainWindowUIMixin: Builds and sets up UI components/layouts.
     - MainWindowSettingsMixin: Manages inputs and updates configuration properties.
+    - MainWindowModelDropdownMixin: Populates the model dropdown based on the selected backend.
     - MainWindowImg2ImgMixin: Validates and manages inputs for Image-to-Image mode.
     - MainWindowControlsMixin: Populates combo-boxes and initializes controls values.
     - MainWindowHandlersMixin: Triggers backend changes, prompts checks, and UI resets.
