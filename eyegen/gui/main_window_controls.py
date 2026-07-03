@@ -13,6 +13,7 @@ class MainWindowControlsMixin:
         self._update_backend_dependent_controls()
 
     def _on_backend_changed(self, _index: int):
+        self._populate_model_dropdown()
         self._update_backend_dependent_controls()
 
     def _resolved_backend(self) -> Backend | None:
@@ -127,12 +128,12 @@ class MainWindowControlsMixin:
         if is_mflux:
             if self._pre_mflux_steps is None:
                 self._pre_mflux_steps = self.steps_spin.value()
-                self._pre_mflux_guidance = self.guidance_spin.value()
-                self.steps_spin.setValue(4)
-                self.guidance_spin.setValue(4.0)
+            self._pre_mflux_guidance = self.guidance_spin.value()
+            self.steps_spin.setValue(4)
+            self.guidance_spin.setValue(4.0)
         else:
             if self._pre_mflux_steps is not None:
                 self.steps_spin.setValue(self._pre_mflux_steps)
                 self.guidance_spin.setValue(self._pre_mflux_guidance)
-                self._pre_mflux_steps = None
-                self._pre_mflux_guidance = None
+            self._pre_mflux_steps = None
+            self._pre_mflux_guidance = None

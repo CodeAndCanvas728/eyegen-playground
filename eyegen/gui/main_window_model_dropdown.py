@@ -84,7 +84,7 @@ class MainWindowModelDropdownMixin:
             self.model_dropdown.addItem(display, value)
 
     def _add_custom_option(self):
-        self.model_dropdown.addItem("Custom…", "__custom__")
+        self.model_dropdown.addItem("Custom\u2026", "__custom__")
 
     def _restore_previous_selection(self, old_text):
         idx = self.model_dropdown.findData(old_text)
@@ -99,4 +99,4 @@ class MainWindowModelDropdownMixin:
                     break
             else:
                 self.model_input.setText(old_text)
-                self.model_stack.setCurrentIndex(1)
+                self.model_stack.setCurrentIndex(0)
