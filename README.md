@@ -33,7 +33,7 @@ GGUF models are pulled separately — see [GGUF Models](#gguf-models-ollamadiffu
 
 ## GUI
 
-The GUI is the primary interface. It has two modes — **Text to Image** and **Image to Image** — switchable via tabs at the top of the controls panel.
+The GUI is the primary interface with three tabs: **Home**, **History**, and **Settings**. Each generation session has two modes — **Text to Image** and **Image to Image** — switchable via tabs in the controls panel.
 
 ### Launch options
 
@@ -41,7 +41,7 @@ The GUI is the primary interface. It has two modes — **Text to Image** and **I
 ```bash
 ./create_app.sh
 ```
-Builds `EyeGen.app` and installs it to `~/Applications`. Launch from Finder, add it to your Dock, or find it via Spotlight (⌘Space → "EyeGen").
+Builds `EyeGen.app` and installs it to `~/Applications`. Launch from Finder, add it to your Dock, or find it via Spotlight (⌘Space → "EyeGen"). The app auto-detects macOS dark/light mode; switch themes in **Settings**.
 
 > **First launch:** right-click → Open to bypass Gatekeeper (one-time only for unsigned apps).
 > Re-run `create_app.sh` if you move the workspace folder.
@@ -60,15 +60,15 @@ The default mode. Enter a prompt (and optional negative prompt), adjust the sett
 |---------|-------------|
 | **Prompt** | What you want in the image |
 | **Negative Prompt** | What to avoid (optional) |
-| **Steps** | Inference steps — 20 = fast, 30 = default, 40 = best quality |
-| **Guidance** | How closely to follow the prompt (1.0–15.0, default 7.5) |
-| **Width / Height** | Output dimensions — presets: 512, 640, 768, 896, 1024 px |
+| **Steps** | Inference steps — 20 = fast, 30 = default, 40 = best quality (collapsible Advanced Settings) |
+| **Guidance** | How closely to follow the prompt (1.0–15.0, default 7.5) (collapsible Advanced Settings) |
+| **Width / Height** | Output dimensions — presets: 512, 640, 768, 896, 1024 px (in Settings tab) |
 | **Seed** | Leave blank for random; set a number to reproduce a result |
-| **T5 encoder** | Better prompt understanding at the cost of slower load time (MLX only) |
+| **T5 encoder** | Better prompt understanding at the cost of slower load time (MLX only) (collapsible Advanced Settings) |
 | **Model** | HuggingFace model ID, MFLUX alias (dev, schnell, etc.), or OllamaDiffuser model name |
 | **Pull…** | Download a GGUF model (next to Model field) |
 | **Backend** | Auto (detect from model name), MLX, MFLUX, or OllamaDiffuser |
-| **Quantize** | MFLUX quantization: 4-bit (recommended), 8-bit, or None (shown only for MFLUX) |
+| **Quantize** | MFLUX quantization: 4-bit (recommended), 8-bit, or None (in Settings tab) |
 | **🔑 HuggingFace Login** | Log in to access gated models (e.g. FLUX.1-Kontext). Shows login status. |
 
 A progress bar tracks each denoising step (MLX) or shows indeterminate progress (MFLUX/OllamaDiffuser). Generated images are saved to `outputs/` (or `~/Pictures/EyeGen/` in the .app bundle) and displayed immediately. UI settings are automatically restored on next launch.
