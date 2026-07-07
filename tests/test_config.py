@@ -168,4 +168,3 @@ def test_config_model_name_normalization():
     assert cfg4.model == "some/other"
     cfg4.model = "apple/coreml-stable-diffusion-v1-5"
     assert cfg4.model == "apple-coreml-stable-diffusion-v1-5"
-

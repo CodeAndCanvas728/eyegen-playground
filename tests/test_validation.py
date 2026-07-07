@@ -131,3 +131,63 @@ def test_validate_safe_path_rejects_private_var():
 
     with pytest.raises(ValueError, match="not under any expected root"):
         validate_safe_path("/private/var/log", "private_var_log")
+
+
+def test_theme_py_is_synchronized():  # noqa: PLR0915
+    """Verify that theme.py is up-to-date with design-system/palette.json."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    palette_path = root / "design-system" / "palette.json"
+    theme_path = root / "eyegen" / "gui" / "style" / "theme.py"
+
+    assert palette_path.exists(), "design-system/palette.json must exist"
+    assert theme_path.exists(), "theme.py must exist"
+
+    # Execute theme.py in a clean namespace to avoid importing PySide6
+    namespace = {}
+    exec(theme_path.read_text(), namespace)  # noqa: S102
+    _DARK = namespace["_DARK"]
+    _LIGHT = namespace["_LIGHT"]
+
+    with open(palette_path, "r") as f:
+        palette = json.load(f)
+
+    accent = palette["accent_ramp"]
+    neutral = palette["neutral_ramp"]
+    text_contrast = palette["text_contrast"]
+
+    # Verify key tokens in _DARK
+    assert _DARK["bg"] == neutral["900"]
+    assert _DARK["surface"] == neutral["700"]
+    assert _DARK["border"] == neutral["700"]
+    assert _DARK["border-light"] == neutral["600"]
+    assert _DARK["text-primary"] == text_contrast["ground"]["recommended_text"]
+    assert _DARK["text-secondary"] == neutral["300"]
+    assert _DARK["accent"] == accent["600"]
+    assert _DARK["accent-hover"] == accent["400"]
+    assert _DARK["accent-light"] == accent["200"]
+    assert _DARK["input-border"] == neutral["700"]
+    assert _DARK["input-focus"] == accent["600"]
+    assert _DARK["slider-handle"] == accent["600"]
+    assert _DARK["slider-track"] == neutral["700"]
+    assert _DARK["preview-gradient-start"] == accent["700"]
+    assert _DARK["preview-gradient-end"] == neutral["900"]
+
+    # Verify key tokens in _LIGHT
+    assert _LIGHT["bg"] == neutral["50"]
+    assert _LIGHT["surface"] == neutral["100"]
+    assert _LIGHT["surface-hover"] == accent["100"]
+    assert _LIGHT["border"] == neutral["200"]
+    assert _LIGHT["border-light"] == neutral["100"]
+    assert _LIGHT["text-primary"] == accent["900"]
+    assert _LIGHT["text-secondary"] == neutral["600"]
+    assert _LIGHT["accent"] == accent["600"]
+    assert _LIGHT["accent-hover"] == accent["500"]
+    assert _LIGHT["input-border"] == neutral["200"]
+    assert _LIGHT["input-focus"] == accent["600"]
+    assert _LIGHT["slider-handle"] == accent["600"]
+    assert _LIGHT["slider-track"] == neutral["200"]
+    assert _LIGHT["preview-gradient-start"] == accent["200"]
+    assert _LIGHT["preview-gradient-end"] == neutral["50"]

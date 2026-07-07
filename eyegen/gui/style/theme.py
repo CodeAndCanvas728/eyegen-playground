@@ -1,4 +1,7 @@
-"""Design tokens and theme loader for EyeGen GUI themes."""
+"""Design tokens and theme loader for EyeGen GUI themes.
+
+Automatically generated from design-system/palette.json. Do not edit manually.
+"""
 
 from pathlib import Path
 
@@ -84,12 +87,45 @@ _LIGHT = {
 }
 
 
+class LazyThemeDict(dict):
+    def __init__(self):
+        super().__init__()
+        self._cache = {}
+
+    def __getitem__(self, key: str) -> str:
+        if key not in self._cache:
+            if key in ("dark", "light"):
+                self._cache[key] = _load_qss(f"{key}.qss")
+            else:
+                raise KeyError(key)
+        return self._cache[key]
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key) -> bool:
+        return key in ("dark", "light")
+
+
 def _load_qss(name: str) -> str:
     p = Path(__file__).parent / name
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Required stylesheet '{name}' is missing in '{p.parent}'. "
+            "Please ensure the application is correctly installed and all assets are present."
+        )
     return p.read_text()
 
 
-DARK_QSS = _load_qss("dark.qss")
-LIGHT_QSS = _load_qss("light.qss")
+ALL_THEMES = LazyThemeDict()
 
-ALL_THEMES = {"dark": DARK_QSS, "light": LIGHT_QSS}
+
+def __getattr__(name: str):
+    if name == "DARK_QSS":
+        return ALL_THEMES["dark"]
+    if name == "LIGHT_QSS":
+        return ALL_THEMES["light"]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
