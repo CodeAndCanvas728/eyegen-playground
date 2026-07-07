@@ -162,10 +162,7 @@ class MainWindow(
 
     def _build_generation_config(self, width: int, height: int):
         data = self.config.to_dict()
-        model_name = self.model_input.text().strip() or DEFAULT_CONFIG.model
-        if self._resolved_backend() == Backend.COREML:
-            model_name = model_name.replace("/", "-")
-        data["model"] = model_name
+        data["model"] = self.model_input.text().strip() or DEFAULT_CONFIG.model
         data["height"] = height
         data["width"] = width
         data["num_inference_steps"] = self.steps_spin.value()
