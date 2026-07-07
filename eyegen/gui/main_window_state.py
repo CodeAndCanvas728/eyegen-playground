@@ -22,7 +22,7 @@ class MainWindowStateMixin:
             "height": str(self.height_combo.currentText()),
             "seed": self.seed_input.text(),
             "use_t5": self.t5_check.isChecked(),
-            "model": self.model_input.text(),
+            "model": self.model_input.text().replace("/", "-"),
             "model_source": "dropdown" if self.model_stack.currentIndex() == 0 else "custom",
             "mode_tab": self.mode_tabs.currentIndex(),
             "image_path": self.image_path_input.text(),
@@ -55,7 +55,7 @@ class MainWindowStateMixin:
         if "negative_prompt" in s:
             self.negative_prompt_input.setPlainText(s["negative_prompt"])
         if "model" in s:
-            self.model_input.setText(s["model"])
+            self.model_input.setText(s["model"].replace("/", "-"))
 
     def _restore_numeric_state(self, s: dict):
         if "steps" in s:
