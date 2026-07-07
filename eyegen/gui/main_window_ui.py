@@ -53,6 +53,8 @@ class MainWindowUIMixin:
 
     def _on_nav_changed(self, index: int):
         self.content_stack.setCurrentIndex(index)
+        labels = ["Home", "History", "Settings"]
+        self.setWindowTitle(f"EyeGen — {labels[index]}")
         if index == 0:
             self._scale_preview()
 

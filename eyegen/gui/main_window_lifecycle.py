@@ -34,6 +34,7 @@ class MainWindowLifecycleMixin:
 
         self._current_pixmap = pil_to_pixmap(pil_image)
         self._scale_preview()
+        self._refresh_history()
         self._arm_status_autoclear()
 
     def _on_error(self, full_traceback: str):
