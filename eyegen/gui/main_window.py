@@ -14,13 +14,16 @@ from eyegen import (
 )
 from eyegen.config import Backend, pop_config_warnings
 from eyegen.gui.main_window_backend_handlers import MainWindowBackendHandlersMixin
+from eyegen.gui.main_window_builders import MainWindowBuildersMixin
 from eyegen.gui.main_window_controls import MainWindowControlsMixin
 from eyegen.gui.main_window_handlers import MainWindowHandlersMixin
+from eyegen.gui.main_window_history import MainWindowHistoryMixin
 from eyegen.gui.main_window_img2img import MainWindowImg2ImgMixin
 from eyegen.gui.main_window_lifecycle import MainWindowLifecycleMixin
 from eyegen.gui.main_window_model_dropdown import MainWindowModelDropdownMixin
 from eyegen.gui.main_window_save_model import MainWindowSaveModelMixin
 from eyegen.gui.main_window_settings import MainWindowSettingsMixin
+from eyegen.gui.main_window_settings_page import MainWindowSettingsPageMixin
 from eyegen.gui.main_window_state import MainWindowStateMixin
 from eyegen.gui.main_window_ui import MainWindowUIMixin
 from eyegen.gui.state import load_gui_state
@@ -31,6 +34,9 @@ log = logging.getLogger("eyegen")
 class MainWindow(
     QMainWindow,
     MainWindowUIMixin,
+    MainWindowHistoryMixin,
+    MainWindowSettingsPageMixin,
+    MainWindowBuildersMixin,
     MainWindowSettingsMixin,
     MainWindowImg2ImgMixin,
     MainWindowControlsMixin,
@@ -86,6 +92,9 @@ class MainWindow(
         self._status_clear_timer.timeout.connect(self._clear_status)
 
         self._build_ui()
+
+        self._build_backend_settings()
+        self._init_theme()
 
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(1000)
@@ -242,3 +251,29 @@ class MainWindow(
         self.worker.quantize_failed.connect(self._on_quantize_failed)
         self.worker.cancelled.connect(self._on_cancelled)
         self.worker.start()
+
+    def _init_theme(self):
+        """Set up theme (auto-detect macOS, or dark default)."""
+
+        try:
+            from PySide6.QtGui import QPalette
+
+            dark = self.palette().color(QPalette.Window).lightness() < 128
+        except Exception:
+            dark = True
+
+        idx = 0 if dark else 1
+        self.theme_combo.blockSignals(True)
+        self.theme_combo.setCurrentIndex(idx)
+        self.theme_combo.blockSignals(False)
+        self._apply_theme(dark)
+
+    def _on_theme_changed(self, index: int):
+        self._apply_theme(index == 0)
+
+    def _apply_theme(self, dark: bool = True):
+        """Apply dark or light QSS stylesheet."""
+        from eyegen.gui.style.theme import ALL_THEMES
+
+        qss = ALL_THEMES["dark"] if dark else ALL_THEMES["light"]
+        self.setStyleSheet(qss)
