@@ -39,7 +39,10 @@ def _is_coreml_model(model: str, config: Optional[EyeGenConfig] = None) -> bool:
         "sdxl-ios",
     }:
         return True
-    if m.startswith("apple/coreml-stable-diffusion"):
+    if (
+        m.startswith("apple/coreml-stable-diffusion")
+        or m.startswith("apple-coreml-stable-diffusion")
+    ):
         return True
     return False
 
