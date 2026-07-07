@@ -144,3 +144,27 @@ def test_load_config_corrupted_backup(tmp_path, monkeypatch):
 
     # Should have rewritten a valid config
     assert fake_config.exists()
+
+
+def test_config_model_name_normalization():
+    # 1. COREML backend on init with slash should normalize
+    cfg = EyeGenConfig(model="apple/coreml-stable-diffusion-v1-5", backend=Backend.COREML)
+    assert cfg.model == "apple-coreml-stable-diffusion-v1-5"
+
+    # 2. AUTO backend on init with apple coreml model should normalize
+    cfg2 = EyeGenConfig(model="apple/coreml-stable-diffusion-v1-5", backend=Backend.AUTO)
+    assert cfg2.model == "apple-coreml-stable-diffusion-v1-5"
+
+    # 3. MLX backend on init should NOT normalize
+    cfg3 = EyeGenConfig(model="apple/coreml-stable-diffusion-v1-5", backend=Backend.MLX)
+    assert cfg3.model == "apple/coreml-stable-diffusion-v1-5"
+
+    # 4. Changing backend to COREML should normalize
+    cfg3.backend = Backend.COREML
+    assert cfg3.model == "apple-coreml-stable-diffusion-v1-5"
+
+    # 5. Setting model with slash on AUTO backend for coreml model should normalize
+    cfg4 = EyeGenConfig(model="some/other", backend=Backend.AUTO)
+    assert cfg4.model == "some/other"
+    cfg4.model = "apple/coreml-stable-diffusion-v1-5"
+    assert cfg4.model == "apple-coreml-stable-diffusion-v1-5"
