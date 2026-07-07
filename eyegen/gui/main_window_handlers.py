@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from eyegen import MODELS_DIR, validate_saved_model
 
@@ -20,6 +20,16 @@ class MainWindowHandlersMixin:
     def closeEvent(self, event):
         self._elapsed_timer.stop()
         if self.worker is not None and self.worker.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "Generation in progress",
+                "A generation is still running. Stop and close?",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if reply != QMessageBox.Yes:
+                event.ignore()
+                return
             self.worker.cancel()
             self.worker.wait(2000)
         from eyegen.gui.state import save_gui_state

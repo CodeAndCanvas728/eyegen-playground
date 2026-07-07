@@ -19,7 +19,7 @@ class MainWindowSettingsPageMixin:
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(8, 8, 8, 8)
-        page_layout.setSpacing(12)
+        page_layout.setSpacing(16)
 
         theme_card = QWidget()
         theme_card.setProperty("card", True)

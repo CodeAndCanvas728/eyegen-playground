@@ -31,7 +31,7 @@ class MainWindowUIMixin:
         nav_bg = QWidget()
         nav_bg.setProperty("nav", True)
         nav_layout = QVBoxLayout(nav_bg)
-        nav_layout.setContentsMargins(12, 0, 12, 0)
+        nav_layout.setContentsMargins(16, 0, 16, 0)
         self.nav_bar = QTabBar()
         self.nav_bar.setProperty("nav", True)
         self.nav_bar.addTab("Home")
@@ -135,7 +135,7 @@ class MainWindowUIMixin:
         self.advanced_container.setVisible(False)
         advanced_layout = QVBoxLayout(self.advanced_container)
         advanced_layout.setContentsMargins(0, 0, 0, 0)
-        advanced_layout.setSpacing(6)
+        advanced_layout.setSpacing(8)
 
         steps_row = QHBoxLayout()
         steps_row.addWidget(QLabel("Steps"))
@@ -230,5 +230,3 @@ class MainWindowUIMixin:
         self.backend_combo.addItem("OllamaDiffuser (GGUF)", Backend.OLLAMA)
         self.backend_combo.addItem("Bonsai (PrismML ternary 1.58-bit)", Backend.BONSAI)
         self.backend_combo.addItem("CoreML (Apple Neural Engine)", Backend.COREML)
-
-
