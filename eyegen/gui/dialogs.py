@@ -37,7 +37,7 @@ class HFLoginDialog(QDialog):
         self._hf_status_lock = threading.Lock()
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        layout.setSpacing(16)
 
         self.status_label = QLabel("Checking login status…")
         self.status_label.setWordWrap(True)

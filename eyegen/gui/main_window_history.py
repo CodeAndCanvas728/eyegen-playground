@@ -73,6 +73,10 @@ class MainWindowHistoryMixin:
             label.setProperty("hint", True)
             label.setAlignment(Qt.AlignCenter)
             self.history_grid_layout.addWidget(label)
+            cta = QPushButton("Go Generate")
+            cta.setCursor(Qt.PointingHandCursor)
+            cta.clicked.connect(lambda: self.nav_bar.setCurrentIndex(0))
+            self.history_grid_layout.addWidget(cta, alignment=Qt.AlignCenter)
             return
 
         row_widget = None
