@@ -19,7 +19,7 @@ from eyegen.gui.main_window_controls import MainWindowControlsMixin
 from eyegen.gui.main_window_handlers import MainWindowHandlersMixin
 from eyegen.gui.main_window_history import MainWindowHistoryMixin
 from eyegen.gui.main_window_img2img import MainWindowImg2ImgMixin
-from eyegen.gui.main_window_lifecycle import MainWindowLifecycleMixin
+from eyegen.gui.main_window_lifecycle import MainWindowLifecycleMixin, _restyle_label
 from eyegen.gui.main_window_model_dropdown import MainWindowModelDropdownMixin
 from eyegen.gui.main_window_save_model import MainWindowSaveModelMixin
 from eyegen.gui.main_window_settings import MainWindowSettingsMixin
@@ -66,7 +66,7 @@ class MainWindow(
     def __init__(self):
         super().__init__()
         self.setWindowTitle("EyeGen")
-        self.setMinimumSize(950, 650)
+        self.setMinimumSize(800, 550)
         self.resize(1200, 800)
 
         self.worker: Optional[object] = None
@@ -76,7 +76,7 @@ class MainWindow(
         for w in pop_config_warnings():
             log.warning("Config warning: %s", w)
             self.status_label.setText(f"⚠️ {w}")
-            self.status_label.setStyleSheet("color: orange;")
+            _restyle_label(self.status_label, "warning")
         self._gui_state = load_gui_state()
         self._log_file = CONFIG_DIR / "eyegen.log"
         self._pre_mflux_steps: Optional[int] = None
@@ -109,7 +109,7 @@ class MainWindow(
 
         prompt = self.prompt_input.toPlainText().strip()
         if not prompt:
-            self._set_status("⚠ Enter a prompt first", "orange")
+            self._set_status("⚠ Enter a prompt first", "warning")
             return
 
         width = self.width_combo.currentData()
@@ -128,7 +128,7 @@ class MainWindow(
 
         resolved_backend = self._resolved_backend()
         if resolved_backend is None:
-            self._set_status("⚠ Unrecognized model for the selected backend", "red")
+            self._set_status("⚠ Unrecognized model for the selected backend", "error")
             return
         self._start_generation(
             prompt, config, width, height, seed, image_path, denoise, resolved_backend
@@ -141,17 +141,17 @@ class MainWindow(
         if is_img2img:
             image_path = self.image_path_input.text().strip() or None
             if not image_path:
-                self._set_status("⚠ Select an input image first", "orange")
+                self._set_status("⚠ Select an input image first", "warning")
                 return None, 1.0, False
             err = validate_image_path(image_path)
             if err:
-                self._set_status(f"⚠ {err}", "orange")
+                self._set_status(f"⚠ {err}", "warning")
                 return None, 1.0, False
             return image_path, self.denoise_spin.value(), True
 
         err = validate_dimensions(width, height)
         if err:
-            self._set_status(f"⚠ {err}", "red")
+            self._set_status(f"⚠ {err}", "warning")
             return None, 1.0, False
         return None, 1.0, True
 
@@ -162,12 +162,12 @@ class MainWindow(
         try:
             return int(seed_text), True
         except ValueError:
-            self._set_status("⚠ Seed must be a valid integer", "red")
+            self._set_status("⚠ Seed must be a valid integer", "error")
             return None, False
 
     def _set_status(self, message: str, color: str):
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(f"color: {color};")
+        _restyle_label(self.status_label, color)
 
     def _build_generation_config(self, width: int, height: int):
         data = self.config.to_dict()
@@ -192,12 +192,12 @@ class MainWindow(
             cfg = EyeGenConfig.from_dict(data)
             errors = cfg.validate()
             if errors:
-                self._set_status(f"⚠ {errors[0]}", "red")
+                self._set_status(f"⚠ {errors[0]}", "error")
                 return None, False
             return cfg, True
         except (ValueError, TypeError) as e:
             log.warning("Config cast failed: %s", e)
-            self._set_status(f"⚠ Invalid config: {e}", "red")
+            self._set_status(f"⚠ Invalid config: {e}", "error")
             return None, False
 
     def _start_generation(
@@ -215,13 +215,13 @@ class MainWindow(
         self._generation_id += 1
 
         self.generate_btn.setText("⏹  Stop")
-        self.generate_btn.setStyleSheet("background-color: #cc3333; color: white;")
+        self.generate_btn.setProperty("class", "stop")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
         self._elapsed_seconds = 0
         self._current_phase = "Starting…"
         self.status_label.setText("Starting…")
-        self.status_label.setStyleSheet("color: #853D4F;")
+        _restyle_label(self.status_label, "")
         self._elapsed_timer.start()
 
         q = self.quantize_combo.currentData()

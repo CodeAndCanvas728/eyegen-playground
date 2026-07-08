@@ -27,7 +27,7 @@ _SHARED = {
 _DARK = {
     "bg": "#2D2925",
     "surface": "#4C453E",
-    "surface-hover": "#6B6157",
+    "surface-hover": "#BCB5AE",
     "card": "#4C453E",
     "border": "#4C453E",
     "border-light": "#6B6157",
@@ -58,7 +58,7 @@ _DARK = {
 _LIGHT = {
     "bg": "#F8F7F7",
     "surface": "#EAE8E6",
-    "surface-hover": "#EFE1E5",
+    "surface-hover": "#877A6E",
     "card": "#FFFFFF",
     "border": "#D6D1CD",
     "border-light": "#EAE8E6",

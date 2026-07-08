@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QInputDialog
 
 from eyegen import PROJECT_ROOT
 from eyegen.backends import bonsai, coreml
+from eyegen.gui.main_window_lifecycle import _restyle_label
 
 log = logging.getLogger("eyegen")
 
@@ -25,7 +26,7 @@ class MainWindowBackendHandlersMixin:
         script = PROJECT_ROOT / "scripts" / "setup-bonsai.sh"
         if not script.is_file():
             self.status_label.setText(f"❌ Setup script not found: {script}")
-            self.status_label.setStyleSheet("color: red;")
+            _restyle_label(self.status_label, "error")
             return
         self.bonsai_setup_btn.setEnabled(False)
         self.bonsai_pull_btn.setEnabled(False)
@@ -33,7 +34,7 @@ class MainWindowBackendHandlersMixin:
         self.status_label.setText(
             "🌳 Setting up Bonsai (one-time install, may take a few minutes)…"
         )
-        self.status_label.setStyleSheet("color: blue;")
+        _restyle_label(self.status_label, "hint")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
@@ -51,23 +52,23 @@ class MainWindowBackendHandlersMixin:
         self.progress_bar.reset()
         if success:
             self.status_label.setText(f"✅ {message}")
-            self.status_label.setStyleSheet("color: green;")
+            _restyle_label(self.status_label, "success")
         else:
             self.status_label.setText(f"❌ {message}")
-            self.status_label.setStyleSheet("color: red;")
+            _restyle_label(self.status_label, "error")
         self._refresh_bonsai_status()
 
     def _on_bonsai_pull(self):
         status = bonsai.validate_bonsai_install()
         if not status.installed:
             self.status_label.setText("⚠ Bonsai not installed. Click 'Setup Bonsai…' first.")
-            self.status_label.setStyleSheet("color: orange;")
+            _restyle_label(self.status_label, "warning")
             return
         self.bonsai_setup_btn.setEnabled(False)
         self.bonsai_pull_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
         self.status_label.setText("📥 Downloading bonsai model…")
-        self.status_label.setStyleSheet("color: blue;")
+        _restyle_label(self.status_label, "hint")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
@@ -86,10 +87,10 @@ class MainWindowBackendHandlersMixin:
         self.progress_bar.reset()
         if success:
             self.status_label.setText(f"✅ {message}")
-            self.status_label.setStyleSheet("color: green;")
+            _restyle_label(self.status_label, "success")
         else:
             self.status_label.setText(f"❌ {message}")
-            self.status_label.setStyleSheet("color: red;")
+            _restyle_label(self.status_label, "error")
         self._refresh_bonsai_status()
 
     def _refresh_coreml_status(self):
@@ -106,7 +107,7 @@ class MainWindowBackendHandlersMixin:
         script = PROJECT_ROOT / "scripts" / "setup-coreml.sh"
         if not script.is_file():
             self.status_label.setText(f"❌ Setup script not found: {script}")
-            self.status_label.setStyleSheet("color: red;")
+            _restyle_label(self.status_label, "error")
             return
         self.coreml_setup_btn.setEnabled(False)
         self.coreml_pull_btn.setEnabled(False)
@@ -114,7 +115,7 @@ class MainWindowBackendHandlersMixin:
         self.status_label.setText(
             "🍎 Setting up CoreML (one-time install, may take a few minutes)…"
         )
-        self.status_label.setStyleSheet("color: blue;")
+        _restyle_label(self.status_label, "hint")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
@@ -132,17 +133,17 @@ class MainWindowBackendHandlersMixin:
         self.progress_bar.reset()
         if success:
             self.status_label.setText(f"✅ {message}")
-            self.status_label.setStyleSheet("color: green;")
+            _restyle_label(self.status_label, "success")
         else:
             self.status_label.setText(f"❌ {message}")
-            self.status_label.setStyleSheet("color: red;")
+            _restyle_label(self.status_label, "error")
         self._refresh_coreml_status()
 
     def _on_coreml_pull(self):
         status = coreml.validate_coreml_install(force=True)
         if not status.installed:
             self.status_label.setText("⚠ CoreML not installed. Click 'Setup CoreML…' first.")
-            self.status_label.setStyleSheet("color: orange;")
+            _restyle_label(self.status_label, "warning")
             return
 
         alias, ok = QInputDialog.getItem(
@@ -160,7 +161,7 @@ class MainWindowBackendHandlersMixin:
         self.coreml_pull_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
         self.status_label.setText(f"📥 Downloading {alias}…")
-        self.status_label.setStyleSheet("color: blue;")
+        _restyle_label(self.status_label, "hint")
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
 
@@ -179,8 +180,8 @@ class MainWindowBackendHandlersMixin:
         self.progress_bar.reset()
         if success:
             self.status_label.setText(f"✅ {message}")
-            self.status_label.setStyleSheet("color: green;")
+            _restyle_label(self.status_label, "success")
         else:
             self.status_label.setText(f"❌ {message}")
-            self.status_label.setStyleSheet("color: red;")
+            _restyle_label(self.status_label, "error")
         self._refresh_coreml_status()

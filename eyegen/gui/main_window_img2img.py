@@ -20,7 +20,9 @@ class MainWindowImg2ImgMixin:
         img2img_layout.setContentsMargins(0, 0, 0, 0)
         img2img_layout.setSpacing(8)
 
-        img2img_layout.addWidget(QLabel("Input Image"))
+        img2img_label = QLabel("Input Image")
+        img2img_label.setProperty("class", "section-heading")
+        img2img_layout.addWidget(img2img_label)
         image_row = QHBoxLayout()
         self.image_path_input = QLineEdit()
         self.image_path_input.setReadOnly(True)
@@ -44,11 +46,12 @@ class MainWindowImg2ImgMixin:
         )
         self.img2img_warning.setWordWrap(True)
         self.img2img_warning.setProperty("class", "hint")
-        self.img2img_warning.setStyleSheet("color: #cc8800;")
         img2img_layout.addWidget(self.img2img_warning)
 
         denoise_row = QHBoxLayout()
-        denoise_row.addWidget(QLabel("Denoise"))
+        denoise_label = QLabel("Denoise")
+        denoise_label.setProperty("class", "input-label")
+        denoise_row.addWidget(denoise_label)
         self.denoise_spin = QDoubleSpinBox()
         self.denoise_spin.setRange(0.05, 1.0)
         self.denoise_spin.setSingleStep(0.05)
@@ -56,6 +59,12 @@ class MainWindowImg2ImgMixin:
         denoise_row.addWidget(self.denoise_spin)
         img2img_layout.addLayout(denoise_row)
 
+        self._build_denoise_slider(img2img_layout)
+
+        widget.hide()
+        return widget
+
+    def _build_denoise_slider(self, layout):
         self.denoise_slider = QSlider(Qt.Horizontal)
         self.denoise_slider.setRange(5, 100)
         self.denoise_slider.setValue(75)
@@ -63,7 +72,4 @@ class MainWindowImg2ImgMixin:
         self.denoise_spin.valueChanged.connect(
             lambda v: self.denoise_slider.setValue(int(round(v * 100)))
         )
-        img2img_layout.addWidget(self.denoise_slider)
-
-        widget.hide()
-        return widget
+        layout.addWidget(self.denoise_slider)

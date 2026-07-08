@@ -36,7 +36,9 @@ class MainWindowBuildersMixin:
 
     def _build_prompt_input(self, label, placeholder, max_height):
         wrapper = QVBoxLayout()
-        wrapper.addWidget(QLabel(label))
+        label_widget = QLabel(label)
+        label_widget.setProperty("class", "section-heading")
+        wrapper.addWidget(label_widget)
         input_field = QTextEdit()
         input_field.setPlaceholderText(placeholder)
         input_field.setMaximumHeight(max_height)
@@ -57,7 +59,7 @@ class MainWindowBuildersMixin:
         self.image_label = QLabel("No image yet")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.image_label.setStyleSheet("background: transparent; color: #888; border-radius: 8px;")
+        self.image_label.setProperty("class", "preview-placeholder")
         self.image_label.setMinimumSize(400, 400)
         preview_layout.addWidget(self.image_label)
 
