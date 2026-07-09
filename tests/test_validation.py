@@ -1,8 +1,12 @@
 """Tests for eyegen.validation."""
 
+import os
 from pathlib import Path
 
 import pytest
+
+# Enable test-only path validation roots
+os.environ["EYEGEN_TEST_ROOTS"] = "1"
 
 from eyegen.validation import (
     sanitize_prompt,

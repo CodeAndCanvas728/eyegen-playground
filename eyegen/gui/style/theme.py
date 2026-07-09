@@ -6,6 +6,7 @@ Automatically generated from design-system/palette.json. Do not edit manually.
 import string
 from pathlib import Path
 
+
 _SHARED = {
     "radius-sm": "6px",
     "radius-md": "10px",
@@ -27,7 +28,7 @@ _SHARED = {
 _DARK = {
     "bg": "#2D2925",
     "surface": "#4C453E",
-    "surface-hover": "#BCB5AE",
+    "surface-hover": "#6B6157",
     "card": "#4C453E",
     "border": "#4C453E",
     "border-light": "#6B6157",
@@ -58,7 +59,7 @@ _DARK = {
 _LIGHT = {
     "bg": "#F8F7F7",
     "surface": "#EAE8E6",
-    "surface-hover": "#877A6E",
+    "surface-hover": "#EFE1E5",
     "card": "#FFFFFF",
     "border": "#D6D1CD",
     "border-light": "#EAE8E6",
