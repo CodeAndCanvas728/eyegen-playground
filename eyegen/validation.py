@@ -1,6 +1,7 @@
 """Input validation helpers for EyeGen."""
 
 import logging
+import os
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -69,6 +70,8 @@ def _get_allowed_roots() -> list[Path]:
     ]
     cwd = Path.cwd().resolve()
     if cwd != Path("/"):
+        # Trust assumption: cwd is controlled by the user running the CLI/GUI
+        # (not an external attacker), making it safe to allow paths under it.
         roots.append(cwd)
     # Per-user cache directories (never world-writable temp dirs)
     cache_roots = [
@@ -79,14 +82,15 @@ def _get_allowed_roots() -> list[Path]:
         if cr.exists() or cr.parent.exists():
             roots.append(cr.resolve())
 
-    # Allow pytest and system temp directories for testing.
-    for temp_dir in (Path("/tmp"),):  # noqa: S108 — allowlist, not temp file creation
-        if temp_dir.exists():
-            roots.append(temp_dir.resolve())
+    # Allow pytest and system temp directories only when testing.
+    if os.environ.get("EYEGEN_TEST_ROOTS") == "1":
+        for temp_dir in (Path("/tmp"),):  # noqa: S108 — allowlist, not temp file creation
+            if temp_dir.exists():
+                roots.append(temp_dir.resolve())
 
-    # Unconditional test-only paths (don't need to exist on the host).
-    roots.append(Path("/fake").resolve())  # noqa: S108
-    roots.append(Path("/private/var/folders").resolve())  # noqa: S108 — macOS temp
+        # Unconditional test-only paths (don't need to exist on the host).
+        roots.append(Path("/fake").resolve())  # noqa: S108
+        roots.append(Path("/private/var/folders").resolve())  # noqa: S108 — macOS temp
 
     return roots
 

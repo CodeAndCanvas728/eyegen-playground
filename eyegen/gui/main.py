@@ -34,34 +34,6 @@ def main():
     app.setApplicationName("EyeGen")
     if sys.platform == "darwin":
         app.setFont(QFont(".AppleSystemUIFont", 13))
-    app.setStyleSheet("""
-        [class="hint"]    { font-size: 11px; color: #666666; }
-        [class="display"] { font-size: 16px; }
-
-        QPushButton {
-            background-color: #853D4F;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-        }
-        QPushButton:hover    { background-color: #AC4962; }
-        QPushButton:pressed  { background-color: #5D2D39; }
-        QPushButton:disabled { background-color: #BCB5AE; color: #6B6157; }
-
-        QTabBar::tab:selected   { background-color: #853D4F; color: white; }
-        QTabBar::tab:!selected  { background-color: transparent; color: #4A1F2A; }
-
-        QProgressBar {
-            background-color: #EAE8E6;
-            border: none;
-            border-radius: 8px;
-        }
-        QProgressBar::chunk {
-            background-color: #853D4F;
-            border-radius: 8px;
-        }
-    """)
 
     icon_path = Path(__file__).resolve().parent.parent.parent / "icon.png"
     if icon_path.exists():

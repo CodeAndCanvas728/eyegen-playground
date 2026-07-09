@@ -21,7 +21,7 @@ class MainWindowHistoryMixin:
     def _build_history_page(self):
         page = QWidget()
         page_layout = QVBoxLayout(page)
-        page_layout.setContentsMargins(8, 8, 8, 8)
+        page_layout.setContentsMargins(16, 16, 16, 16)
 
         title = QLabel("Generation History")
         title.setProperty("class", "section")

@@ -26,7 +26,7 @@ class BaseSubprocessRunner:
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Validate cmd arguments to prevent option/argument injection."""
 
-        ALLOWED_FLAGS = {
+        FLAGS_WITH_ARGS = {
             "-m",
             "--model",
             "--prompt",
@@ -44,15 +44,29 @@ class BaseSubprocessRunner:
             "--negative-prompt",
             "--attention-implementation",
             "--quantize-nbits",
+            "--model-version",
+        }
+        FLAGS_WITHOUT_ARGS = {
             "--convert-unet",
             "--convert-text-encoder",
             "--convert-vae-decoder",
             "--convert-safety-checker",
-            "--model-version",
         }
-        for arg in cmd[1:]:
-            if arg.startswith("-") and arg not in ALLOWED_FLAGS:
-                raise ValueError(f"Unsafe subprocess flag detected: {arg}")
+
+        i = 1
+        while i < len(cmd):
+            arg = cmd[i]
+            if arg.startswith("-"):
+                if arg in FLAGS_WITH_ARGS:
+                    if i + 1 >= len(cmd):
+                        raise ValueError(f"Flag {arg} requires a value argument.")
+                    i += 2  # Skip flag and its value
+                elif arg in FLAGS_WITHOUT_ARGS:
+                    i += 1  # Skip standalone flag
+                else:
+                    raise ValueError(f"Unsafe subprocess flag detected: {arg}")
+            else:
+                i += 1
 
     def _read_stream_target(
         self,

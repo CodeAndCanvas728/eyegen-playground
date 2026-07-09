@@ -74,8 +74,8 @@ class MainWindowUIMixin:
 
         controls_container = QWidget()
         self.controls_layout = QVBoxLayout(controls_container)
-        self.controls_layout.setContentsMargins(8, 8, 8, 8)
-        self.controls_layout.setSpacing(8)
+        self.controls_layout.setContentsMargins(16, 16, 16, 16)
+        self.controls_layout.setSpacing(16)
 
         self.mode_tabs = QTabBar()
         self.mode_tabs.addTab("Text to Image")
@@ -90,7 +90,7 @@ class MainWindowUIMixin:
         prompt_card.setProperty("card", True)
         prompt_card_layout = QVBoxLayout(prompt_card)
         prompt_card_layout.setContentsMargins(0, 0, 0, 0)
-        prompt_card_layout.setSpacing(8)
+        prompt_card_layout.setSpacing(12)
         self._build_prompt_section(prompt_card_layout)
         self.controls_layout.addWidget(prompt_card)
 
@@ -111,7 +111,7 @@ class MainWindowUIMixin:
         bottom_card.setProperty("card", True)
         bottom_card_layout = QVBoxLayout(bottom_card)
         bottom_card_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_card_layout.setSpacing(8)
+        bottom_card_layout.setSpacing(12)
         self._build_model_backend_seed(bottom_card_layout)
         bottom_card_layout.addStretch()
         self.controls_layout.addWidget(bottom_card)
@@ -137,10 +137,12 @@ class MainWindowUIMixin:
         self.advanced_container.setVisible(False)
         advanced_layout = QVBoxLayout(self.advanced_container)
         advanced_layout.setContentsMargins(0, 0, 0, 0)
-        advanced_layout.setSpacing(8)
+        advanced_layout.setSpacing(12)
 
         steps_row = QHBoxLayout()
-        steps_row.addWidget(QLabel("Steps"))
+        steps_label = QLabel("Steps")
+        steps_label.setProperty("class", "input-label")
+        steps_row.addWidget(steps_label)
         self.steps_spin = QSpinBox()
         self.steps_spin.setRange(1, 100)
         self.steps_spin.setValue(self.config.num_inference_steps)
@@ -155,7 +157,9 @@ class MainWindowUIMixin:
         advanced_layout.addWidget(self.steps_slider)
 
         guidance_row = QHBoxLayout()
-        guidance_row.addWidget(QLabel("Guidance"))
+        guidance_label = QLabel("Guidance")
+        guidance_label.setProperty("class", "input-label")
+        guidance_row.addWidget(guidance_label)
         self.guidance_spin = QDoubleSpinBox()
         self.guidance_spin.setRange(1.0, 15.0)
         self.guidance_spin.setSingleStep(0.5)
@@ -163,14 +167,7 @@ class MainWindowUIMixin:
         guidance_row.addWidget(self.guidance_spin)
         advanced_layout.addLayout(guidance_row)
 
-        self.guidance_slider = QSlider(Qt.Horizontal)
-        self.guidance_slider.setRange(10, 150)
-        self.guidance_slider.setValue(int(self.guidance_spin.value() * 10))
-        self.guidance_slider.valueChanged.connect(lambda v: self.guidance_spin.setValue(v / 10.0))
-        self.guidance_spin.valueChanged.connect(
-            lambda v: self.guidance_slider.setValue(int(v * 10))
-        )
-        advanced_layout.addWidget(self.guidance_slider)
+        self._build_guidance_slider(advanced_layout)
 
         self._build_t5_row(advanced_layout)
 
@@ -186,8 +183,20 @@ class MainWindowUIMixin:
         self.t5_check.setChecked(True)
         layout.addWidget(self.t5_check)
 
+    def _build_guidance_slider(self, advanced_layout):
+        self.guidance_slider = QSlider(Qt.Horizontal)
+        self.guidance_slider.setRange(10, 150)
+        self.guidance_slider.setValue(int(self.guidance_spin.value() * 10))
+        self.guidance_slider.valueChanged.connect(lambda v: self.guidance_spin.setValue(v / 10.0))
+        self.guidance_spin.valueChanged.connect(
+            lambda v: self.guidance_slider.setValue(int(v * 10))
+        )
+        advanced_layout.addWidget(self.guidance_slider)
+
     def _build_model_backend_seed(self, layout):
-        layout.addWidget(QLabel("Model"))
+        model_label = QLabel("Model")
+        model_label.setProperty("class", "section-heading")
+        layout.addWidget(model_label)
         model_row = QHBoxLayout()
         self.model_stack = QStackedWidget()
         self.model_stack.setMaximumWidth(310)
@@ -212,13 +221,17 @@ class MainWindowUIMixin:
         model_row.addWidget(self.pull_btn)
         layout.addLayout(model_row)
 
-        layout.addWidget(QLabel("Backend"))
+        backend_label = QLabel("Backend")
+        backend_label.setProperty("class", "section-heading")
+        layout.addWidget(backend_label)
         self.backend_combo = QComboBox()
         self._populate_backend_combo()
         self.backend_combo.currentIndexChanged.connect(self._on_backend_changed)
         layout.addWidget(self.backend_combo)
 
-        layout.addWidget(QLabel("Seed"))
+        seed_label = QLabel("Seed")
+        seed_label.setProperty("class", "section-heading")
+        layout.addWidget(seed_label)
         self.seed_input = QLineEdit()
         self.seed_input.setPlaceholderText("Random")
         layout.addWidget(self.seed_input)

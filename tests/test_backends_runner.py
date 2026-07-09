@@ -152,3 +152,31 @@ def test_runner_integration_injection_rejection():
     ]
     with pytest.raises(ValueError, match="Unsafe subprocess flag detected"):
         runner._execute_subprocess(cmd)
+
+
+def test_runner_validation_dash_prompt():
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
+
+    # A prompt starting with - must be allowed because it is in a value position
+    cmd = ["dummy", "--prompt", "- a red cat", "--steps", "50"]
+    runner._validate_cmd_args(cmd)  # Should not raise any error
+
+
+def test_runner_validation_boolean_flag():
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
+
+    # Boolean flags should be correctly walked past
+    cmd = ["dummy", "--convert-unet", "--output", "some-path"]
+    runner._validate_cmd_args(cmd)  # Should not raise any error
+
+
+def test_runner_validation_missing_value():
+    cfg = EyeGenConfig(subprocess_timeout=5)
+    runner = DummyRunner(cfg)
+
+    # Flag that requires an argument but doesn't have one should raise ValueError
+    cmd = ["dummy", "--prompt"]
+    with pytest.raises(ValueError, match="requires a value argument"):
+        runner._validate_cmd_args(cmd)
