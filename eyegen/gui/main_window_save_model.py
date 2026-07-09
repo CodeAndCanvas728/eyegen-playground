@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QFileDialog, QLabel, QVBoxLayout
 
 from eyegen import MODELS_DIR, hf_status, list_mflux_models
 from eyegen.gui.dialogs import HFLoginDialog
-from eyegen.gui.main_window_lifecycle import _restyle_label
+from eyegen.gui.main_window_lifecycle import restyle_label
 
 
 class MainWindowSaveModelMixin:
@@ -15,7 +15,7 @@ class MainWindowSaveModelMixin:
             and self._save_worker.isRunning()
         ):
             self.status_label.setText("⚠ A model save is already in progress")
-            _restyle_label(self.status_label, "warning")
+            restyle_label(self.status_label, "warning")
             return
 
         result = self._show_save_model_dialog()
@@ -144,12 +144,12 @@ class MainWindowSaveModelMixin:
         self.progress_bar.reset()
         if success:
             self.status_label.setText(f"✅ {message}")
-            _restyle_label(self.status_label, "success")
+            restyle_label(self.status_label, "success")
             self.model_path_input.setText(saved_path)
             self._on_model_path_changed()
         else:
             self.status_label.setText(f"❌ Save failed: {message}")
-            _restyle_label(self.status_label, "error")
+            restyle_label(self.status_label, "error")
 
     def _on_hf_login(self):
         dlg = HFLoginDialog(self)

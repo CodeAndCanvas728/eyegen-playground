@@ -45,7 +45,7 @@ class MainWindowImg2ImgMixin:
             "identical to the input (denoise has no effect)."
         )
         self.img2img_warning.setWordWrap(True)
-        self.img2img_warning.setProperty("class", "hint")
+        self.img2img_warning.setProperty("class", "warning")
         img2img_layout.addWidget(self.img2img_warning)
 
         denoise_row = QHBoxLayout()

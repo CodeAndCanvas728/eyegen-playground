@@ -19,7 +19,7 @@ from eyegen.gui.main_window_controls import MainWindowControlsMixin
 from eyegen.gui.main_window_handlers import MainWindowHandlersMixin
 from eyegen.gui.main_window_history import MainWindowHistoryMixin
 from eyegen.gui.main_window_img2img import MainWindowImg2ImgMixin
-from eyegen.gui.main_window_lifecycle import MainWindowLifecycleMixin, _restyle_label
+from eyegen.gui.main_window_lifecycle import MainWindowLifecycleMixin, restyle_label
 from eyegen.gui.main_window_model_dropdown import MainWindowModelDropdownMixin
 from eyegen.gui.main_window_save_model import MainWindowSaveModelMixin
 from eyegen.gui.main_window_settings import MainWindowSettingsMixin
@@ -76,7 +76,7 @@ class MainWindow(
         for w in pop_config_warnings():
             log.warning("Config warning: %s", w)
             self.status_label.setText(f"⚠️ {w}")
-            _restyle_label(self.status_label, "warning")
+            restyle_label(self.status_label, "warning")
         self._gui_state = load_gui_state()
         self._log_file = CONFIG_DIR / "eyegen.log"
         self._pre_mflux_steps: Optional[int] = None
@@ -151,7 +151,7 @@ class MainWindow(
 
         err = validate_dimensions(width, height)
         if err:
-            self._set_status(f"⚠ {err}", "warning")
+            self._set_status(f"⚠ {err}", "error")
             return None, 1.0, False
         return None, 1.0, True
 
@@ -167,7 +167,7 @@ class MainWindow(
 
     def _set_status(self, message: str, color: str):
         self.status_label.setText(message)
-        _restyle_label(self.status_label, color)
+        restyle_label(self.status_label, color)
 
     def _build_generation_config(self, width: int, height: int):
         data = self.config.to_dict()
@@ -221,7 +221,7 @@ class MainWindow(
         self._elapsed_seconds = 0
         self._current_phase = "Starting…"
         self.status_label.setText("Starting…")
-        _restyle_label(self.status_label, "")
+        restyle_label(self.status_label, "")
         self._elapsed_timer.start()
 
         q = self.quantize_combo.currentData()

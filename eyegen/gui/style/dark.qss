@@ -9,6 +9,7 @@ QLabel[class="input-label"] { color: ${text-secondary}; font-size: 13px; font-we
 QLabel[class="success"] { color: ${success}; font-size: 13px; }
 QLabel[class="warning"] { color: ${warning}; font-size: 13px; }
 QLabel[class="error"] { color: ${danger}; font-size: 13px; }
+QLabel[class="info"] { color: ${accent-light}; font-size: 13px; }
 QLabel[class="preview-placeholder"] { color: ${text-muted}; font-size: 14px; font-style: italic; }
 QLabel[thumbnail="true"] { border-radius: 10px; padding: 2px; background: ${surface}; }
 QWidget[card="true"] { background-color: ${card}; border: 1px solid ${border}; border-radius: 14px; padding: 16px; }

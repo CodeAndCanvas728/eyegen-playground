@@ -8,7 +8,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from eyegen import MODELS_DIR, validate_saved_model
-from eyegen.gui.main_window_lifecycle import _restyle_label
+from eyegen.gui.main_window_lifecycle import restyle_label
 
 log = logging.getLogger("eyegen")
 
@@ -48,11 +48,11 @@ class MainWindowHandlersMixin:
         model = self.model_input.text().strip()
         if not model:
             self.status_label.setText("⚠ Enter a model name first")
-            _restyle_label(self.status_label, "warning")
+            restyle_label(self.status_label, "warning")
             return
         if self.pull_worker is not None and self.pull_worker.isRunning():
             self.status_label.setText("⚠ A pull is already in progress")
-            _restyle_label(self.status_label, "warning")
+            restyle_label(self.status_label, "warning")
             return
 
         self.pull_btn.setEnabled(False)
@@ -76,10 +76,10 @@ class MainWindowHandlersMixin:
         self.progress_bar.reset()
         if success:
             self.status_label.setText(f"✅ {message}")
-            _restyle_label(self.status_label, "success")
+            restyle_label(self.status_label, "success")
         else:
             self.status_label.setText(f"❌ {message}")
-            _restyle_label(self.status_label, "error")
+            restyle_label(self.status_label, "error")
 
     def _on_browse_image(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -140,13 +140,13 @@ class MainWindowHandlersMixin:
             q_str = f"{ql}-bit" if ql else "full precision"
             ver = meta.get("mflux_version") or "unknown"
             self.model_path_status.setText(f"✅ Valid model — {q_str} (mflux {ver})")
-            _restyle_label(self.model_path_status, "success")
+            restyle_label(self.model_path_status, "success")
         elif valid:
             self.model_path_status.setText("✅ Model directory found (no metadata)")
-            _restyle_label(self.model_path_status, "hint")
+            restyle_label(self.model_path_status, "hint")
         else:
             self.model_path_status.setText("⚠ Not a valid saved model directory")
-            _restyle_label(self.model_path_status, "warning")
+            restyle_label(self.model_path_status, "warning")
 
         saved_model_active = valid
         self.model_input.setEnabled(not saved_model_active)

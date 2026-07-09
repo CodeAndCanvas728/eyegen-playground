@@ -9,7 +9,7 @@ from eyegen.gui.utils import pil_to_pixmap
 log = logging.getLogger("eyegen")
 
 
-def _restyle_label(label, css_class=""):
+def restyle_label(label, css_class=""):
     label.setProperty("class", css_class)
     s = label.style()
     s.unpolish(label)
@@ -36,7 +36,7 @@ class MainWindowLifecycleMixin:
         self._reset_generate_btn()
         elapsed = f" ({self._elapsed_seconds}s)" if self._elapsed_seconds > 0 else ""
         self.status_label.setText(f"✅ Done{elapsed}")
-        _restyle_label(self.status_label, "success")
+        restyle_label(self.status_label, "success")
         self.output_label.setText(f"Saved: {output_path}")
 
         self._current_pixmap = pil_to_pixmap(pil_image)
@@ -53,7 +53,7 @@ class MainWindowLifecycleMixin:
         lines = [line for line in full_traceback.strip().splitlines() if line.strip()]
         last_line = lines[-1] if lines else "Unknown error"
         self.status_label.setText("❌ Error — see details")
-        _restyle_label(self.status_label, "error")
+        restyle_label(self.status_label, "error")
 
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Generation Error")
@@ -70,7 +70,7 @@ class MainWindowLifecycleMixin:
         self.progress_bar.reset()
         self._reset_generate_btn()
         self.status_label.setText("⚠️ Quantization failed")
-        _restyle_label(self.status_label, "warning")
+        restyle_label(self.status_label, "warning")
 
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Quantization Error")
@@ -110,7 +110,7 @@ class MainWindowLifecycleMixin:
         self.worker.cancel()
 
         self.status_label.setText("Cancelling… (cleaning up safely)")
-        _restyle_label(self.status_label, "warning")
+        restyle_label(self.status_label, "warning")
         self.generate_btn.setEnabled(False)
         # The worker resets the UI by emitting `cancelled` once it actually
         # stops; do not reset here or the user could launch a second run while
@@ -123,7 +123,7 @@ class MainWindowLifecycleMixin:
         self._reset_generate_btn()
         elapsed = f" ({self._elapsed_seconds}s)" if self._elapsed_seconds > 0 else ""
         self.status_label.setText(f"⏹ Cancelled{elapsed}")
-        _restyle_label(self.status_label, "hint")
+        restyle_label(self.status_label, "hint")
         self._arm_status_autoclear()
 
     def _on_elapsed_tick(self):
@@ -141,7 +141,7 @@ class MainWindowLifecycleMixin:
         if self.worker is not None and self.worker.isRunning():
             return
         self.status_label.setText("Ready")
-        _restyle_label(self.status_label, "hint")
+        restyle_label(self.status_label, "hint")
 
     def _reset_generate_btn(self):
         self.generate_btn.setText("✨  Generate")
