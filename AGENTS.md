@@ -1,4 +1,8 @@
 # AGENT COMMANDMENTS
+
+## Documentation
+Docs, decisions, plans and research for this project live in the Obsidian vault, not in this repo: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/CnC/Engineering/Projects/eyegen-playground/`. Start at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/CnC/Engineering/00 Index.md`; filing rules are in `Conventions.md` there. Stays in the repo: README, CHANGELOG, component READMEs and files that code reads. Use the `obsidian` MCP to search, list and read vault files, never `ls`/`find`/`grep` (iCloud privacy rules make those return empty, which does not mean files are missing).
+
 > Universal coding standards, resident in every harness via this file (`AGENTS.md`).
 > Version: 2.0.0
 > The mechanically-checkable rules are enforced by tooling — `.pre-commit-config.yaml`

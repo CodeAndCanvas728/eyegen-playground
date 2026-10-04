@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+## Documentation
+Docs, decisions, plans and research live in the Obsidian vault, not in this repo: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/CnC/Engineering/Projects/eyegen-playground/` (index: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/CnC/Engineering/00 Index.md`). Repo keeps README, CHANGELOG and files code reads. Use the `obsidian` MCP to search/read the vault, never `ls`/`find`/`grep`.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Setup
