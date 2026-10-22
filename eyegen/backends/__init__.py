@@ -12,6 +12,18 @@ from eyegen.errors import UnsupportedModelError
 log = logging.getLogger(__name__)
 
 
+def _is_sdcli_model(model: str) -> bool:
+    """Return True if *model* is one the stable-diffusion.cpp backend runs.
+
+    The catalogue decides, not a pattern: MFLUX knows a model called
+    "black-forest-labs/flux-3-image-klein", and that is a different route
+    to a different build of the same weights.
+    """
+    from eyegen.backends.sdcli.constants import SDCLI_MODELS
+
+    return model in SDCLI_MODELS
+
+
 def _is_bonsai_model(model: str) -> bool:
     """Return True if *model* looks like a bonsai (PrismML) identifier."""
     m = model.lower()
@@ -69,6 +81,10 @@ def _format_unsupported_error(model: str, attempted_backend: str) -> str:
         "sd-2-1-base-palettized) or a full HuggingFace repo id under "
         "'apple/coreml-stable-diffusion-*' after running ./scripts/setup-coreml.sh."
     )
+    parts.append(
+        "For stable-diffusion.cpp, use 'flux-3-image-klein-gguf' "
+        "after fetching it with ./generate.py pull flux-3-image-klein-gguf."
+    )
     return " ".join(parts)
 
 
@@ -80,30 +96,34 @@ def detect_backend(
     """Resolve which backend to use.
 
     If *override* is ``Backend.AUTO`` (priority order):
-      1. ``"gguf"`` in model name → OLLAMA  (substr match first — bonsai/hf "gguf" can't hijack)
-      2. Bonsai/PrismML identifier pattern → BONSAI
-      3. CoreML bundle / pre-converted HF id / coreml_model_path set → COREML
-      4. Known MFLUX alias → MFLUX
-      5. diffusionkit MMDIT_CKPT entry → MLX
-      6. otherwise → UnsupportedModelError
+      1. A model in the stable-diffusion.cpp catalogue → SDCLI
+      2. ``"gguf"`` in model name → OLLAMA  (substr match first — bonsai/hf "gguf" can't hijack)
+      3. Bonsai/PrismML identifier pattern → BONSAI
+      4. CoreML bundle / pre-converted HF id / coreml_model_path set → COREML
+      5. Known MFLUX alias → MFLUX
+      6. diffusionkit MMDIT_CKPT entry → MLX
+      7. otherwise → UnsupportedModelError
     """
     if isinstance(override, str):
         override = Backend(override)
     if override != Backend.AUTO:
         return override
-    # (1) GGUF check first — substring match so it must run before other patterns
+    # (1) The stable-diffusion.cpp catalogue — an explicit list beats a pattern
+    if _is_sdcli_model(model):
+        return Backend.SDCLI
+    # (2) GGUF check — substring match so it must run before other patterns
     if "gguf" in model.lower():
         return Backend.OLLAMA
-    # (2) Bonsai — model names start with "bonsai-" or "prism-"
+    # (3) Bonsai — model names start with "bonsai-" or "prism-"
     if _is_bonsai_model(model):
         return Backend.BONSAI
-    # (3) CoreML — known aliases or coreml_model_path set in config
+    # (4) CoreML — known aliases or coreml_model_path set in config
     if _is_coreml_model(model, config=config):
         return Backend.COREML
-    # (4) MFLUX — check live aliases from package, fall back to static set
+    # (5) MFLUX — check live aliases from package, fall back to static set
     if model in _get_mflux_aliases():
         return Backend.MFLUX
-    # (5) MLX/diffusionkit — registered MMDIT_CKPT keys
+    # (6) MLX/diffusionkit — registered MMDIT_CKPT keys
     mlx_keys = _get_mlx_supported_models()
     if mlx_keys is not None and model in mlx_keys:
         return Backend.MLX
@@ -200,4 +220,4 @@ def get_mflux_pipeline(config: EyeGenConfig, quantize: int | None = 4):
 
 
 # Re-export optional backend subpackages.
-from eyegen.backends import bonsai, coreml  # noqa: E402,F401
+from eyegen.backends import bonsai, coreml, sdcli  # noqa: E402,F401

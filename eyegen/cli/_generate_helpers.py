@@ -21,7 +21,7 @@ from eyegen import (
     validate_dimensions,
     validate_image_path,
 )
-from eyegen.backends import bonsai, coreml
+from eyegen.backends import bonsai, coreml, sdcli
 
 
 def validate_cli_backend(backend: str) -> str:
@@ -97,6 +97,7 @@ def print_generation_settings(
         Backend.MFLUX: "MFLUX (MLX FLUX)",
         Backend.BONSAI: "Bonsai (PrismML ternary 1.58-bit)",
         Backend.COREML: "CoreML (Apple Neural Engine)",
+        Backend.SDCLI: "stable-diffusion.cpp (FLUX.3)",
     }
     backend_label = backend_labels.get(resolved_backend, resolved_backend.value)
     typer.echo("✨ Generating image...")
@@ -131,6 +132,8 @@ def load_pipeline(resolved_backend: Backend, config: EyeGenConfig, quantize: Opt
         return get_mflux_pipeline(config, quantize=q)
     if resolved_backend == Backend.BONSAI:
         return bonsai.get_bonsai_pipeline(config)
+    if resolved_backend == Backend.SDCLI:
+        return sdcli.get_sdcli_pipeline(config)
     if resolved_backend == Backend.COREML:
         return coreml.get_coreml_pipeline(config)
     return get_pipeline(config)
@@ -256,6 +259,12 @@ def build_generation_params(
         config, steps, guidance, height, width
     )
     image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, h, w)
+
+    if resolved_backend == Backend.SDCLI:
+        # The model's own settings win over the tool-wide defaults.
+        from eyegen.backends.sdcli.pipeline import resolve_settings
+
+        num_steps, guidance_scale = resolve_settings(model, num_steps, guidance_scale)
 
     err = _validate_generation_params(resolved_backend, w, h, image_path)
     if err:

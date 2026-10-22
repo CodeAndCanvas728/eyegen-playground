@@ -16,10 +16,10 @@ from eyegen import (
     get_mflux_pipeline,
     get_ollama_pipeline,
     get_pipeline,
-    pull_model,
+    pull_any_model,
     save_mflux_model,
 )
-from eyegen.backends import bonsai, coreml
+from eyegen.backends import bonsai, coreml, sdcli
 from eyegen.gui.cache import (
     _clear_pipeline_cache,
     _pipeline_cache,
@@ -74,6 +74,8 @@ def _load_pipeline_for_worker(worker):
         pipeline = bonsai.get_bonsai_pipeline(config)
     elif backend == Backend.COREML:
         pipeline = coreml.get_coreml_pipeline(config)
+    elif backend == Backend.SDCLI:
+        pipeline = sdcli.get_sdcli_pipeline(config)
     else:
         pipeline = get_pipeline(config, use_t5=worker.use_t5)
     _patch_sample_euler(lambda step, total: worker.progress.emit(step, total), worker._cancelled)
@@ -245,7 +247,7 @@ class PullWorker(QThread):
                 if isinstance(msg, str):
                     self.status.emit(msg)
 
-            ok = pull_model(
+            ok = pull_any_model(
                 self.model_name, progress_callback=on_progress, hf_cache_dir=self.hf_cache_dir
             )
             if ok:

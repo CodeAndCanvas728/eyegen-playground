@@ -38,8 +38,18 @@ class MainWindowModelDropdownMixin:
             return self._get_mflux_models()
         elif backend == Backend.BONSAI:
             return self._get_bonsai_models()
+        elif backend == Backend.SDCLI:
+            return self._get_sdcli_models()
         else:
             return self._get_auto_models()
+
+    def _get_sdcli_models(self):
+        try:
+            from eyegen.backends.sdcli import list_sdcli_models
+
+            return [(m["name"], m["name"]) for m in list_sdcli_models()]
+        except (ImportError, OSError):
+            return []
 
     def _get_coreml_models(self):
         try:

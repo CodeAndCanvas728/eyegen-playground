@@ -1,5 +1,5 @@
 """EyeGen CLI."""
 
-from eyegen.cli.app import app
+from eyegen.cli.app import app, main
 
-__all__ = ["app"]
+__all__ = ["app", "main"]

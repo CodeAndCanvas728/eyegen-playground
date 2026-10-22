@@ -3,12 +3,13 @@
 Local image generation on Apple Silicon — runs entirely offline, no API key needed.
 Comes with a native macOS GUI and a full-featured CLI.
 
-Five generation backends:
+Six generation backends:
 - **MLX (diffusionkit)** — Apple Silicon native, SD3.5 quantized
 - **MFLUX** — MLX-native FLUX, FLUX.2, Z-Image, FIBO, Qwen, SeedVR2 (20+ models)
 - **OllamaDiffuser (GGUF)** — 40+ quantized models (FLUX, SDXL, SD1.5, SD3.5, PixArt-Sigma, etc.)
 - **Bonsai (PrismML)** — 1.58-bit ternary + 1-bit binary FLUX.2 Klein 4B for Apple Silicon (third-party, opt-in)
 - **CoreML (Apple Neural Engine)** — SD 1.x/2.x via Apple's `python_coreml_stable_diffusion` (opt-in, sidecar venv)
+- **stable-diffusion.cpp** — FLUX.3 Image Klein as a GGUF transformer, through the `sd-cli` binary (opt-in)
 
 The backend is auto-detected from the model name, or you can choose manually.
 
@@ -28,6 +29,53 @@ pip install -r requirements.txt
 The MLX model (~3 GB) downloads automatically on first use and is cached by HuggingFace.
 MFLUX models also auto-download from HuggingFace on first use — no pull step needed.
 GGUF models are pulled separately — see [GGUF Models](#gguf-models-ollamadiffuser) below.
+
+### Or install with Homebrew
+
+```bash
+brew tap CodeAndCanvas728/eyegen
+brew install eyegen
+```
+
+The formula puts the CLI in a virtual environment in `~/.local/share/eyegen/venv`, not
+in the Cellar, so an upgrade does not take the backends with it.
+
+The formula arrives with the first release, because a Homebrew formula without a
+checksum is not a formula: the checksum is of the tarball the release publishes, and
+there is nothing to check against until there is a release.
+
+---
+
+## Keeping the backends up to date
+
+The backends are Python packages, and a new model arrives when one of them is
+released: FLUX.3 came with mflux 0.23. Nothing here knows that on its own, so the
+tool can be asked:
+
+```bash
+./generate.py update-backends
+```
+
+```
+The backends and what is out there:
+
+  ↑ diffusionkit     0.5.1        wants ≥0.1.0      newest 0.5.2
+  ✓ mlx              0.32.4       wants ≥0.32.0     newest 0.32.4
+  ✓ mflux            0.23.0       wants ≥0.23.0     newest 0.23.0
+  ↑ ollamadiffuser   2.0.17       wants ≥0.1.0      newest 2.5.0
+  ✓ Pillow           12.3.0       wants ≥10.0.0     newest 13.0.0
+```
+
+`--apply` installs what it finds:
+
+```bash
+./generate.py update-backends --apply
+```
+
+The requirements file is what decides. It carries the floors — mflux 0.23 for
+FLUX.3 — and the ceilings that come from a broken release, like Pillow under 13,
+which removed the module mflux imports. The update moves within those bounds, so
+it does not walk into the next broken release.
 
 ---
 
@@ -117,12 +165,16 @@ source venv/bin/activate
 # Use a CoreML model (auto-detects coreml, requires setup-coreml)
 ./generate.py generate "a photo of a cat" --steps 20
 
+# Use FLUX.3 Image Klein (auto-detects sdcli, requires the sd-cli binary)
+./generate.py generate "a red fox in a snow-covered forest" --steps 16 --guidance 1.0
+
 # Force a specific backend
 ./generate.py generate "a cat" --backend mflux
 ./generate.py generate "a cat" --backend ollamadiffuser
 ./generate.py generate "a cat" --backend mlx
 ./generate.py generate "a cat" --backend bonsai
 ./generate.py generate "a cat" --backend coreml
+./generate.py generate "a cat" --backend sdcli
 
 # MFLUX with custom quantization
 ./generate.py generate "a cat" --backend mflux --quantize 8
@@ -301,6 +353,64 @@ Override with `--backend mlx`, `--backend mflux`, or `--backend ollamadiffuser` 
 | SD 1.5 | `stable-diffusion-1.5` |
 
 Run `./generate.py list-models` for the full list.
+
+---
+
+## FLUX.3 Image Klein (stable-diffusion.cpp)
+
+[FLUX.3 Image Klein](https://huggingface.co/black-forest-labs/flux-3-image-klein) is
+Black Forest Labs' newest image model: a 5.6B transformer, distilled to answer in
+16 steps. It runs here through [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp),
+which is the only runtime that understands the architecture and runs on Metal.
+
+**Why a command line rather than a Python library:** the `stable-diffusion-cpp-python`
+bindings on PyPI bundle a stable-diffusion.cpp from before FLUX.3 existed, so they
+cannot load the model at all. The command line is built from current upstream source,
+and it is what upstream documents for this model (`docs/flux3.md`).
+
+### One-time setup
+
+```bash
+# 1. Build the binary (a few minutes; Metal is what makes it fast)
+git clone https://github.com/leejet/stable-diffusion.cpp
+cd stable-diffusion.cpp
+git submodule update --init --recursive
+cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target sd-cli -j $(sysctl -n hw.ncpu)
+cp build/bin/sd-cli ~/.local/bin/sd-cli
+
+# 2. Fetch the model files (~6.7 GB)
+cd -
+./generate.py pull flux-3-image-klein-gguf
+```
+
+The model is three files, and the pull step fetches each from where it lives:
+
+| file | what it is | size |
+|---|---|---|
+| `flux-3-image-klein-UD-Q4_K_XL.gguf` | the transformer, from [unsloth](https://huggingface.co/unsloth/flux-3-image-klein-GGUF) | 3.9 GB |
+| `Qwen3VL-4B-Instruct-Q4_K_M.gguf` | the Qwen3-VL text encoder that conditions it | 2.5 GB |
+| `ae.safetensors` | the FLUX.2 VAE that decodes it | 336 MB |
+
+The VAE comes from Black Forest Labs' own repository, which asks you to
+accept its terms the first time you fetch from it. So sign in once before
+the pull:
+
+```bash
+./generate.py hf-login
+```
+
+The other two are not gated, and the pull works without an account for them.
+
+### Using it
+
+```bash
+./generate.py generate "a red fox in a snow-covered forest clearing at golden hour"
+```
+
+The model is distilled, so it wants 16 steps at a guidance of 1.0. EyeGen uses those
+settings unless you change them yourself — a setting you leave at the tool-wide
+default is the model's to choose.
 
 ---
 

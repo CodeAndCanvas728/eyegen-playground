@@ -16,7 +16,7 @@ from eyegen import (
     list_ollama_models,
     load_config,
 )
-from eyegen.backends import bonsai, coreml
+from eyegen.backends import bonsai, coreml, sdcli
 from eyegen.config import pop_config_warnings
 
 
@@ -65,6 +65,7 @@ def _print_installed_packages(config: EyeGenConfig):
     _print_mflux_status()
     _print_bonsai_status()
     _print_coreml_status()
+    _print_sdcli_status(config)
     _print_output_status()
     _print_hf_status()
 
@@ -132,6 +133,23 @@ def _print_coreml_status():
             typer.echo(f"     • {m['name']}")
     else:
         typer.echo("\n🍎 CoreML: Not installed (run setup-coreml)")
+
+
+def _print_sdcli_status(config: EyeGenConfig):
+    model = config.model or ""
+    if model not in sdcli.SDCLI_MODELS:
+        return
+    status = sdcli.validate_sdcli_install(model)
+    if status.installed:
+        typer.echo(f"\n🔧 stable-diffusion.cpp: Ready ({status.binary})")
+        typer.echo(f"   Model files: {status.model_dir}")
+    elif status.binary is None:
+        typer.echo("\n🔧 stable-diffusion.cpp: sd-cli not found")
+        typer.echo(f"   {status.message}")
+    else:
+        typer.echo("\n🔧 stable-diffusion.cpp: binary found, model files missing")
+        typer.echo(f"   Missing: {', '.join(status.missing_files)}")
+        typer.echo(f"   {status.message}")
 
 
 def _print_output_status():

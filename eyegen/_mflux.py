@@ -50,6 +50,14 @@ def _get_mflux_aliases() -> set:
         "seedvr2-3b",
         "seedvr2-7b",
         "seedvr2",
+        "flux3-image-klein",
+        "flux3-image-klein-base",
+        "flux3-klein",
+        "flux3-klein-base",
+        "flux3",
+        "flux3-base",
+        "black-forest-labs/flux-3-image-klein",
+        "black-forest-labs/flux-3-image-klein-base",
     }
 
     try:
@@ -168,6 +176,23 @@ def _resolve_mflux_class(model_config):
         from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
 
         return SeedVR2
+
+    flux3_names = {
+        "black-forest-labs/flux-3-image-klein",
+        "black-forest-labs/flux-3-image-klein-base",
+    }
+    flux3_aliases = {
+        "flux3-image-klein",
+        "flux3-image-klein-base",
+        "flux3-klein",
+        "flux3-klein-base",
+        "flux3",
+        "flux3-base",
+    }
+    if name in flux3_names or not aliases.isdisjoint(flux3_aliases):
+        from mflux.models.flux3.variants.txt2img.flux3_klein import Flux3Klein
+
+        return Flux3Klein
 
     from mflux.models.flux.variants.txt2img.flux import Flux1
 

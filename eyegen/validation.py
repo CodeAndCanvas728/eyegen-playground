@@ -41,8 +41,13 @@ def sanitize_prompt(prompt: str) -> str:
         prompt = prompt.replace(zwc, "")
     # Normalize Unicode
     prompt = unicodedata.normalize("NFKC", prompt)
-    # Remove any remaining characters from insecure categories
-    prompt = "".join(ch for ch in prompt if unicodedata.category(ch) not in _INSECURE_CATS)
+    # Remove any remaining characters from insecure categories. The plain
+    # space is the exception: it is in the "Zs" category with the exotic
+    # spaces, and taking it out with them leaves the model with a single
+    # run-on word where the prompt had words.
+    prompt = "".join(
+        ch for ch in prompt if unicodedata.category(ch) not in _INSECURE_CATS or ch == " "
+    )
     return (
         prompt.replace("\u2014", "-")  # em dash
         .replace("\u2013", "-")  # en dash

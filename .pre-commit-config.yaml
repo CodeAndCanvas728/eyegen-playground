@@ -33,7 +33,7 @@ repos:
         exclude: '^(.*\.lock|.*\.snap|CHANGELOG\.md|.*/migrations/.*|README\.md)$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.17.1
     hooks:
       - id: ruff
         args: [--fix]
@@ -41,7 +41,7 @@ repos:
 
 # >>> esper-stack:python (pre-commit) — append under `repos:` in .pre-commit-config.yaml
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4  # autoupdate
+    rev: v0.17.1  # autoupdate
     hooks:
       - id: ruff
         args: [--fix]

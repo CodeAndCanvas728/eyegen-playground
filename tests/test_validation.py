@@ -59,6 +59,18 @@ def test_sanitize_prompt_replaces_smart_quotes():
     assert "—" not in cleaned
 
 
+def test_sanitize_prompt_keeps_the_spaces():
+    """A prompt is words, and the words are separated by spaces."""
+    prompt = "a red fox in a snow-covered forest clearing at golden hour"
+    assert sanitize_prompt(prompt) == prompt
+
+
+def test_sanitize_prompt_still_drops_the_exotic_spaces():
+    """A space-like character that is not a space becomes an ordinary one."""
+    assert sanitize_prompt("hello\u00a0world") == "hello world"
+    assert "\u00a0" not in sanitize_prompt("hello\u00a0world")
+
+
 def test_validate_safe_path_traversal():
     from eyegen.validation import validate_safe_path
 

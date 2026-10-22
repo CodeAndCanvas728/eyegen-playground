@@ -6,7 +6,6 @@ Automatically generated from design-system/palette.json. Do not edit manually.
 import string
 from pathlib import Path
 
-
 _SHARED = {
     "radius-sm": "6px",
     "radius-md": "10px",

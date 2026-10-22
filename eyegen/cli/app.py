@@ -1,8 +1,22 @@
 """Typer app factory and command registration."""
 
+import sys
+
 import typer
 
-from eyegen.cli import bonsai, config, coreml, generate, hf, models, status
+from eyegen.cli import bonsai, config, coreml, generate, hf, models, status, update
+
+
+def _print_version() -> None:
+    """Print the version of the installed package."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        installed = version("eyegen")
+    except PackageNotFoundError:
+        installed = "unknown"
+    typer.echo(f"eyegen {installed}")
+
 
 app = typer.Typer(
     help=(
@@ -18,6 +32,7 @@ app.command()(models.pull)
 app.command()(models.list_models)
 app.command(name="save-model")(models.save_model_cmd)
 app.command(name="clear-cache")(models.clear_cache)
+app.command(name="update-backends")(update.update_backends_cmd)
 
 app.command(name="config-show")(config.config_show)
 app.command(name="config-set")(config.config_set)
@@ -38,3 +53,17 @@ app.command(name="setup-coreml")(coreml.setup_coreml_cmd)
 app.command(name="pull-coreml")(coreml.pull_coreml_cmd)
 app.command(name="convert-coreml")(coreml.convert_coreml_cmd)
 app.command(name="list-coreml-models")(coreml.list_coreml_models_cmd)
+
+
+def main() -> None:
+    """The console entry point.
+
+    Typer resolves the command before it runs the group's callback, so
+    "--version" is handled here rather than in a callback that would
+    never be reached. It is the first argument only: a version after a
+    command belongs to that command.
+    """
+    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-V"):
+        _print_version()
+        return
+    app()

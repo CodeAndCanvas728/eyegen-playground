@@ -1,0 +1,45 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the source
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          source=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$tag" != "$source" ]; then
+            echo "The tag is v$tag and the source says $source. A release that says the wrong version is worse than no release."
+            exit 1
+          fi
+          echo "$tag" > version.txt
+
+      - name: Build the source tarball
+        run: |
+          version=$(cat version.txt)
+          # Reproducible: the same source gives the same archive, so the
+          # checksum in the Homebrew formula does not change for no reason.
+          tar --sort=name \
+              --owner=0 --group=0 --numeric-owner \
+              --mtime="@$(git log -1 --format=%ct)" \
+              --exclude=./venv --exclude=./outputs --exclude=./models \
+              --exclude=./.git --exclude=./version.txt \
+              -czf "eyegen-${version}.tar.gz" .
+          sha256sum "eyegen-${version}.tar.gz" > "eyegen-${version}.tar.gz.sha256"
+          cat "eyegen-${version}.tar.gz.sha256"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            eyegen-*.tar.gz
+            eyegen-*.tar.gz.sha256
+          generate_release_notes: true

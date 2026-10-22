@@ -83,6 +83,32 @@ def _generate_image_ollama(
     )
 
 
+def _generate_image_sdcli(
+    pipeline,
+    prompt: str,
+    cfg_weight: float,
+    num_steps: int,
+    width: int,
+    height: int,
+    seed: Optional[int] = None,
+    negative_prompt: str = "",
+    image_path: Optional[str] = None,
+    denoise: float = 1.0,
+):
+    """Run the stable-diffusion.cpp CLI and return a PIL Image."""
+    return pipeline.generate_image(
+        prompt=prompt,
+        num_inference_steps=num_steps,
+        guidance_scale=cfg_weight,
+        width=width,
+        height=height,
+        seed=seed,
+        negative_prompt=negative_prompt,
+        image_path=image_path,
+        denoise=denoise,
+    )
+
+
 def _generate_image_mflux(
     model,
     prompt: str,
@@ -157,6 +183,20 @@ def generate_image(
 
     if backend == Backend.OLLAMA:
         return _generate_image_ollama(
+            pipeline,
+            prompt,
+            cfg_weight,
+            num_steps,
+            width,
+            height,
+            seed,
+            negative_prompt,
+            image_path,
+            denoise,
+        )
+
+    if backend == Backend.SDCLI:
+        return _generate_image_sdcli(
             pipeline,
             prompt,
             cfg_weight,

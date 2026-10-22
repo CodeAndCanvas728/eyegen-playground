@@ -245,3 +245,4 @@ class MainWindowUIMixin:
         self.backend_combo.addItem("OllamaDiffuser (GGUF)", Backend.OLLAMA)
         self.backend_combo.addItem("Bonsai (PrismML ternary 1.58-bit)", Backend.BONSAI)
         self.backend_combo.addItem("CoreML (Apple Neural Engine)", Backend.COREML)
+        self.backend_combo.addItem("stable-diffusion.cpp (FLUX.3)", Backend.SDCLI)

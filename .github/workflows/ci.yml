@@ -2,6 +2,9 @@ name: CI
 on:
   pull_request: { branches: [main] }
   push: { branches: [main] }
+  # So the run can be started by hand, from the Actions tab, when the
+  # runner was busy or the push was not processed.
+  workflow_dispatch:
 
 jobs:
   checks:
@@ -10,8 +13,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -r requirements.txt pre-commit ruff pytest
-      - run: pip install -e .
+      # The CPU wheel of torch, before anything else asks for torch. The
+      # default Linux wheel pulls the CUDA stack with it, and the runner
+      # has no GPU and no room for the libraries.
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      # mflux on Linux asks for the CUDA build of mlx, which brings the
+      # nvidia libraries with it: around five gigabytes for a machine that
+      # will never run a GPU. The tests that want mflux mock it, and the
+      # one that wants the real package skips where it is not there, so
+      # the runner does without it.
+      - name: Install the requirements without mflux
+        run: |
+          grep -v '^mflux' requirements.txt > /tmp/requirements-ci.txt
+          pip install -r /tmp/requirements-ci.txt pre-commit ruff==0.17.1 pytest
+          pip install -e .
       - run: |
           for f in generate.py gui.py core.py; do
             if [ -f "$f" ]; then
@@ -30,6 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # uv comes from pip rather than from its own action: the runner
+      # cannot fetch an action it has not seen before, and it has not
+      # seen that one.
+      - run: pip install uv
       - run: uv sync --all-extras
       - run: uv run python -m pytest --cov --cov-fail-under=0

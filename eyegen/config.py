@@ -8,6 +8,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from eyegen.config_recovery import backup_corrupted_config, handle_parse_error
+
 log = logging.getLogger(__name__)
 
 _config_warnings: list[str] = []
@@ -52,6 +54,7 @@ class Backend(str, Enum):
     MFLUX = "mflux"
     BONSAI = "bonsai"
     COREML = "coreml"
+    SDCLI = "sdcli"
 
 
 BACKEND_AUTO = Backend.AUTO
@@ -60,6 +63,7 @@ BACKEND_OLLAMA = Backend.OLLAMA
 BACKEND_MFLUX = Backend.MFLUX
 BACKEND_BONSAI = Backend.BONSAI
 BACKEND_COREML = Backend.COREML
+BACKEND_SDCLI = Backend.SDCLI
 
 
 @dataclass
@@ -235,36 +239,9 @@ class EyeGenConfig:
 DEFAULT_CONFIG = EyeGenConfig()
 
 
-def _backup_corrupted_config(exc: Exception) -> None:
-    backup_file = CONFIG_FILE.with_suffix(".json.bak")
-    msg = f"Corrupted config.json backed up to {backup_file} and reset to defaults."
-    _config_warnings.append(msg)
-    log.error(
-        "Invalid JSON in config.json: %s. Backing up to %s and resetting to defaults.",
-        exc,
-        backup_file,
-        exc_info=True,
-    )
-    try:
-        if CONFIG_FILE.exists():
-            CONFIG_FILE.replace(backup_file)
-        save_config(EyeGenConfig())
-    except (OSError, PermissionError, ValueError) as write_err:
-        log.error("Failed to write default config: %s", write_err)
-
-
-def _handle_parse_error(exc: Exception) -> None:
-    msg = "Config file had invalid values and was reset to defaults."
-    _config_warnings.append(msg)
-    log.error(
-        "Failed to parse config.json, resetting to defaults: %s",
-        exc,
-        exc_info=True,
-    )
-    try:
-        save_config(EyeGenConfig())
-    except (OSError, PermissionError, ValueError) as write_err:
-        log.error("Failed to write default config: %s", write_err)
+def _write_default_config() -> None:
+    """Write a fresh config, after the old one turned out to be unusable."""
+    save_config(EyeGenConfig())
 
 
 def load_config() -> EyeGenConfig:
@@ -276,12 +253,16 @@ def load_config() -> EyeGenConfig:
         with open(CONFIG_FILE, "r") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
-        _backup_corrupted_config(e)
+        backup_corrupted_config(e, CONFIG_FILE, _write_default_config, _config_warnings.append)
         return EyeGenConfig()
 
     if not isinstance(data, dict):
         log.warning("config.json root is not a dictionary. Resetting to defaults.")
-        _handle_parse_error(ValueError("Root is not a dictionary"))
+        handle_parse_error(
+            ValueError("Root is not a dictionary"),
+            _write_default_config,
+            _config_warnings.append,
+        )
         return EyeGenConfig()
 
     try:
@@ -295,7 +276,7 @@ def load_config() -> EyeGenConfig:
                 log.error("Failed to save migrated config: %s", save_err)
         return cfg
     except (ValueError, TypeError) as e:
-        _handle_parse_error(e)
+        handle_parse_error(e, _write_default_config, _config_warnings.append)
         return EyeGenConfig()
 
 

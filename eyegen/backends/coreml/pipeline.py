@@ -202,8 +202,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
             stderr = "".join(stderr_lines)
             log.error("coreml stderr: %s", stderr[-2000:])
             raise RuntimeError(
-                f"CoreML generation failed (exit {returncode}). "
-                f"Stderr: {stderr[-500:]}"
+                f"CoreML generation failed (exit {returncode}). Stderr: {stderr[-500:]}"
             )
         if not out_path.is_file():
             raise RuntimeError(f"CoreML pipeline did not produce expected output: {out_path}")

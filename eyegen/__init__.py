@@ -4,6 +4,7 @@ from eyegen._model_ops import (
     clear_mflux_cache,
     list_mflux_models,
     list_ollama_models,
+    pull_any_model,
     pull_model,
     save_mflux_model,
     validate_saved_model,
@@ -15,6 +16,7 @@ from eyegen.backends import (
     get_mflux_pipeline,
     get_ollama_pipeline,
     get_pipeline,
+    sdcli,
 )
 from eyegen.config import (
     CONFIG_DIR,
@@ -42,6 +44,7 @@ __all__ = [
     "Backend",
     "bonsai",
     "coreml",
+    "sdcli",
     "CONFIG_DIR",
     "CONFIG_FILE",
     "DEFAULT_CONFIG",
@@ -64,6 +67,7 @@ __all__ = [
     "list_mflux_models",
     "list_ollama_models",
     "load_config",
+    "pull_any_model",
     "pull_model",
     "save_config",
     "save_mflux_model",

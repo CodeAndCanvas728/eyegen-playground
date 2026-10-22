@@ -17,10 +17,16 @@ from eyegen import (
 
 def pull(
     model_name: str = typer.Argument(
-        ..., help="OllamaDiffuser model name (e.g. flux.1-dev-gguf-q4ks)"
+        ...,
+        help="Model name (e.g. flux.1-dev-gguf-q4ks, or flux-3-image-klein-gguf)",
     ),
 ):
-    """Download a GGUF model via OllamaDiffuser."""
+    """Download a model.
+
+    A GGUF model comes from OllamaDiffuser; a FLUX.3 model comes as three
+    files — the transformer, the text encoder and the VAE — and is fetched
+    from where each of them lives.
+    """
     typer.echo(f"📥 Pulling model: {model_name}")
 
     def on_progress(msg):
@@ -28,9 +34,9 @@ def pull(
             typer.echo(f"   {msg}")
 
     try:
-        from eyegen import pull_model
+        from eyegen import pull_any_model
 
-        ok = pull_model(model_name, progress_callback=on_progress)
+        ok = pull_any_model(model_name, progress_callback=on_progress)
         if ok:
             typer.echo(f"✅ Model '{model_name}' is ready")
         else:
@@ -88,6 +94,28 @@ def list_models():
             for m in sorted(not_installed):
                 typer.echo(f"  • {m}")
     typer.echo("\nPull a GGUF model:  ./generate.py pull <model-name>")
+
+    _print_sdcli_models()
+
+
+def _print_sdcli_models():
+    """List the stable-diffusion.cpp models and whether their files are here."""
+    typer.echo()
+    try:
+        from eyegen.backends.sdcli.models import list_sdcli_models
+
+        sdcli_models = list_sdcli_models()
+    except (OSError, ValueError, ImportError, AttributeError) as e:
+        typer.echo(f"❌ Failed to list stable-diffusion.cpp models: {e}", err=True)
+        return
+
+    typer.echo(f"🔷 stable-diffusion.cpp models ({len(sdcli_models)}):")
+    for m in sdcli_models:
+        mark = "✓" if m["installed"] else "•"
+        typer.echo(f"  {mark} {m['name']:24s} {m['description']}")
+        if not m["installed"]:
+            typer.echo(f"      fetch it:  ./generate.py pull {m['name']}")
+    typer.echo("  (Needs the sd-cli binary — see eyegen/backends/sdcli/__init__.py)")
 
 
 def save_model_cmd(

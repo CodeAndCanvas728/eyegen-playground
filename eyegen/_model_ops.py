@@ -38,6 +38,30 @@ def pull_model(
     return model_manager.pull_model(model_name, progress_callback=progress_callback)
 
 
+def pull_any_model(
+    model_name: str,
+    progress_callback=None,
+    hf_cache_dir: str | None = None,
+) -> bool:
+    """Download a model, whichever backend it belongs to.
+
+    A GGUF model is one file that OllamaDiffuser knows. A
+    stable-diffusion.cpp model is three files from three repositories,
+    and the one that downloads them is the only one that can.
+    """
+    from eyegen.backends.sdcli.constants import SDCLI_MODELS
+    from eyegen.backends.sdcli.models import pull_sdcli_model
+
+    if model_name in SDCLI_MODELS:
+        return pull_sdcli_model(model_name, progress_callback=progress_callback) is not None
+
+    return pull_model(
+        model_name,
+        progress_callback=progress_callback,
+        hf_cache_dir=hf_cache_dir,
+    )
+
+
 def list_ollama_models() -> dict:
     """Return dicts of available and installed ollamadiffuser models."""
     from ollamadiffuser.core.models.manager import model_manager  # type: ignore[import-untyped]
