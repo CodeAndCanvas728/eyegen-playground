@@ -27,18 +27,10 @@ jobs:
           grep -v '^mflux' requirements.txt > /tmp/requirements-ci.txt
           pip install -r /tmp/requirements-ci.txt pre-commit ruff==0.17.1 pytest
           pip install -e .
-      - run: |
-          for f in generate.py gui.py core.py; do
-            if [ -f "$f" ]; then
-              python -m py_compile "$f"
-            else
-              echo "Skipping missing file $f"
-            fi
-          done
-      - run: find eyegen -name '*.py' -print0 | xargs -0 python -m py_compile
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: pytest
+      # The repo gate is the one place the checks live; CI runs it, so the
+      # gate cannot drift away from what CI enforces.
+      - name: Run the repo gate
+        run: GATE_BIN="$(dirname "$(command -v python3)")" bash .claude/gate.sh
 
 # >>> esper-stack:python (ci) — add under `jobs:` in .github/workflows/ci.yml
   python:

@@ -8,7 +8,7 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-
+- `.claude/gate.sh`: a repo gate that runs the project's checks in check mode — ruff check, ruff format --check, a compile of every file CI compiles, the 300-line limit, and pytest — without writing bytecode or caches. CI runs the same script, so the two cannot drift apart. The gate names the missing tool and the command that installs it when it cannot run.
 - Dark/light theme system with macOS auto-detection and manual toggle in Settings
 - Top navigation bar with Home, History, and Settings tabs
 - History tab: thumbnail grid of previously generated images from the output directory
