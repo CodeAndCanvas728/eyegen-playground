@@ -1,7 +1,7 @@
 diffusionkit>=0.1.0
 mlx>=0.32.0
 mflux>=0.23.0
-ollamadiffuser>=0.1.0
+ollamadiffuser>=2.0.17
 # Pillow 13 removed PIL._typing, which mflux imports; the import fails
 # before anything else runs.
 Pillow>=10.0.0,<13.0.0

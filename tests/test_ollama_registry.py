@@ -96,3 +96,25 @@ def test_an_unknown_variant_downloads_every_gguf():
 
     patterns = GGUFModelLoader().get_gguf_download_patterns("gguf-my-gguf")
     assert "*.gguf" in patterns["allow_patterns"]
+
+
+def test_a_model_the_package_ships_is_ours_when_we_name_it():
+    """A name the package already has is replaced, not refused.
+
+    A user can take a name the package ships and make it theirs — their
+    repository, their quantisation — and what they wrote is what runs.
+    The name is one both 2.0.17 and 2.5.0 ship, in code in the first and
+    in the bundled models.yaml in the second, so this holds on either.
+    """
+    _require_ollamadiffuser()
+    from ollamadiffuser.core.config.model_registry import model_registry
+
+    theirs = model_registry.get_model("flux.1-dev-gguf-q2k")
+    assert theirs is not None
+    assert theirs["repo_id"] == "city96/FLUX.1-dev-gguf"
+
+    register(_gguf(name="flux.1-dev-gguf-q2k"))
+
+    entry = model_registry.get_model("flux.1-dev-gguf-q2k")
+    assert entry is not None
+    assert entry["repo_id"] == "owner/repo"

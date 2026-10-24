@@ -65,7 +65,7 @@ The backends and what is out there:
   ↑ diffusionkit     0.5.1        wants ≥0.1.0      newest 0.5.2
   ✓ mlx              0.32.4       wants ≥0.32.0     newest 0.32.4
   ✓ mflux            0.23.0       wants ≥0.23.0     newest 0.23.0
-  ↑ ollamadiffuser   2.0.17       wants ≥0.1.0      newest 2.5.0
+  ✓ ollamadiffuser   2.5.0        wants ≥2.0.17     newest 2.5.0
   ✓ Pillow           12.3.0       wants ≥10.0.0     newest 13.0.0
 ```
 
@@ -338,6 +338,8 @@ MFLUX models download from HuggingFace automatically on first use. No pull step 
 ## GGUF Models (OllamaDiffuser)
 
 GGUF is a quantized model format that dramatically reduces VRAM requirements. OllamaDiffuser provides access to 40+ diffusion models in GGUF format — models that aren't available through MLX/diffusionkit.
+
+The tool works with OllamaDiffuser 2.0.17 and later, and is developed and tested against 2.5.0. `./generate.py update-backends` compares what you have with what is out there.
 
 ### Why GGUF?
 

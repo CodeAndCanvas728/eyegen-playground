@@ -67,6 +67,8 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **One resolver, both faces:** `resolve_model` is what the CLI and the GUI both ask, so they cannot answer the same question two ways.
 - `alias` and `path` in a specification mean something now: an alias becomes the model a fixed-set backend knows, a path becomes the local model it reads.
 - The README is up to date with the tool: the real package layout, the whole command list, the auto-detection order, and the families MFLUX 0.23 knows.
+- **OllamaDiffuser 2.5.0 works as it is:** every symbol the GGUF path uses — the file the environment variable points at, `model_registry.reload()`, `model_manager.pull_model` / `load_model` / `loaded_model`, `GGUFModelLoader.generate_image` — is where it was in 2.0.17, and the loader's `generate_image` is byte for byte the same. What moved is the package's own model list, from code to a bundled `models.yaml`, and the engine's `strength` default, now `None` where it was 0.75: an editor used to be handed 0.75 whether or not the caller asked, and on FLUX.2 klein, which denoises in four steps, that leaves one step and the model returns confetti. The tool always passes its own strength, so nothing changes for it.
+- The floor `update-backends` prints was `>=0.1.0`, a version neither this tool nor its tests have ever seen; it is `>=2.0.17` now, the oldest the registry contract is known to hold on, and a test pins the half nothing covered: a name the package ships becomes the user's when they write it.
 - The tests that pin the contract with OllamaDiffuser fail where the package is required, rather than skipping: a green run that verified nothing is worse than a red one.
 
 ### Fixed
