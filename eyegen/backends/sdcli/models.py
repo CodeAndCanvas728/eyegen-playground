@@ -10,7 +10,7 @@ from eyegen.model_catalogue import load_catalogue
 from eyegen.model_specs import ModelSpec
 
 from .constants import SDCLI_MODELS
-from .install import get_sdcli_model_dir
+from .install import get_sdcli_model_dir, source_is_here
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,9 @@ def list_sdcli_models() -> list[dict]:
     for name, spec in sdcli_specs().items():
         model_dir = get_sdcli_model_dir(name)
         wanted = [source.name for source in spec.sources.values()]
-        present = [f for f in wanted if (model_dir / f).is_file()]
+        present = [
+            source.name for source in spec.sources.values() if source_is_here(source, model_dir)
+        ]
         out.append(
             {
                 "name": name,
@@ -76,6 +78,13 @@ def pull_sdcli_model(
         return None
 
     target = model_dir or get_sdcli_model_dir(model)
+    if spec.is_local:
+        # Every file is already on this machine: there is nothing to fetch,
+        # and no directory of its own to make for them.
+        log.info("The model %s has no files to download", model)
+        if progress_callback:
+            progress_callback("✅ Every file of the model is already here")
+        return target
     target.mkdir(parents=True, exist_ok=True)
     return _download_sources(spec, target, progress_callback)
 
@@ -99,6 +108,10 @@ def _download_sources(
             progress_callback(msg)
 
     for source in spec.sources.values():
+        if source.is_local:
+            # The file is already on this machine; it is used where it is.
+            _cb(f"✅ {source.name} is already here ({source.path})")
+            continue
         destination = target / source.name
         if destination.is_file():
             _cb(f"✅ {source.name} is already here")

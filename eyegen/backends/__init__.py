@@ -4,191 +4,28 @@ import logging
 import os
 from typing import Optional
 
-from eyegen._mflux import _format_mflux_model_error, _get_mflux_aliases, _resolve_mflux_class
+from eyegen._mflux import _format_mflux_model_error, _resolve_mflux_class
 from eyegen._mlx import _get_mlx_supported_models, _patch_mlx_attention
 from eyegen.config import DEFAULT_CONFIG, HF_CACHE_DIR, Backend, EyeGenConfig
-from eyegen.errors import ModelBackendConflict, UnsupportedModelError
-from eyegen.model_catalogue import find_spec
-from eyegen.model_specs import ModelSpec, ResolvedModel
+from eyegen.model_specs import ModelSpec
+
+from .detection import (
+    _format_unsupported_error,
+    detect_backend,
+    resolve_model,
+    resolve_spec,
+)
+
+__all__ = [
+    "detect_backend",
+    "get_mflux_pipeline",
+    "get_ollama_pipeline",
+    "get_pipeline",
+    "resolve_model",
+    "resolve_spec",
+]
 
 log = logging.getLogger(__name__)
-
-
-def _is_sdcli_model(model: str) -> bool:
-    """Return True if *model* is one the stable-diffusion.cpp backend runs.
-
-    The catalogue decides, not a pattern: MFLUX knows a model called
-    "black-forest-labs/flux-3-image-klein", and that is a different route
-    to a different build of the same weights.
-    """
-    from eyegen.backends.sdcli.constants import SDCLI_MODELS
-
-    return model in SDCLI_MODELS
-
-
-def _is_bonsai_model(model: str) -> bool:
-    """Return True if *model* looks like a bonsai (PrismML) identifier."""
-    m = model.lower()
-    return (
-        m.startswith("bonsai-")
-        or m.startswith("bonsai-image-4b-")
-        or m.startswith("prism-ml/bonsai-")
-        or "bonsai-image-4b" in m
-    )
-
-
-def _is_coreml_model(model: str, config: Optional[EyeGenConfig] = None) -> bool:
-    """Return True if *model* is a CoreML bundle or a known pre-converted HF id."""
-    if config and config.coreml_model_path:
-        return True
-    m = model.lower()
-    if m in {
-        "sd-1-4",
-        "sd-1-5",
-        "sd-1-5-palettized",
-        "sd-2-base",
-        "sd-2-1-base",
-        "sd-2-1-base-palettized",
-        "sdxl-base",
-        "sdxl-ios",
-    }:
-        return True
-    if m.startswith("apple/coreml-stable-diffusion") or m.startswith(
-        "apple-coreml-stable-diffusion"
-    ):
-        return True
-    return False
-
-
-def _format_unsupported_error(model: str, attempted_backend: str) -> str:
-    """Build a clear 'model not supported' message listing what *is* supported."""
-    mlx_keys = _get_mlx_supported_models() or set()
-    mflux_aliases = _get_mflux_aliases() - {""}
-    parts = [f"Model '{model}' is not supported by the {attempted_backend} backend."]
-    if mlx_keys:
-        mlx_list = ", ".join(sorted(mlx_keys))
-        parts.append(f"MLX (diffusionkit) supports: {mlx_list}.")
-    if mflux_aliases:
-        aliases_list = ", ".join(sorted(mflux_aliases))
-        parts.append(f"MFLUX supports (use --backend mflux): {aliases_list}.")
-    parts.append(
-        "For OllamaDiffuser (GGUF) models, pull one with `./generate.py pull <name>` first."
-    )
-    parts.append(
-        "For Bonsai (PrismML), use a model name starting with 'bonsai-' "
-        "(e.g. bonsai-ternary-mlx) after running ./scripts/setup-bonsai.sh."
-    )
-    parts.append(
-        "For CoreML, use a known alias (sd-1-4, sd-1-5, sd-2-1-base, "
-        "sd-2-1-base-palettized) or a full HuggingFace repo id under "
-        "'apple/coreml-stable-diffusion-*' after running ./scripts/setup-coreml.sh."
-    )
-    parts.append(
-        "For stable-diffusion.cpp, use 'flux-3-image-klein-gguf' "
-        "after fetching it with ./generate.py pull flux-3-image-klein-gguf."
-    )
-    parts.append(
-        "To run a model the tool does not know, add it to models.json next to "
-        "your config, or fetch one with ./generate.py pull --from-hf <repo>."
-    )
-    return " ".join(parts)
-
-
-def detect_backend(
-    model: str,
-    override: Backend = Backend.AUTO,
-    config: Optional[EyeGenConfig] = None,
-) -> Backend:
-    """Resolve which backend to use.
-
-    If *override* is ``Backend.AUTO`` (priority order):
-      0. A model in the user's own catalogue → that model's backend
-      1. A model in the stable-diffusion.cpp catalogue → SDCLI
-      2. ``"gguf"`` in model name → OLLAMA  (substr match first — bonsai/hf "gguf" can't hijack)
-      3. Bonsai/PrismML identifier pattern → BONSAI
-      4. CoreML bundle / pre-converted HF id / coreml_model_path set → COREML
-      5. Known MFLUX alias → MFLUX
-      6. diffusionkit MMDIT_CKPT entry → MLX
-      7. otherwise → UnsupportedModelError
-    """
-    if isinstance(override, str):
-        override = Backend(override)
-    if override != Backend.AUTO:
-        return override
-    return _detect_backend(model, config, find_spec(model))
-
-
-def _detect_backend(
-    model: str,
-    config: Optional[EyeGenConfig],
-    spec: Optional[ModelSpec],
-) -> Backend:
-    """The backend for *model*, given the specification already looked up.
-
-    The catalogue is read once by the caller and handed in, so that a
-    resolution reads the file once rather than once per step.
-    """
-    # (0) The user's own catalogue — a model the user described runs the way
-    # they described it, whatever its name looks like.
-    if spec is not None:
-        return spec.backend
-    # (1) The stable-diffusion.cpp catalogue — an explicit list beats a pattern
-    if _is_sdcli_model(model):
-        return Backend.SDCLI
-    # (2) GGUF check — substring match so it must run before other patterns
-    if "gguf" in model.lower():
-        return Backend.OLLAMA
-    # (3) Bonsai — model names start with "bonsai-" or "prism-"
-    if _is_bonsai_model(model):
-        return Backend.BONSAI
-    # (4) CoreML — known aliases or coreml_model_path set in config
-    if _is_coreml_model(model, config=config):
-        return Backend.COREML
-    # (5) MFLUX — check live aliases from package, fall back to static set
-    if model in _get_mflux_aliases():
-        return Backend.MFLUX
-    # (6) MLX/diffusionkit — registered MMDIT_CKPT keys
-    mlx_keys = _get_mlx_supported_models()
-    if mlx_keys is not None and model in mlx_keys:
-        return Backend.MLX
-    raise UnsupportedModelError(_format_unsupported_error(model, "auto-detected"))
-
-
-def resolve_model(
-    model: str,
-    override: Backend = Backend.AUTO,
-    config: Optional[EyeGenConfig] = None,
-) -> ResolvedModel:
-    """The backend that runs *model*, and the specification behind it.
-
-    A model the user described in their own catalogue carries its
-    specification; a model from a catalogue that ships with the tool carries
-    that catalogue's entry, when there is one; a model that is only a name
-    carries nothing, and the backend knows it by name alone.
-    """
-    if isinstance(override, str):
-        override = Backend(override)
-    spec = find_spec(model)
-    if override != Backend.AUTO:
-        if spec is not None and spec.backend != override:
-            raise ModelBackendConflict(
-                f"The model '{model}' is a {spec.backend.value} model; "
-                f"--backend {override.value} cannot run it. "
-                f"Drop --backend, or use --backend {spec.backend.value}."
-            )
-        return ResolvedModel(model, override, spec)
-    backend = _detect_backend(model, config, spec)
-    return ResolvedModel(model, backend, spec or _built_in_spec(model, backend))
-
-
-def _built_in_spec(model: str, backend: Backend) -> Optional[ModelSpec]:
-    """The specification a catalogue that ships with the tool holds for *model*."""
-    if backend != Backend.SDCLI:
-        return None
-    from eyegen.backends.sdcli.constants import SDCLI_MODELS
-
-    data = SDCLI_MODELS.get(model)
-    return ModelSpec.from_dict(model, data) if data else None
 
 
 def _apply_hf_cache(config: EyeGenConfig):
@@ -226,15 +63,31 @@ def get_pipeline(config: EyeGenConfig, use_t5: bool = True):
     )
 
 
-def get_ollama_pipeline(config: EyeGenConfig):
-    """Load an ollamadiffuser model and return the engine."""
+def get_ollama_pipeline(
+    config: EyeGenConfig,
+    name: Optional[str] = None,
+    spec: Optional[ModelSpec] = None,
+):
+    """Load an ollamadiffuser model and return the engine.
+
+    A model that is already on this machine is registered with the package
+    first: the package keeps its models in a directory of its own, so the
+    file is linked into the directory it expects and the package's own
+    settings are told about it.
+    """
     _apply_hf_cache(config)
     from eyegen._model_ops import apply_ollama_registry
 
     apply_ollama_registry()
+
+    model_name = name or config.model or ""
+    if spec is not None and spec.backend == Backend.OLLAMA:
+        from eyegen.ollama_registry import register_local_gguf
+
+        model_name = register_local_gguf(spec, model_name)
+
     from ollamadiffuser.core.models.manager import model_manager
 
-    model_name = config.model or ""
     if not model_manager.is_model_installed(model_name):
         raise RuntimeError(
             f"GGUF model '{model_name}' is not installed. "

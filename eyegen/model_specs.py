@@ -14,79 +14,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Mapping, Optional
 
 from eyegen.config import Backend, EyeGenConfig
+from eyegen.model_sources import ModelSource
 from eyegen.validation import validate_model_name
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class ModelSource:
-    """One file of a model: where it comes from, and what it is called here.
-
-    ``name`` is the file name on this side of the download. It defaults to the
-    name in the repository, which is what most models want, but a model whose
-    files are named differently downstream can say so. It is a file name and
-    nothing else: a name with a path in it would write outside the directory
-    the model belongs to.
-    """
-
-    repo: str
-    file: str
-    name: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.name:
-            object.__setattr__(self, "name", Path(self.file).name)
-        _check_file_name(self.name)
-
-    @classmethod
-    def from_dict(cls, data: Mapping) -> "ModelSource":
-        """Build a source from its JSON form."""
-        if not isinstance(data, Mapping):
-            raise ValueError(f"a model source must be an object, got {type(data).__name__}")
-        repo = data.get("repo")
-        file = data.get("file")
-        if not repo or not isinstance(repo, str):
-            raise ValueError("a model source needs a 'repo' (owner/name)")
-        if not file or not isinstance(file, str):
-            raise ValueError(f"a model source in '{repo}' needs a 'file'")
-        name = data.get("name") or ""
-        if not isinstance(name, str):
-            raise ValueError(f"the 'name' of {repo}/{file} must be a string")
-        return cls(repo=repo, file=file, name=name)
-
-    def to_dict(self) -> dict:
-        """Return the JSON form of this source."""
-        data = {"repo": self.repo, "file": self.file}
-        if self.name != Path(self.file).name:
-            data["name"] = self.name
-        return data
-
-
-def _check_file_name(name: str) -> None:
-    """Refuse a name that is not a plain file name.
-
-    The name becomes a path under the model's own directory. A name with a
-    directory in it would put the file somewhere else, and a name that
-    starts with a dash would be read as an option.
-    """
-    if not name:
-        raise ValueError("a model file needs a name")
-    if name in (".", ".."):
-        raise ValueError(f"'{name}' is not a file name")
-    if "/" in name or "\\" in name:
-        raise ValueError(
-            f"'{name}' must be a file name, not a path: the file is written into "
-            "the model's own directory"
-        )
-    if name.startswith("-"):
-        raise ValueError(f"'{name}' must not start with a dash")
-    if "\0" in name:
-        raise ValueError("a file name cannot hold a null character")
 
 
 @dataclass(frozen=True)
@@ -131,6 +65,16 @@ class ModelSpec:
         tool — is checked the same way.
         """
         validate_model_name(self.name)
+
+    @property
+    def is_local(self) -> bool:
+        """Whether every file of the model is already on this machine.
+
+        A model whose files are all local has no directory of its own: the
+        files are used where they are, so there is nowhere to look for them
+        and nothing to fetch.
+        """
+        return bool(self.sources) and all(source.is_local for source in self.sources.values())
 
     @classmethod
     def from_dict(cls, name: str, data: Mapping) -> "ModelSpec":
@@ -193,11 +137,16 @@ class ResolvedModel:
     The specification is ``None`` for a model that is only a name: the
     backend knows it by name alone, from a catalogue that ships with the
     tool or from the package it uses.
+
+    ``notes`` says what was decided about a model that was resolved from
+    what is on this machine: which file is the transformer, where the model
+    was linked into the package's own directory.
     """
 
     name: str
     backend: Backend
     spec: Optional[ModelSpec] = None
+    notes: tuple[str, ...] = ()
 
 
 def _optional_int(value, name: str, key: str) -> Optional[int]:

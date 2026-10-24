@@ -10,7 +10,8 @@ import re
 
 import pytest
 
-from eyegen.backends import _format_unsupported_error, detect_backend
+from eyegen.backends import detect_backend
+from eyegen.backends.detection import _format_unsupported_error
 from eyegen.backends.sdcli.constants import SDCLI_MODELS
 from eyegen.cli.pull import pull
 from eyegen.config import Backend

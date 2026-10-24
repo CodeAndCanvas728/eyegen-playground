@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import pathlib
 import re
@@ -16,6 +17,7 @@ from eyegen.config import EyeGenConfig
 from eyegen.model_specs import ModelSpec
 
 from .constants import VALID_COMPUTE_UNITS
+from .conversion import converted_if_needed
 from .install import (
     _sidecar_python,
     get_coreml_model_dir,
@@ -31,17 +33,15 @@ class CoreMLWrapper(BaseSubprocessRunner):
     def __init__(self, config: EyeGenConfig, spec: Optional[ModelSpec] = None):
         super().__init__(config)
         self.spec = spec
-        self.model_path = self._resolve_model_path(config)
-        self.model_version = self._resolve_model_version(config)
         self.compute_unit = self._resolve_compute_unit(config)
+        self.model_path = converted_if_needed(self._resolve_model_path(config), self.compute_unit)
+        self.model_version = self._resolve_model_version(config)
         self._validate()
 
     def _resolve_model_version(self, config: EyeGenConfig) -> str:
         meta_path = self.model_path / "model_index.json"
         if meta_path.is_file():
             try:
-                import json
-
                 meta = json.loads(meta_path.read_text())
                 if "model_version" in meta:
                     return meta["model_version"]

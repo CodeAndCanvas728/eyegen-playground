@@ -19,6 +19,7 @@ from eyegen.ollama_registry import (
     entry_for,
     read_entries,
     register,
+    register_local_gguf,
     registry_path,
     write_entries,
 )
@@ -98,6 +99,68 @@ def test_an_unknown_variant_downloads_every_gguf():
     assert "*.gguf" in patterns["allow_patterns"]
 
 
+def _package_in_a_temporary_directory(monkeypatch, tmp_path):
+    """The package's own configuration, somewhere that is not the user's."""
+    _require_ollamadiffuser()
+    from ollamadiffuser.core.config.settings import settings
+
+    monkeypatch.setattr(settings, "config_dir", tmp_path)
+    monkeypatch.setattr(settings, "models_dir", tmp_path / "models")
+    monkeypatch.setattr(settings, "config_file", tmp_path / "config.json")
+    (tmp_path / "models").mkdir()
+    return settings
+
+
+def test_a_local_gguf_is_linked_into_the_package_directory(tmp_path, monkeypatch):
+    """The package looks for a model in a directory of its own."""
+    settings = _package_in_a_temporary_directory(monkeypatch, tmp_path)
+    gguf = tmp_path / "flux1-dev-Q4_K_M.gguf"
+    gguf.write_bytes(b"x")
+    spec = ModelSpec(
+        name="flux1-dev-Q4_K_M",
+        backend=Backend.OLLAMA,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+
+    name = register_local_gguf(spec, spec.name)
+
+    directory = settings.get_model_path(name)
+    link = directory / gguf.name
+    assert link.is_symlink()
+    assert link.resolve() == gguf.resolve()
+    assert settings.models[name].path == str(directory)
+
+
+def test_registering_a_local_gguf_twice_changes_nothing(tmp_path, monkeypatch):
+    """The model stays installed for the runs after this one."""
+    settings = _package_in_a_temporary_directory(monkeypatch, tmp_path)
+    gguf = tmp_path / "flux1-dev-Q4_K_M.gguf"
+    gguf.write_bytes(b"x")
+    spec = ModelSpec(
+        name="flux1-dev-Q4_K_M",
+        backend=Backend.OLLAMA,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+
+    register_local_gguf(spec, spec.name)
+    register_local_gguf(spec, spec.name)
+
+    assert settings.models["flux1-dev-Q4_K_M"].path == str(
+        settings.get_model_path("flux1-dev-Q4_K_M")
+    )
+
+
+def test_a_model_that_is_not_local_is_left_alone():
+    """A model in a repository is fetched; there is nothing to link."""
+    spec = ModelSpec(
+        name="my-gguf",
+        backend=Backend.OLLAMA,
+        sources={"diffusion_model": ModelSource(repo="owner/repo", file="model.gguf")},
+    )
+
+    assert register_local_gguf(spec, "my-gguf") == "my-gguf"
+
+
 def test_a_model_the_package_ships_is_ours_when_we_name_it():
     """A name the package already has is replaced, not refused.
 
@@ -118,3 +181,69 @@ def test_a_model_the_package_ships_is_ours_when_we_name_it():
     entry = model_registry.get_model("flux.1-dev-gguf-q2k")
     assert entry is not None
     assert entry["repo_id"] == "owner/repo"
+
+
+def test_a_local_model_whose_name_the_registry_knows_gets_a_suffix(tmp_path):
+    """A repository model is what a name fetches; the local one stays reachable."""
+    from eyegen.backends import resolve_model
+
+    gguf = tmp_path / "flux-1-dev.gguf"
+    gguf.write_bytes(b"x")
+    register(_gguf(name="flux-1-dev"))
+
+    resolved = resolve_model(str(gguf))
+
+    assert resolved.name == "flux-1-dev-2"
+    assert resolved.spec is not None
+    assert resolved.spec.name == "flux-1-dev-2"
+    assert any("already taken" in note for note in resolved.notes)
+
+
+def test_the_suffix_is_stable_when_the_local_model_is_registered(tmp_path):
+    """Our own entry has no repository, so it does not collide with itself."""
+    from eyegen.backends import resolve_model
+
+    gguf = tmp_path / "flux-1-dev.gguf"
+    gguf.write_bytes(b"x")
+    register(_gguf(name="flux-1-dev"))
+    first = resolve_model(str(gguf)).name
+
+    write_entries(
+        {
+            "flux-1-dev": entry_for(_gguf(name="flux-1-dev")),
+            "flux-1-dev-2": {
+                "repo_id": "",
+                "model_type": "flux",
+                "variant": "gguf-flux-1-dev-2",
+            },
+        }
+    )
+
+    assert first == "flux-1-dev-2"
+    assert resolve_model(str(gguf)).name == "flux-1-dev-2"
+
+
+def test_a_local_model_does_not_take_a_catalogue_name(tmp_path):
+    """A catalogue is asked first, so the local model gets its own name."""
+    from eyegen.backends import resolve_model
+    from eyegen.model_catalogue import upsert_spec
+
+    upsert_spec(ModelSpec(name="klein", backend=Backend.SDCLI))
+    directory = tmp_path / "klein"
+    directory.mkdir()
+    (directory / "transformer.gguf").write_bytes(b"x")
+    (directory / "ae.safetensors").write_bytes(b"x")
+
+    assert resolve_model(str(directory)).name == "klein-2"
+
+
+def test_a_local_model_does_not_take_a_built_in_name(tmp_path):
+    """The names the tool ships with are names a catalogue answers too."""
+    from eyegen.backends import resolve_model
+
+    directory = tmp_path / "flux-3-image-klein-gguf"
+    directory.mkdir()
+    (directory / "transformer.gguf").write_bytes(b"x")
+    (directory / "ae.safetensors").write_bytes(b"x")
+
+    assert resolve_model(str(directory)).name == "flux-3-image-klein-gguf-2"

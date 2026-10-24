@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from eyegen.model_sources import ModelSource
 from eyegen.model_specs import ModelSpec
 from eyegen.paths import sdcli_model_dir
 from eyegen.validation import validate_model_name
@@ -27,7 +28,7 @@ class SdCliInstallStatus:
 
     installed: bool
     binary: Optional[Path]
-    model_dir: Path
+    model_dir: Optional[Path]
     missing_files: list[str]
     message: str
 
@@ -76,20 +77,40 @@ def get_sdcli_timeout() -> float:
     return float(DEFAULT_SDCLI_TIMEOUT)
 
 
+def source_is_here(source: ModelSource, model_dir: Optional[Path]) -> bool:
+    """Whether *source*'s file is where the backend uses it from.
+
+    A file that is already on this machine is used where it is; a file that
+    is downloaded is used from the model's own directory. One rule answers
+    both "what is missing" and "is it installed", so the two cannot say
+    different things about the same file.
+    """
+    if source.is_local:
+        return Path(source.path).expanduser().is_file()
+    return model_dir is not None and (model_dir / source.name).is_file()
+
+
 def missing_model_files(
     model: str,
-    model_dir: Path,
+    model_dir: Optional[Path],
     spec: Optional[ModelSpec] = None,
 ) -> list[str]:
-    """The files of *model* that are not in *model_dir*."""
+    """The files of *model* that are not where they should be."""
     if spec is None:
         from .models import sdcli_specs
 
         spec = sdcli_specs().get(model)
     if spec is None:
         return []
-    wanted = [source.name for source in spec.sources.values()]
-    return [name for name in wanted if not (model_dir / name).is_file()]
+    missing = []
+    for source in spec.sources.values():
+        if source_is_here(source, model_dir):
+            continue
+        if source.is_local:
+            missing.append(str(Path(source.path).expanduser()))
+        else:
+            missing.append(source.name)
+    return missing
 
 
 def validate_sdcli_install(
@@ -100,7 +121,9 @@ def validate_sdcli_install(
 ) -> SdCliInstallStatus:
     """Check that the binary and the model files are in place."""
     binary = get_sdcli_bin()
-    directory = model_dir or get_sdcli_model_dir(model, config)
+    directory = model_dir
+    if directory is None and not (spec is not None and spec.is_local):
+        directory = get_sdcli_model_dir(model, config)
     missing = missing_model_files(model, directory, spec=spec)
 
     if binary is None:
@@ -117,13 +140,14 @@ def validate_sdcli_install(
         )
 
     if missing:
+        where = str(directory) if directory is not None else "the model"
         return SdCliInstallStatus(
             installed=False,
             binary=binary,
             model_dir=directory,
             missing_files=missing,
             message=(
-                f"Missing model files in {directory}: {', '.join(missing)}. "
+                f"Missing model files in {where}: {', '.join(missing)}. "
                 f"Fetch them with: ./generate.py pull {model}"
             ),
         )

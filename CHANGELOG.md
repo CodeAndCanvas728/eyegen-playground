@@ -5,9 +5,12 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-24
 
 ### Added
+- **A model that is already on this machine can be run by its path.** `./generate.py generate "a fox" --model ~/models/flux1-dev-Q4_K_M.gguf` — what a thing on disk is comes from what is there, not from how it is named: a GGUF file is OllamaDiffuser's own format, a directory laid out the way that package lays one out is a model for it, a directory of weights is a stable-diffusion.cpp model, and a bundle or a diffusers snapshot is CoreML's. The roles of a set of weights are read off the names — the binary takes a path per role, and nothing else says which file is the transformer — and what was decided is printed, so a role the user meant differently is one line of a specification away. A name a catalogue already answers to is suffixed (`klein-2`), so neither model is lost, and a diffusers snapshot is converted to CoreML on its first run; the conversion is kept and reused.
+- **A specification can name a file that is on this machine.** A source is either a file in a repository or a path; the stable-diffusion.cpp backend passes a local file where it is, and fetches nothing when every file of the model is already here.
+- **`list-models` shows what is on this machine:** the models under the models root, including the ones no catalogue describes — and it still lists them when `models.json` cannot be read, because a broken catalogue is one section's problem, not the listing's.
 - `.claude/gate.sh`: a repo gate that runs the project's checks in check mode — ruff check, ruff format --check, a compile of every file CI compiles, the 300-line limit, and pytest — without writing bytecode or caches. CI runs the same script, so the two cannot drift apart. The gate names the missing tool and the command that installs it when it cannot run.
 - Dark/light theme system with macOS auto-detection and manual toggle in Settings
 - Top navigation bar with Home, History, and Settings tabs
@@ -27,6 +30,9 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - Backend hint label now appears on the Home page controls panel
 - All QSS rewritten as parameterized theme function for consistent dark/light tokens
 - Updated pyproject.toml version from 0.1.2 to 0.2.0
+- QSS rewritten with base-8 padding, `min-heights`, semantic classes, and focus states
+- **The detection order did not move.** A path is a different question — what a thing on disk is — and not a new rung in the chain of DD-010; a name still resolves exactly as before, and a test pins it.
+- The listing no longer stops when the OllamaDiffuser package is missing: what is on this machine does not depend on a package that is not installed.
 
 ### Fixed
 
@@ -43,10 +49,15 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Focus states:** added visible focus indicators to buttons, combos, checkboxes via border-color change (no layout shift)
 - **Stop button:** added themed `[class="stop"]` QSS rule replacing hardcoded `#cc3333` inline style
 - **MFLUX ran its newer models through the wrong class.** The name-to-class table in `eyegen/_mflux` was written for the families mflux shipped then, and every family added since fell through to `Flux1` — which loads and renders noise, so nothing said it was wrong. mflux's own mapping (`ConfigResolution.resolve_key` → `MODEL_CLASSES`) is asked first now, and the table answers only where it has none: a name its rules cannot place, a key it ships no class for, or the package absent.
+- **The transformer of a set of weights is never also an encoder.** A set of two GGUFs whose largest file was named as the text encoder used to give that same file both roles; the transformer is now the largest GGUF no role has claimed.
+- **A local model is offered by its path in the GUI.** A name had to be resolved back to the directory it came from, and a catalogue could answer to it first; the path says which model is meant. The same model is no longer listed twice, and a local stable-diffusion.cpp model whose files are where they are is reported installed rather than "fetch it".
+- **A relative path is made absolute** before it reaches a runtime or becomes a symlink: a relative path means a different file to each of them.
+- **A diffusers snapshot no longer reaches the CoreML subprocess unconverted.** The first run converts it under the CoreML root and reuses that conversion; only a conversion that cannot run (no sidecar, or Apple's converter failing) stops it, with the command that runs the conversion by hand.
 
-### Changed
+### Gotchas
 
-- QSS rewritten with base-8 padding, `min-heights`, semantic classes, and focus states
+- **The tool writes the OllamaDiffuser package's own configuration** (`~/.ollamadiffuser/config.json`) when a GGUF file is registered with it. The package keeps its models in a directory of its own and reads the family off the name of that directory, so the file is *linked* into the directory it expects — the file stays where it is and nothing is copied — and the package is told about the model, so it stays installed for the runs after this one.
+- The MLX backend cannot run a local model: its checkpoints are a table inside diffusionkit, and the architecture of each is code there. A diffusers model on disk is CoreML's: the first run converts it (15–20 minutes) and later runs reuse the conversion.
 
 ## [0.3.0] - 2026-10-23
 

@@ -1,5 +1,6 @@
 """Tests for the stable-diffusion.cpp backend."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,7 @@ from eyegen.backends.sdcli.install import (
 )
 from eyegen.backends.sdcli.pipeline import SdCliWrapper, resolve_settings
 from eyegen.config import Backend
+from eyegen.model_specs import ModelSource, ModelSpec
 
 MODEL_FILES = (
     "flux-3-image-klein-UD-Q4_K_XL.gguf",
@@ -183,3 +185,65 @@ def test_the_command_carries_the_three_model_files(model_dir, binary):
     for name in MODEL_FILES:
         assert name in joined
     assert "--offload-to-cpu" in command
+
+
+def _local_spec(directory: Path) -> ModelSpec:
+    """A model whose files are already on this machine."""
+    return ModelSpec(
+        name="local-model",
+        backend=Backend.SDCLI,
+        sources={
+            "diffusion_model": ModelSource(
+                path=str(directory / "transformer.gguf"),
+            ),
+            "vae": ModelSource(path=str(directory / "ae.safetensors")),
+        },
+    )
+
+
+def test_a_local_file_is_used_where_it_is(tmp_path, binary):
+    """The file is passed to the binary as it is, not from a model directory."""
+    from eyegen.config import EyeGenConfig
+
+    directory = tmp_path / "elsewhere"
+    directory.mkdir()
+    (directory / "transformer.gguf").write_bytes(b"x")
+    (directory / "ae.safetensors").write_bytes(b"x")
+    spec = _local_spec(directory)
+
+    wrapper = SdCliWrapper(EyeGenConfig(), "local-model", spec=spec)
+    command = wrapper._build_command("a prompt", tmp_path / "out.png", 16, 1.0, 512, 512, 7, None)
+    joined = " ".join(command)
+
+    assert str(directory / "transformer.gguf") in joined
+    assert str(directory / "ae.safetensors") in joined
+
+
+def test_a_local_file_that_is_not_there_is_reported(tmp_path):
+    """The file is looked for where it is."""
+    spec = _local_spec(tmp_path)
+    missing = missing_model_files("local-model", None, spec=spec)
+
+    assert missing == [
+        str(tmp_path / "transformer.gguf"),
+        str(tmp_path / "ae.safetensors"),
+    ]
+
+
+def test_a_local_model_is_not_pulled(tmp_path, monkeypatch):
+    """Nothing is downloaded when the files are already here."""
+    pytest.importorskip("huggingface_hub")
+    from eyegen.backends.sdcli.models import pull_sdcli_model
+
+    directory = tmp_path / "elsewhere"
+    directory.mkdir()
+    (directory / "transformer.gguf").write_bytes(b"x")
+    spec = _local_spec(directory)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("a local file must not be downloaded")
+
+    with patch("huggingface_hub.hf_hub_download", side_effect=fail):
+        pull_sdcli_model("local-model", spec=spec)
+
+    assert not (tmp_path / "local-model").exists()

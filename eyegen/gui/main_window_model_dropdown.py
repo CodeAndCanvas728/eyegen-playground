@@ -102,13 +102,47 @@ class MainWindowModelDropdownMixin:
         ]
 
     def _get_auto_models(self):
-        """Every model the tool can see, whatever backend runs it."""
-        return (
-            self._get_own_models()
+        """Every model the tool can see, whatever backend runs it.
+
+        A model on this machine is offered by path, and a catalogue often
+        knows the same model by name. The local entry comes first and owns
+        the display name, so the same model is not listed twice; nothing is
+        lost, because the catalogue entry is still reachable by name.
+        """
+        models = (
+            self._get_local_models()
+            + self._get_own_models()
             + self._get_sdcli_models()
             + self._get_coreml_models()
             + self._get_saved_mflux_models()
         )
+        seen = set()
+        unique = []
+        for display, value in models:
+            if display in seen:
+                continue
+            seen.add(display)
+            unique.append((display, value))
+        return unique
+
+    def _get_local_models(self):
+        """The models on this machine that no catalogue describes.
+
+        The value is the path: a name would have to be resolved back to this
+        directory, and a catalogue may already answer to the name. A saved
+        MFLUX model is left out here because it is offered by name above.
+        """
+        try:
+            from eyegen.artifact_scan import scan_undescribed
+            from eyegen.paths import models_dir
+
+            return [
+                (artifact.name, str(artifact.path))
+                for artifact in scan_undescribed(models_dir())
+                if artifact.backend != Backend.MFLUX
+            ]
+        except (ImportError, OSError):
+            return []
 
     def _get_saved_mflux_models(self):
         """The models saved for a faster load."""

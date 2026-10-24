@@ -150,6 +150,7 @@ def convert_to_coreml(
             "converted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         (output_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
+        list_coreml_models.cache_clear()
     return returncode == 0
 
 

@@ -110,6 +110,9 @@ def generate(
         raise typer.Exit(1) from exc
     resolved_backend = resolved.backend
 
+    for note in resolved.notes:
+        typer.echo(f"📁 {note}")
+
     print_generation_settings(
         resolved.name,
         resolved_backend,

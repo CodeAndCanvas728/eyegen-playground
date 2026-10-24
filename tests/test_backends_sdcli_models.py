@@ -99,6 +99,34 @@ def test_the_users_own_models_are_in_the_listing(tmp_path, monkeypatch):
     assert not entry["installed"]
 
 
+def test_a_local_model_is_installed_where_its_files_are(tmp_path, monkeypatch):
+    """A file already on the machine is not looked for in a model directory."""
+    from eyegen.model_catalogue import upsert_spec
+    from eyegen.model_specs import ModelSource, ModelSpec
+
+    monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path / "downloads"))
+    transformer = tmp_path / "transformer.gguf"
+    vae = tmp_path / "ae.safetensors"
+    transformer.write_bytes(b"x")
+    vae.write_bytes(b"x")
+    upsert_spec(
+        ModelSpec(
+            name="mine",
+            backend=Backend.SDCLI,
+            sources={
+                "diffusion_model": ModelSource(path=str(transformer)),
+                "vae": ModelSource(path=str(vae)),
+            },
+        )
+    )
+
+    models = list_sdcli_models()
+    entry = next(m for m in models if m["name"] == "mine")
+
+    assert entry["present"] == ["transformer.gguf", "ae.safetensors"]
+    assert entry["installed"]
+
+
 def test_the_gui_pulls_through_the_stable_diffusion_puller(tmp_path):
     """The GUI must not send a stable-diffusion.cpp model to OllamaDiffuser."""
     try:

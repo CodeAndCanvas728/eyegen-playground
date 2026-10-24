@@ -45,8 +45,10 @@ def list_models():
     try:
         models = list_ollama_models()
     except (OSError, ValueError, ImportError, AttributeError) as e:
+        # The rest of the listing is still worth showing: what is on this
+        # machine does not depend on a package that is not installed.
         typer.echo(f"❌ Failed to list OllamaDiffuser models: {e}", err=True)
-        raise typer.Exit(1) from e
+        models = {}
 
     installed = models.get("installed", [])
     available = models.get("available", [])
@@ -67,6 +69,7 @@ def list_models():
     typer.echo("\nPull a GGUF model:  ./generate.py pull <model-name>")
 
     _print_sdcli_models()
+    _print_local_models()
 
 
 def _print_own_models():
@@ -83,6 +86,30 @@ def _print_own_models():
         detail = spec.description or spec.repo or ", ".join(sorted(spec.sources))
         typer.echo(f"  • {name:24s} {spec.backend.value:16s} {detail}")
     typer.echo("  (Use one with: ./generate.py generate 'your prompt' --model <name>)")
+
+
+def _print_local_models():
+    """The models on this machine that no catalogue describes."""
+    from eyegen.artifact_scan import scan_undescribed
+    from eyegen.config import Backend
+    from eyegen.paths import models_dir
+
+    found = scan_undescribed(models_dir())
+    if not found:
+        return
+    typer.echo()
+    typer.echo(f"📁 On this machine ({len(found)}):")
+    for artifact in found:
+        typer.echo(
+            f"  • {artifact.name:24s} {artifact.backend.value:16s} {artifact.spec.description}"
+        )
+    if any(artifact.backend != Backend.MFLUX for artifact in found):
+        typer.echo("  (Use one with: ./generate.py generate 'your prompt' --model <path>)")
+    if any(artifact.backend == Backend.MFLUX for artifact in found):
+        typer.echo(
+            "  (A saved MFLUX model runs by name: "
+            "./generate.py generate 'your prompt' --model <name>)"
+        )
 
 
 def _print_sdcli_models():

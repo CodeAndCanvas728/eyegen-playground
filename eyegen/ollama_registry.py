@@ -18,6 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import Mapping
 
+from eyegen.artifacts import family_of, is_ollama_layout
 from eyegen.config import CONFIG_DIR
 from eyegen.model_specs import ModelSpec
 
@@ -103,3 +104,75 @@ def register(spec: ModelSpec) -> Path:
     path = write_entries(entries)
     apply_registry()
     return path
+
+
+def register_local_gguf(spec: ModelSpec, name: str) -> str:
+    """Make the package able to run a GGUF file that is already on this machine.
+
+    The package keeps its models in a directory of its own, one per model,
+    and reads the family off the name of that directory. A file that is
+    somewhere else is *linked* into the directory the package expects — the
+    file stays where it is, and nothing is copied — and the package's own
+    settings are told about it, so the model stays installed for the runs
+    after this one.
+
+    A directory that is already laid out the way the package lays one out
+    is used as it is; there is nothing to link.
+
+    Returns the name the package knows the model by.
+    """
+    source = spec.sources.get("diffusion_model")
+    if source is None or not source.is_local:
+        return name
+
+    # A relative path means a different file to the package, whose own
+    # directory is where the link is made.
+    gguf = Path(source.path).expanduser().resolve()
+    directory = gguf.parent
+    if not is_ollama_layout(directory):
+        directory = _link_into_the_package(gguf, name)
+    _tell_the_package(name, directory)
+    _write_registry_entry(name, family_of(name))
+    apply_registry()
+    log.info("Registered the local model %s at %s", name, directory)
+    return name
+
+
+def _link_into_the_package(gguf: Path, name: str) -> Path:
+    """The directory the package keeps this model in, with the file linked in."""
+    from ollamadiffuser.core.config.settings import settings
+
+    directory = settings.get_model_path(name)
+    directory.mkdir(parents=True, exist_ok=True)
+    link = directory / gguf.name
+    if link.is_symlink() and link.resolve() == gguf.resolve():
+        return directory
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    link.symlink_to(gguf)
+    return directory
+
+
+def _tell_the_package(name: str, directory: Path) -> None:
+    """Add the model to the package's own settings, if it is not there."""
+    from ollamadiffuser.core.config.settings import ModelConfig, settings
+
+    existing = settings.models.get(name)
+    if existing is not None and existing.path == str(directory):
+        return
+    settings.add_model(
+        ModelConfig(
+            name=name,
+            path=str(directory),
+            model_type=family_of(name),
+            variant=f"gguf-{name}",
+        )
+    )
+    settings.save_config()
+
+
+def _write_registry_entry(name: str, family: str) -> None:
+    """The entry the package's own table reads, for a model with no repository."""
+    entries = read_entries()
+    entries[name] = {"repo_id": "", "model_type": family, "variant": f"gguf-{name}"}
+    write_entries(entries)

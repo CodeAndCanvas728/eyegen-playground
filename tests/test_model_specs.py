@@ -128,6 +128,26 @@ def test_a_catalogue_with_a_bad_name_says_so():
     assert "not a path" in result.output
 
 
+def test_a_local_file_survives_the_round_trip():
+    """A file that is already on this machine is described, not fetched."""
+    source = ModelSource(path="/Volumes/Models/klein-Q4_K_M.gguf")
+    again = ModelSource.from_dict(source.to_dict())
+
+    assert again == source
+    assert again.is_local
+    assert again.name == "klein-Q4_K_M.gguf"
+
+
+def test_a_source_that_is_both_a_repository_file_and_a_local_path_is_refused():
+    with pytest.raises(ValueError, match="not both"):
+        ModelSource(repo="owner/repo", file="model.gguf", path="/Volumes/Models/model.gguf")
+
+
+def test_a_source_that_is_neither_is_refused():
+    with pytest.raises(ValueError, match="needs a 'repo' and a 'file', or a 'path'"):
+        ModelSource()
+
+
 def test_a_model_with_a_role_the_backend_does_not_know_is_refused(tmp_path, monkeypatch):
     """The role would be dropped, and the model would run without the file."""
     from eyegen.backends.sdcli.pipeline import SdCliWrapper

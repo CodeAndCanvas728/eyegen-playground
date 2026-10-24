@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from eyegen.backends import _is_bonsai_model, _is_coreml_model, detect_backend
+from eyegen.backends import detect_backend
+from eyegen.backends.detection import _is_bonsai_model, _is_coreml_model
 from eyegen.config import Backend, EyeGenConfig
 from eyegen.errors import UnsupportedModelError
 
@@ -22,7 +23,7 @@ def test_detect_backend_coreml_alias():
 
 
 def test_detect_backend_mflux_alias():
-    with patch("eyegen.backends._get_mflux_aliases", return_value={"dev"}):
+    with patch("eyegen.backends.detection._get_mflux_aliases", return_value={"dev"}):
         assert detect_backend("dev", Backend.AUTO) == Backend.MFLUX
 
 
@@ -32,8 +33,8 @@ def test_detect_backend_override():
 
 def test_detect_backend_unsupported_raises():
     with (
-        patch("eyegen.backends._get_mflux_aliases", return_value=set()),
-        patch("eyegen.backends._get_mlx_supported_models", return_value=set()),
+        patch("eyegen.backends.detection._get_mflux_aliases", return_value=set()),
+        patch("eyegen.backends.detection._get_mlx_supported_models", return_value=set()),
     ):
         with pytest.raises(UnsupportedModelError):
             detect_backend("totally-unknown-model", Backend.AUTO)
@@ -41,8 +42,8 @@ def test_detect_backend_unsupported_raises():
 
 def test_detect_backend_mlx_missing_raises():
     with (
-        patch("eyegen.backends._get_mflux_aliases", return_value=set()),
-        patch("eyegen.backends._get_mlx_supported_models", return_value=None),
+        patch("eyegen.backends.detection._get_mflux_aliases", return_value=set()),
+        patch("eyegen.backends.detection._get_mlx_supported_models", return_value=None),
     ):
         with pytest.raises(UnsupportedModelError):
             detect_backend("totally-unknown-model", Backend.AUTO)

@@ -126,7 +126,7 @@ def load_pipeline(resolved: ResolvedModel, config: EyeGenConfig, quantize: Optio
     typer.echo("📦 Loading model...")
     config = apply_spec(config, resolved.spec)
     if resolved.backend == Backend.OLLAMA:
-        return get_ollama_pipeline(config)
+        return get_ollama_pipeline(config, name=resolved.name, spec=resolved.spec)
     if resolved.backend == Backend.MFLUX:
         q = quantize if quantize is not None else config.mflux_quantize
         if q is not None:

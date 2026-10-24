@@ -644,6 +644,37 @@ this machine that holds a local copy of it.
 | MFLUX | **No.** The architecture is chosen by the alias, and the aliases are the package's. A specification names one of its aliases (`"alias"`), and `path` points it at a local copy. |
 | Bonsai | **No.** Its variants are a closed list in the Bonsai demo repository. A specification names one of them. |
 
+### A model that is already on this machine
+
+A model you already have does not have to be written down first. Give the
+tool the path:
+
+```bash
+./generate.py generate "a red fox" --model ~/models/flux1-dev-Q4_K_M.gguf
+./generate.py generate "a red fox" --model ~/models/my-model-directory
+```
+
+What a thing on disk is comes from what is there, not from how it is
+named:
+
+| What is on disk | What it is | Who runs it |
+|---|---|---|
+| a `.gguf` file | a GGUF model | OllamaDiffuser — the file is linked into the directory the package keeps its models in, and the package is told about it |
+| a directory with a `.gguf` and the text encoders next to it | a GGUF model laid out the way OllamaDiffuser lays one out | OllamaDiffuser |
+| a directory of weights (a transformer, an encoder, a VAE) | a stable-diffusion.cpp model | stable-diffusion.cpp — the roles are read off the names, and what was decided is printed |
+| a directory with `*.mlmodelc` or `*.mlpackage` | a converted bundle | CoreML |
+| a directory with `config.json` and `unet/` | a diffusers model | CoreML — converted on first use, then reused |
+
+A name a catalogue already answers to is suffixed (`klein-2`), so the
+catalogue entry and the model on disk both stay reachable. A diffusers
+model is converted the first time it runs; that takes 15–20 minutes.
+
+The MLX backend cannot run a local model: its checkpoints are a table
+inside diffusionkit, and the architecture of each is code there.
+
+`./generate.py list-models` shows what is under the models root, including
+the models no catalogue describes.
+
 ---
 
 ## File Structure

@@ -53,23 +53,24 @@ def _spec_fingerprint(spec) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def _spec_for(config: EyeGenConfig):
-    """The specification for the configured model, if the user described one.
+def _resolution_for(config: EyeGenConfig):
+    """The name of the configured model, and the specification behind it.
 
     A model the user described in their own catalogue is run the way they
-    described it; a model that is only a name is run the way its backend
-    knows it. A catalogue that cannot be read is an error the worker
-    reports, rather than a model quietly run without its description.
+    described it; a model that is already on this machine is run the way
+    what is there says; a model that is only a name is run the way its
+    backend knows it.
     """
-    from eyegen.model_catalogue import find_spec
+    from eyegen.backends import resolve_spec
 
-    return find_spec(config.model)
+    return resolve_spec(config.model)
 
 
 def load_pipeline_for_worker(worker):
     """The pipeline for the worker's model, and the generation it came with."""
     backend = worker.backend
-    spec = _spec_for(worker.config)
+    resolution = _resolution_for(worker.config)
+    name, spec = resolution.name, resolution.spec
     config = apply_spec(worker.config, spec)
     cache_key = _make_cache_key(backend, config, worker.mflux_quantize, worker.use_t5, spec=spec)
     cached_pipeline, cached_key, cached_gen = _pipeline_cache.get_cached()
@@ -92,7 +93,7 @@ def load_pipeline_for_worker(worker):
         worker.use_t5,
     )
     if backend == Backend.OLLAMA:
-        pipeline = get_ollama_pipeline(config)
+        pipeline = get_ollama_pipeline(config, name=name, spec=spec)
     elif backend == Backend.MFLUX:
         pipeline = get_mflux_pipeline(config, quantize=worker.mflux_quantize)
     elif backend == Backend.BONSAI:
@@ -100,7 +101,7 @@ def load_pipeline_for_worker(worker):
     elif backend == Backend.COREML:
         pipeline = coreml.get_coreml_pipeline(config, spec=spec)
     elif backend == Backend.SDCLI:
-        pipeline = sdcli.get_sdcli_pipeline(config, config.model, spec=spec)
+        pipeline = sdcli.get_sdcli_pipeline(config, name, spec=spec)
     else:
         pipeline = get_pipeline(config, use_t5=worker.use_t5)
     _patch_sample_euler(lambda step, total: worker.progress.emit(step, total), worker._cancelled)

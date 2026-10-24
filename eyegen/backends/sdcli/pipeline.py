@@ -86,15 +86,17 @@ class SdCliWrapper(BaseSubprocessRunner):
 
     def __init__(self, config: EyeGenConfig, model: str, spec: Optional[ModelSpec] = None):
         super().__init__(config)
-        self.model = model
         if spec is None:
             if model not in SDCLI_MODELS:
                 raise ValueError(f"Unknown stable-diffusion.cpp model: {model}")
             spec = ModelSpec.from_dict(model, SDCLI_MODELS[model])
+        # The specification names the model: a model that is a path on this
+        # machine has a name of its own, and it is the name that is said.
+        self.model = spec.name
         self.spec = spec
         self._check_roles()
 
-        status = validate_sdcli_install(model, spec=spec, config=config)
+        status = validate_sdcli_install(self.model, spec=spec, config=config)
         if not status.installed:
             raise RuntimeError(status.message)
         self.binary = status.binary
@@ -134,6 +136,16 @@ class SdCliWrapper(BaseSubprocessRunner):
             else:
                 i += 1
 
+    def _path_for(self, source) -> str:
+        """Where one file of the model is.
+
+        A file that is already on this machine is passed where it is; a
+        file that was downloaded is in the model's own directory.
+        """
+        if source.is_local:
+            return str(Path(source.path).expanduser())
+        return str(self.model_dir / source.name)
+
     def _build_command(
         self,
         prompt: str,
@@ -152,7 +164,7 @@ class SdCliWrapper(BaseSubprocessRunner):
             source = spec.sources.get(role)
             if source is None:
                 continue
-            cmd += [flag, str(self.model_dir / source.name)]
+            cmd += [flag, self._path_for(source)]
         cmd += [
             "-p",
             prompt,
