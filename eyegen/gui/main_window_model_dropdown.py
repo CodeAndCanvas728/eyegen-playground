@@ -1,6 +1,10 @@
 """Model dropdown population mixin for MainWindow."""
 
+import logging
+
 from eyegen.config import Backend
+
+log = logging.getLogger("eyegen")
 
 
 class MainWindowModelDropdownMixin:
@@ -32,14 +36,16 @@ class MainWindowModelDropdownMixin:
         self.model_dropdown.blockSignals(False)
 
     def _get_models_for_backend(self, backend):
-        if backend == Backend.COREML:
-            return self._get_coreml_models()
-        elif backend == Backend.MFLUX:
-            return self._get_mflux_models()
-        elif backend == Backend.BONSAI:
-            return self._get_bonsai_models()
-        elif backend == Backend.SDCLI:
+        if backend == Backend.SDCLI:
+            # The stable-diffusion.cpp listing already carries the user's own.
             return self._get_sdcli_models()
+        own = self._get_own_models(backend)
+        if backend == Backend.COREML:
+            return own + self._get_coreml_models()
+        elif backend == Backend.MFLUX:
+            return own + self._get_mflux_models()
+        elif backend == Backend.BONSAI:
+            return own + self._get_bonsai_models()
         else:
             return self._get_auto_models()
 
@@ -75,14 +81,45 @@ class MainWindowModelDropdownMixin:
         except (ImportError, OSError):
             return []
 
-    def _get_auto_models(self):
+    def _get_own_models(self, backend=None):
+        """The models in the user's own catalogue."""
         try:
-            from eyegen.config import MODELS_DIR
+            from eyegen.model_catalogue import load_catalogue
 
-            if MODELS_DIR.is_dir():
+            specs = load_catalogue()
+        except (ImportError, OSError) as exc:
+            log.warning("Could not read the model catalogue: %s", exc)
+            return []
+        except ValueError as exc:
+            # A catalogue that cannot be read is the user's problem to fix,
+            # and it is worth saying so rather than showing an empty list.
+            log.error("Could not read the model catalogue: %s", exc)
+            return []
+        return [
+            (name, name)
+            for name, spec in sorted(specs.items())
+            if backend is None or spec.backend == backend
+        ]
+
+    def _get_auto_models(self):
+        """Every model the tool can see, whatever backend runs it."""
+        return (
+            self._get_own_models()
+            + self._get_sdcli_models()
+            + self._get_coreml_models()
+            + self._get_saved_mflux_models()
+        )
+
+    def _get_saved_mflux_models(self):
+        """The models saved for a faster load."""
+        try:
+            from eyegen.paths import saved_mflux_dir
+
+            directory = saved_mflux_dir()
+            if directory.is_dir():
                 return [
                     (child.name, child.name)
-                    for child in sorted(MODELS_DIR.iterdir())
+                    for child in sorted(directory.iterdir())
                     if child.is_dir() and not child.name.startswith(".")
                 ]
             return []

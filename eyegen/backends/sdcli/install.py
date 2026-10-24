@@ -9,11 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from eyegen.model_specs import ModelSpec
+from eyegen.paths import sdcli_model_dir
+from eyegen.validation import validate_model_name
+
 from .constants import (
     DEFAULT_SDCLI_BIN,
-    DEFAULT_SDCLI_MODEL_DIR,
     DEFAULT_SDCLI_TIMEOUT,
-    SDCLI_MODELS,
 )
 
 log = logging.getLogger(__name__)
@@ -44,12 +46,20 @@ def get_sdcli_bin() -> Optional[Path]:
     return Path(found) if found else None
 
 
-def get_sdcli_model_dir() -> Path:
-    """The directory holding the model files."""
+def get_sdcli_model_dir(model: str, config=None) -> Path:
+    """The directory holding one model's files.
+
+    Each model has a directory of its own: two models have files with the
+    same names — ``ae.safetensors`` is a VAE whichever model it belongs to
+    — and one directory for both would mean one overwriting the other.
+
+    The model names the directory, so the name is checked before it becomes
+    a path.
+    """
     override = os.environ.get("SDCLI_MODEL_DIR")
     if override:
-        return Path(override).expanduser()
-    return DEFAULT_SDCLI_MODEL_DIR
+        return Path(override).expanduser() / validate_model_name(model)
+    return sdcli_model_dir(model, config)
 
 
 def get_sdcli_timeout() -> float:
@@ -66,23 +76,32 @@ def get_sdcli_timeout() -> float:
     return float(DEFAULT_SDCLI_TIMEOUT)
 
 
-def missing_model_files(model: str, model_dir: Path) -> list[str]:
+def missing_model_files(
+    model: str,
+    model_dir: Path,
+    spec: Optional[ModelSpec] = None,
+) -> list[str]:
     """The files of *model* that are not in *model_dir*."""
-    spec = SDCLI_MODELS.get(model)
+    if spec is None:
+        from .models import sdcli_specs
+
+        spec = sdcli_specs().get(model)
     if spec is None:
         return []
-    wanted = (spec["diffusion_model"], spec["llm"], spec["vae"])
+    wanted = [source.name for source in spec.sources.values()]
     return [name for name in wanted if not (model_dir / name).is_file()]
 
 
 def validate_sdcli_install(
     model: str,
     model_dir: Optional[Path] = None,
+    spec: Optional[ModelSpec] = None,
+    config=None,
 ) -> SdCliInstallStatus:
     """Check that the binary and the model files are in place."""
     binary = get_sdcli_bin()
-    directory = model_dir or get_sdcli_model_dir()
-    missing = missing_model_files(model, directory)
+    directory = model_dir or get_sdcli_model_dir(model, config)
+    missing = missing_model_files(model, directory, spec=spec)
 
     if binary is None:
         return SdCliInstallStatus(

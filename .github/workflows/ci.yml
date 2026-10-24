@@ -29,7 +29,14 @@ jobs:
           pip install -e .
       # The repo gate is the one place the checks live; CI runs it, so the
       # gate cannot drift away from what CI enforces.
+      #
+      # This job installs the requirements, and the requirements carry
+      # OllamaDiffuser. The tests that pin the contract with it fail rather
+      # than skip when it is missing, so a run that cannot verify the
+      # contract does not look green.
       - name: Run the repo gate
+        env:
+          EYEGEN_REQUIRE_OLLAMADIFFUSER: "1"
         run: GATE_BIN="$(dirname "$(command -v python3)")" bash .claude/gate.sh
 
 # >>> esper-stack:python (ci) — add under `jobs:` in .github/workflows/ci.yml

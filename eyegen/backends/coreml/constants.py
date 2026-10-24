@@ -1,9 +1,5 @@
 """CoreML backend constants."""
 
-from pathlib import Path
-
-DEFAULT_COREML_VENV = Path.home() / "models" / "eyegen" / ".coreml-venv"
-DEFAULT_COREML_MODELS_DIR = Path.home() / "models" / "eyegen" / "coreml"
 PYTHON_REQUIRED = "3.11"
 
 PRECONVERTED_HF_MODELS = {

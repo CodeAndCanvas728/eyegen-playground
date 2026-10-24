@@ -5,7 +5,11 @@ from typing import Annotated, Optional
 
 import typer
 
-from eyegen import Backend, QuantizationError, generate_image
+from eyegen import (
+    Backend,
+    QuantizationError,
+    generate_image,
+)
 from eyegen.cli._generate_helpers import (
     build_generation_params,
     handle_import_error,
@@ -60,6 +64,12 @@ def generate(
             " ollamadiffuser, bonsai, coreml"
         ),
     ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Model to use for this run, instead of the configured default",
+    ),
     quantize: Optional[int] = typer.Option(
         None,
         "--quantize",
@@ -68,32 +78,40 @@ def generate(
     ),
 ):
     """Generate an image from a text prompt."""
-    (
-        config,
-        model,
-        resolved_backend,
-        num_steps,
-        guidance_scale,
-        h,
-        w,
-        image_path,
-        denoise_value,
-        output_path,
-        quantize,
-    ) = build_generation_params(
-        backend,
-        output,
-        steps,
-        guidance,
-        height,
-        width,
-        image,
-        denoise,
-        quantize,
-    )
+    try:
+        (
+            config,
+            resolved,
+            num_steps,
+            guidance_scale,
+            h,
+            w,
+            image_path,
+            denoise_value,
+            output_path,
+            quantize,
+        ) = build_generation_params(
+            backend,
+            output,
+            steps,
+            guidance,
+            height,
+            width,
+            image,
+            denoise,
+            quantize,
+            model,
+        )
+    except ValueError as exc:
+        # A model the tool cannot run, a backend that contradicts the model,
+        # and a catalogue the user edited badly are all the user's to fix,
+        # and all say what is wrong.
+        typer.echo(f"❌ {exc}", err=True)
+        raise typer.Exit(1) from exc
+    resolved_backend = resolved.backend
 
     print_generation_settings(
-        model,
+        resolved.name,
         resolved_backend,
         config,
         prompt,
@@ -107,7 +125,7 @@ def generate(
     )
 
     try:
-        pipeline = load_pipeline(resolved_backend, config, quantize)
+        pipeline = load_pipeline(resolved, config, quantize)
         gen_image = generate_image(
             pipeline,
             prompt,

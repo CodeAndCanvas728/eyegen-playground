@@ -131,6 +131,31 @@ def validate_safe_path(path: str | Path, name: str) -> Path:
     return p
 
 
+def validate_model_name(name: str) -> str:
+    """Refuse a model name that is not one directory name.
+
+    A model's name is the directory its files are written to, under
+    ``models_dir/sdcli/``. A name with a path in it would put the files
+    somewhere else — outside the models root, or outside the machine.
+
+    Returns the name, so a caller can use it in the same line it checked it.
+    """
+    if not name:
+        raise ValueError("a model needs a name")
+    if name in (".", ".."):
+        raise ValueError(f"'{name}' is not a model name")
+    if "/" in name or "\\" in name:
+        raise ValueError(
+            f"'{name}' must be a model name, not a path: it is the directory "
+            "the model's files are written to"
+        )
+    if name.startswith("-"):
+        raise ValueError(f"'{name}' must not start with a dash")
+    if "\0" in name:
+        raise ValueError("a model name cannot hold a null character")
+    return name
+
+
 def _is_relative_to_safe(path: Path, root: Path) -> bool:
     """Check if path is under root. Handles the case where path equals root."""
     try:

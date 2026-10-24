@@ -13,77 +13,14 @@ from eyegen import (
     Backend,
     EyeGenConfig,
     generate_image,
-    get_mflux_pipeline,
-    get_ollama_pipeline,
-    get_pipeline,
     pull_any_model,
     save_mflux_model,
 )
-from eyegen.backends import bonsai, coreml, sdcli
-from eyegen.gui.cache import (
-    _clear_pipeline_cache,
-    _pipeline_cache,
-    get_cache_generation,
-)
-from eyegen.gui.monkeypatch import GenerationCancelled, _patch_sample_euler
+from eyegen.gui.cache import _clear_pipeline_cache, get_cache_generation
+from eyegen.gui.monkeypatch import GenerationCancelled
+from eyegen.gui.pipeline_loader import load_pipeline_for_worker
 
 log = logging.getLogger("eyegen")
-
-
-def _make_cache_key(backend, config: EyeGenConfig, mflux_quantize, use_t5):
-    return (
-        backend,
-        config.model,
-        mflux_quantize,
-        use_t5,
-        config.mflux_model_path,
-        config.bonsai_model_path,
-        config.coreml_model_path,
-        config.coreml_compute_unit,
-    )
-
-
-def _load_pipeline_for_worker(worker):
-    backend = worker.backend
-    config = worker.config
-    cache_key = _make_cache_key(backend, config, worker.mflux_quantize, worker.use_t5)
-    cached_pipeline, cached_key, cached_gen = _pipeline_cache.get_cached()
-    if cached_pipeline is not None and cached_key == cache_key:
-        log.info("Using cached pipeline (backend=%s)", backend)
-        if backend == Backend.MLX:
-            _patch_sample_euler(
-                lambda step, total: worker.progress.emit(step, total), worker._cancelled
-            )
-        return cached_pipeline, cached_gen
-
-    if worker._cancelled.is_set():
-        return None, None
-
-    worker.status.emit("Loading model…")
-    log.info(
-        "Loading pipeline (model=%s, backend=%s, t5=%s)",
-        config.model or "default",
-        backend,
-        worker.use_t5,
-    )
-    if backend == Backend.OLLAMA:
-        pipeline = get_ollama_pipeline(config)
-    elif backend == Backend.MFLUX:
-        pipeline = get_mflux_pipeline(config, quantize=worker.mflux_quantize)
-    elif backend == Backend.BONSAI:
-        pipeline = bonsai.get_bonsai_pipeline(config)
-    elif backend == Backend.COREML:
-        pipeline = coreml.get_coreml_pipeline(config)
-    elif backend == Backend.SDCLI:
-        pipeline = sdcli.get_sdcli_pipeline(config)
-    else:
-        pipeline = get_pipeline(config, use_t5=worker.use_t5)
-    _patch_sample_euler(lambda step, total: worker.progress.emit(step, total), worker._cancelled)
-
-    if not worker._cancelled.is_set():
-        _pipeline_cache.set_cached(pipeline, cache_key)
-    cached_gen = get_cache_generation()
-    return pipeline, cached_gen
 
 
 class GenerationWorker(QThread):
@@ -158,7 +95,7 @@ class GenerationWorker(QThread):
         if self._cancelled.is_set():
             self._handle_cancel()
             return
-        pipeline, gen_id = _load_pipeline_for_worker(self)
+        pipeline, gen_id = load_pipeline_for_worker(self)
         self.pipeline = pipeline
         self.pipeline_gen = gen_id
 

@@ -6,49 +6,20 @@ from typing import Annotated, Optional
 import typer
 
 from eyegen import (
-    MODELS_DIR,
     clear_mflux_cache,
     list_mflux_models,
     list_ollama_models,
     save_mflux_model,
     validate_saved_model,
 )
-
-
-def pull(
-    model_name: str = typer.Argument(
-        ...,
-        help="Model name (e.g. flux.1-dev-gguf-q4ks, or flux-3-image-klein-gguf)",
-    ),
-):
-    """Download a model.
-
-    A GGUF model comes from OllamaDiffuser; a FLUX.3 model comes as three
-    files — the transformer, the text encoder and the VAE — and is fetched
-    from where each of them lives.
-    """
-    typer.echo(f"📥 Pulling model: {model_name}")
-
-    def on_progress(msg):
-        if isinstance(msg, str):
-            typer.echo(f"   {msg}")
-
-    try:
-        from eyegen import pull_any_model
-
-        ok = pull_any_model(model_name, progress_callback=on_progress)
-        if ok:
-            typer.echo(f"✅ Model '{model_name}' is ready")
-        else:
-            typer.echo(f"❌ Failed to pull model '{model_name}'", err=True)
-            raise typer.Exit(1)
-    except (OSError, ValueError) as e:
-        typer.echo(f"❌ Pull failed: {e}", err=True)
-        raise typer.Exit(1) from e
+from eyegen.model_catalogue import load_catalogue
+from eyegen.paths import saved_mflux_dir
 
 
 def list_models():
     """List available models for MLX, MFLUX, OllamaDiffuser (GGUF), Bonsai, and CoreML backends."""
+    _print_own_models()
+
     typer.echo("🔷 MLX Native Models (diffusionkit):")
     typer.echo("  • argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized  (Default, ~3GB)")
     typer.echo(
@@ -98,6 +69,22 @@ def list_models():
     _print_sdcli_models()
 
 
+def _print_own_models():
+    """The models in the user's own catalogue."""
+    try:
+        specs = load_catalogue()
+    except ValueError as exc:
+        typer.echo(f"❌ {exc}", err=True)
+        return
+    if not specs:
+        return
+    typer.echo(f"🔷 Your own models ({len(specs)}):")
+    for name, spec in sorted(specs.items()):
+        detail = spec.description or spec.repo or ", ".join(sorted(spec.sources))
+        typer.echo(f"  • {name:24s} {spec.backend.value:16s} {detail}")
+    typer.echo("  (Use one with: ./generate.py generate 'your prompt' --model <name>)")
+
+
 def _print_sdcli_models():
     """List the stable-diffusion.cpp models and whether their files are here."""
     typer.echo()
@@ -137,7 +124,7 @@ def save_model_cmd(
     """Save a pre-quantized MFLUX model to disk for fast local loading."""
     if path is None:
         q_label = f"{quantize_bits}bit" if quantize_bits else "fp"
-        path = MODELS_DIR / f"{model}-{q_label}"
+        path = saved_mflux_dir() / f"{model}-{q_label}"
 
     typer.echo(f"💾 Saving model '{model}' to {path}")
     q_label = f"{quantize_bits}-bit" if quantize_bits else "full precision"
@@ -152,9 +139,9 @@ def save_model_cmd(
             progress_callback=lambda msg: typer.echo(f"   {msg}"),
         )
         typer.echo(f"\n✅ Model saved to: {result_path}")
-        valid, meta = validate_saved_model(result_path)
-        if valid and meta:
-            ql = meta.get("quantization_level")
+        validation = validate_saved_model(result_path)
+        if validation.valid and validation.meta:
+            ql = validation.meta.get("quantization_level")
             typer.echo(f"   Quantization: {ql}-bit" if ql else "   Quantization: full precision")
         typer.echo("\n💡 To use this model, set the path in your config:")
         typer.echo(f"   ./generate.py config-set mflux_model_path {result_path}")

@@ -4,7 +4,7 @@ import sys
 
 import typer
 
-from eyegen.cli import bonsai, config, coreml, generate, hf, models, status, update
+from eyegen.cli import bonsai, config, coreml, generate, hf, models, pull, status, update
 
 
 def _print_version() -> None:
@@ -28,7 +28,7 @@ app = typer.Typer(
 )
 
 app.command()(generate.generate)
-app.command()(models.pull)
+app.command()(pull.pull)
 app.command()(models.list_models)
 app.command(name="save-model")(models.save_model_cmd)
 app.command(name="clear-cache")(models.clear_cache)

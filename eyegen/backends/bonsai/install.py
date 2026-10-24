@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .constants import DEFAULT_BONSAI_DIR
+from eyegen.paths import bonsai_dir
 
 log = logging.getLogger(__name__)
 
@@ -22,9 +22,12 @@ class BonsaiInstallStatus:
     message: str
 
 
-def get_bonsai_dir() -> Path:
+def get_bonsai_dir(config=None) -> Path:
+    """The Bonsai checkout."""
     override = os.environ.get("BONSAI_DIR")
-    return Path(override).expanduser() if override else DEFAULT_BONSAI_DIR
+    if override:
+        return Path(override).expanduser()
+    return bonsai_dir(config)
 
 
 def validate_bonsai_install() -> BonsaiInstallStatus:

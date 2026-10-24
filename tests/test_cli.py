@@ -15,6 +15,7 @@ from eyegen.cli._generate_helpers import (
     validate_cli_backend,
 )
 from eyegen.config import Backend, EyeGenConfig
+from eyegen.model_specs import ResolvedModel
 
 
 class TestValidateCliBackend:
@@ -73,8 +74,7 @@ class TestBuildGenerationParams:
         result = build_generation_params("mlx", None, None, None, None, None, None, None, None)
         (
             config,
-            model,
-            backend,
+            resolved,
             steps,
             guidance,
             h,
@@ -84,8 +84,8 @@ class TestBuildGenerationParams:
             out_path,
             quantize,
         ) = result
-        assert backend == Backend.MLX
-        assert model == EyeGenConfig().model
+        assert resolved.backend == Backend.MLX
+        assert resolved.name == EyeGenConfig().model
         assert denoise == 1.0
         assert out_path.parent == tmp_path
 
@@ -127,30 +127,30 @@ class TestLoadPipeline:
     @patch("eyegen.cli._generate_helpers.get_ollama_pipeline")
     def test_ollama(self, mock_get):
         mock_get.return_value = "engine"
-        result = load_pipeline(Backend.OLLAMA, EyeGenConfig(), None)
+        result = load_pipeline(ResolvedModel("model", Backend.OLLAMA), EyeGenConfig(), None)
         assert result == "engine"
 
     @patch("eyegen.cli._generate_helpers.get_mflux_pipeline")
     def test_mflux(self, mock_get):
         mock_get.return_value = "model"
-        result = load_pipeline(Backend.MFLUX, EyeGenConfig(), 4)
+        result = load_pipeline(ResolvedModel("model", Backend.MFLUX), EyeGenConfig(), 4)
         assert result == "model"
         mock_get.assert_called_once()
 
     @patch("eyegen.cli._generate_helpers.bonsai.get_bonsai_pipeline")
     def test_bonsai(self, mock_get):
         mock_get.return_value = "wrapper"
-        result = load_pipeline(Backend.BONSAI, EyeGenConfig(), None)
+        result = load_pipeline(ResolvedModel("model", Backend.BONSAI), EyeGenConfig(), None)
         assert result == "wrapper"
 
     @patch("eyegen.cli._generate_helpers.coreml.get_coreml_pipeline")
     def test_coreml(self, mock_get):
         mock_get.return_value = "wrapper"
-        result = load_pipeline(Backend.COREML, EyeGenConfig(), None)
+        result = load_pipeline(ResolvedModel("model", Backend.COREML), EyeGenConfig(), None)
         assert result == "wrapper"
 
     @patch("eyegen.cli._generate_helpers.get_pipeline")
     def test_default_mlx(self, mock_get):
         mock_get.return_value = "pipeline"
-        result = load_pipeline(Backend.MLX, EyeGenConfig(), None)
+        result = load_pipeline(ResolvedModel("model", Backend.MLX), EyeGenConfig(), None)
         assert result == "pipeline"

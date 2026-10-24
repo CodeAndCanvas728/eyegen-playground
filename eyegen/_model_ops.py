@@ -1,20 +1,15 @@
 """Model download, listing, caching, and saving operations."""
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 from eyegen._mflux import _get_mflux_aliases, _resolve_mflux_class
+from eyegen.config import Backend
+from eyegen.model_catalogue import find_spec
+from eyegen.model_specs import ModelSpec
 from eyegen.validation import validate_safe_path
 
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class SavedModelValidation:
-    valid: bool
-    meta: dict | None = None
-    error: str | None = None
 
 
 def _apply_hf_cache_safe(hf_cache_dir: str | None) -> None:
@@ -33,6 +28,7 @@ def pull_model(
 ) -> bool:
     """Download a GGUF model via ollamadiffuser."""
     _apply_hf_cache_safe(hf_cache_dir)
+    apply_ollama_registry()
     from ollamadiffuser.core.models.manager import model_manager  # type: ignore[import-untyped]
 
     return model_manager.pull_model(model_name, progress_callback=progress_callback)
@@ -45,12 +41,17 @@ def pull_any_model(
 ) -> bool:
     """Download a model, whichever backend it belongs to.
 
-    A GGUF model is one file that OllamaDiffuser knows. A
-    stable-diffusion.cpp model is three files from three repositories,
+    A model the user described in their own catalogue is fetched the way
+    they described it. A GGUF model is one file that OllamaDiffuser knows.
+    A stable-diffusion.cpp model is three files from three repositories,
     and the one that downloads them is the only one that can.
     """
     from eyegen.backends.sdcli.constants import SDCLI_MODELS
     from eyegen.backends.sdcli.models import pull_sdcli_model
+
+    spec = find_spec(model_name)
+    if spec is not None:
+        return pull_spec(spec, progress_callback=progress_callback, hf_cache_dir=hf_cache_dir)
 
     if model_name in SDCLI_MODELS:
         return pull_sdcli_model(model_name, progress_callback=progress_callback) is not None
@@ -62,8 +63,59 @@ def pull_any_model(
     )
 
 
+def apply_ollama_registry() -> None:
+    """Point OllamaDiffuser at the model entries we keep for it."""
+    from eyegen.ollama_registry import apply_registry
+
+    apply_registry()
+
+
+def pull_spec(
+    spec: ModelSpec,
+    progress_callback=None,
+    hf_cache_dir: str | None = None,
+) -> bool:
+    """Fetch a model the way its specification says it is fetched."""
+    if spec.backend == Backend.SDCLI:
+        from eyegen.backends.sdcli.models import pull_sdcli_model
+
+        return (
+            pull_sdcli_model(spec.name, progress_callback=progress_callback, spec=spec) is not None
+        )
+
+    if spec.backend == Backend.OLLAMA:
+        from eyegen.ollama_registry import register
+
+        register(spec)
+        return bool(
+            pull_model(
+                spec.name,
+                progress_callback=progress_callback,
+                hf_cache_dir=hf_cache_dir,
+            )
+        )
+
+    if spec.backend == Backend.COREML:
+        from eyegen.backends.coreml.models import pull_preconverted_coreml_model
+
+        repo = spec.repo
+        if not repo:
+            raise ValueError(
+                f"The model '{spec.name}' names no repository. A CoreML model needs a 'repo'."
+            )
+        target = pull_preconverted_coreml_model(repo, progress_callback=progress_callback)
+        return target is not None
+
+    raise ValueError(
+        f"The {spec.backend.value} backend runs a fixed set of models and cannot "
+        f"fetch '{spec.name}' from a repository. Name one of its own models "
+        "instead."
+    )
+
+
 def list_ollama_models() -> dict:
     """Return dicts of available and installed ollamadiffuser models."""
+    apply_ollama_registry()
     from ollamadiffuser.core.models.manager import model_manager  # type: ignore[import-untyped]
 
     return {
@@ -171,78 +223,3 @@ def save_mflux_model(
     if progress_callback:
         progress_callback(f"✅ Model saved to {out}")
     return out
-
-
-def _scan_safetensors_dir(p: Path):
-    """Scan *p* for safetensors files and return collected metadata."""
-    from safetensors import SafetensorError, safe_open  # type: ignore[import-untyped]
-
-    found_safetensors = False
-    read_any = False
-    read_failures: list[str] = []
-    quant_levels: set = set()
-    versions: set = set()
-
-    for subdir in sorted(p.iterdir()):
-        if not subdir.is_dir():
-            continue
-        for sf in sorted(subdir.glob("*.safetensors")):
-            found_safetensors = True
-            try:
-                with safe_open(str(sf), framework="mlx") as f:
-                    m = f.metadata() or {}
-            except (OSError, ValueError, SafetensorError) as exc:
-                log.debug("Could not read safetensors metadata from %s: %s", sf, exc)
-                read_failures.append(str(sf))
-                continue
-            read_any = True
-            ql = m.get("quantization_level")
-            quant_levels.add(int(ql) if ql and ql != "None" else None)
-            versions.add(m.get("mflux_version"))
-
-    return found_safetensors, read_any, read_failures, quant_levels, versions
-
-
-def validate_saved_model(path: str | Path) -> SavedModelValidation:
-    """Check whether *path* contains a valid mflux-saved model."""
-    p = Path(str(path)).expanduser()
-    if not p.is_dir():
-        return SavedModelValidation(valid=False, error=f"Not a directory: {path}")
-
-    try:
-        found_safetensors, read_any, read_failures, quant_levels, versions = _scan_safetensors_dir(
-            p
-        )
-    except ImportError:
-        log.debug("safetensors not installed, cannot validate model")
-        return SavedModelValidation(
-            valid=False, error="safetensors not installed, cannot validate model"
-        )
-
-    if not found_safetensors:
-        return SavedModelValidation(valid=False, error="No .safetensors files found")
-    if not read_any:
-        return SavedModelValidation(valid=False, error="Could not read safetensors metadata")
-    if read_failures:
-        return SavedModelValidation(
-            valid=False,
-            error=f"Could not read safetensors metadata from: {', '.join(read_failures)}",
-        )
-    if len(quant_levels) > 1:
-        return SavedModelValidation(
-            valid=False,
-            error=f"Inconsistent quantization across shards: {sorted(map(str, quant_levels))}",
-        )
-    if len(versions) > 1:
-        return SavedModelValidation(
-            valid=False,
-            error=f"Inconsistent mflux_version across shards: {sorted(map(str, versions))}",
-        )
-
-    return SavedModelValidation(
-        valid=True,
-        meta={
-            "quantization_level": next(iter(quant_levels)),
-            "mflux_version": next(iter(versions)),
-        },
-    )

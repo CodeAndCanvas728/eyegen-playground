@@ -33,6 +33,7 @@ Lifecycle:
 from .constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
 from .install import (
     CoreMLInstallStatus,
+    get_coreml_model_dir,
     get_coreml_models_dir,
     get_coreml_venv,
     validate_coreml_install,
@@ -50,6 +51,7 @@ __all__ = [
     "PRECONVERTED_HF_MODELS",
     "VALID_COMPUTE_UNITS",
     "convert_to_coreml",
+    "get_coreml_model_dir",
     "get_coreml_models_dir",
     "get_coreml_pipeline",
     "get_coreml_venv",

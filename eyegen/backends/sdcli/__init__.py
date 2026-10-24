@@ -27,7 +27,7 @@ Lifecycle:
        That is about 6.7 GB: the transformer, the text encoder and the VAE.
 """
 
-from .constants import SDCLI_DOC_URL, SDCLI_MODELS
+from .constants import SDCLI_DOC_URL, SDCLI_MODELS, SDCLI_ROLE_FLAGS
 from .install import (
     SdCliInstallStatus,
     get_sdcli_bin,
@@ -35,12 +35,13 @@ from .install import (
     missing_model_files,
     validate_sdcli_install,
 )
-from .models import list_sdcli_models, pull_sdcli_model
+from .models import list_sdcli_models, pull_sdcli_model, sdcli_specs
 from .pipeline import SdCliWrapper, get_sdcli_pipeline
 
 __all__ = [
     "SDCLI_DOC_URL",
     "SDCLI_MODELS",
+    "SDCLI_ROLE_FLAGS",
     "SdCliInstallStatus",
     "SdCliWrapper",
     "get_sdcli_bin",
@@ -49,5 +50,6 @@ __all__ = [
     "list_sdcli_models",
     "missing_model_files",
     "pull_sdcli_model",
+    "sdcli_specs",
     "validate_sdcli_install",
 ]

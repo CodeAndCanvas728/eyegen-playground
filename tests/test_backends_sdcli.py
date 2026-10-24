@@ -20,15 +20,22 @@ MODEL_FILES = (
     "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
     "ae.safetensors",
 )
+MODEL = "flux-3-image-klein-gguf"
 
 
 @pytest.fixture
 def model_dir(tmp_path, monkeypatch):
-    """A directory with the three model files in it."""
-    for name in MODEL_FILES:
-        (tmp_path / name).write_bytes(b"x")
+    """A directory with the three model files in it.
+
+    Each model has a directory of its own, so the files live in a directory
+    named after the model.
+    """
     monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path))
-    return tmp_path
+    directory = tmp_path / MODEL
+    directory.mkdir()
+    for name in MODEL_FILES:
+        (directory / name).write_bytes(b"x")
+    return directory
 
 
 @pytest.fixture
@@ -84,7 +91,22 @@ def test_validate_reports_missing_files(tmp_path, binary):
 
 def test_the_model_dir_follows_the_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path))
-    assert get_sdcli_model_dir() == tmp_path
+    assert get_sdcli_model_dir(MODEL) == tmp_path / MODEL
+
+
+def test_two_models_do_not_share_a_directory(monkeypatch, tmp_path):
+    """Their files have the same names, and one would overwrite the other."""
+    monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path))
+    assert get_sdcli_model_dir("one") != get_sdcli_model_dir("two")
+
+
+def test_the_model_dir_follows_the_root(monkeypatch, tmp_path):
+    """The root is a setting; the model's directory follows it."""
+    from eyegen.config import EyeGenConfig
+
+    monkeypatch.delenv("SDCLI_MODEL_DIR", raising=False)
+    config = EyeGenConfig(models_dir=str(tmp_path))
+    assert get_sdcli_model_dir(MODEL, config) == tmp_path / "sdcli" / MODEL
 
 
 def test_the_timeout_follows_the_environment(monkeypatch):
@@ -101,7 +123,7 @@ def test_the_model_settings_win_over_the_tool_defaults():
     """A distilled model knows how many steps it was trained for."""
     steps, guidance = resolve_settings("flux-3-image-klein-gguf", 30, 7.5)
     assert steps == SDCLI_MODELS["flux-3-image-klein-gguf"]["steps"]
-    assert guidance == SDCLI_MODELS["flux-3-image-klein-gguf"]["cfg_scale"]
+    assert guidance == SDCLI_MODELS["flux-3-image-klein-gguf"]["guidance"]
 
 
 def test_a_changed_setting_is_the_users():

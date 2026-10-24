@@ -13,11 +13,12 @@ from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
 from eyegen.config import EyeGenConfig
+from eyegen.model_specs import ModelSpec
 
 from .constants import VALID_COMPUTE_UNITS
 from .install import (
     _sidecar_python,
-    get_coreml_models_dir,
+    get_coreml_model_dir,
     validate_coreml_install,
 )
 
@@ -27,8 +28,9 @@ log = logging.getLogger(__name__)
 class CoreMLWrapper(BaseSubprocessRunner):
     """Adapter that runs Apple's Stable Diffusion pipeline via subprocess."""
 
-    def __init__(self, config: EyeGenConfig):
+    def __init__(self, config: EyeGenConfig, spec: Optional[ModelSpec] = None):
         super().__init__(config)
+        self.spec = spec
         self.model_path = self._resolve_model_path(config)
         self.model_version = self._resolve_model_version(config)
         self.compute_unit = self._resolve_compute_unit(config)
@@ -64,13 +66,21 @@ class CoreMLWrapper(BaseSubprocessRunner):
                     "or ./generate.py convert-coreml <hf-model> --output <dir>."
                 )
             return p
+        if self.spec is not None and self.spec.repo:
+            candidate = get_coreml_model_dir(self.spec.repo.split("/")[-1])
+            if candidate.is_dir():
+                return candidate
+            raise RuntimeError(
+                f"CoreML model '{self.spec.repo}' not found at {candidate}. "
+                f"Run ./generate.py pull --from-hf {self.spec.repo} --backend coreml."
+            )
         if not config.model:
             raise RuntimeError(
                 "No model selected. Set a model name or provide a coreml_model_path."
             )
         if not re.match(r"^[a-zA-Z0-9_\-\.]+$", config.model):
             raise ValueError(f"Invalid characters in CoreML model name: {config.model}")
-        candidate = get_coreml_models_dir() / config.model
+        candidate = get_coreml_model_dir(config.model)
         if candidate.is_dir():
             return candidate
         raise RuntimeError(
@@ -230,6 +240,6 @@ class CoreMLWrapper(BaseSubprocessRunner):
             )
 
 
-def get_coreml_pipeline(config: EyeGenConfig) -> CoreMLWrapper:
+def get_coreml_pipeline(config: EyeGenConfig, spec: Optional[ModelSpec] = None) -> CoreMLWrapper:
     """Build a CoreMLWrapper. The subprocess runs lazily on first generate call."""
-    return CoreMLWrapper(config)
+    return CoreMLWrapper(config, spec=spec)

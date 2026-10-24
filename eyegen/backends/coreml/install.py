@@ -10,7 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from .constants import DEFAULT_COREML_MODELS_DIR, DEFAULT_COREML_VENV
+from eyegen.paths import coreml_models_dir, coreml_venv_dir
+from eyegen.validation import validate_model_name
 
 log = logging.getLogger(__name__)
 
@@ -24,14 +25,29 @@ class CoreMLInstallStatus:
     message: str
 
 
-def get_coreml_models_dir() -> Path:
+def get_coreml_models_dir(config=None) -> Path:
+    """The directory holding the CoreML bundles."""
     override = os.environ.get("COREML_MODELS_DIR")
-    return Path(override).expanduser() if override else DEFAULT_COREML_MODELS_DIR
+    if override:
+        return Path(override).expanduser()
+    return coreml_models_dir(config)
 
 
-def get_coreml_venv() -> Path:
+def get_coreml_model_dir(name: str, config=None) -> Path:
+    """The directory holding one CoreML bundle.
+
+    A bundle is named after the repository it came from, so the name is one
+    directory name and is checked before it becomes a path.
+    """
+    return get_coreml_models_dir(config) / validate_model_name(name)
+
+
+def get_coreml_venv(config=None) -> Path:
+    """The sidecar's own Python environment."""
     override = os.environ.get("COREML_VENV")
-    return Path(override).expanduser() if override else DEFAULT_COREML_VENV
+    if override:
+        return Path(override).expanduser()
+    return coreml_venv_dir(config)
 
 
 def _sidecar_python() -> Optional[Path]:

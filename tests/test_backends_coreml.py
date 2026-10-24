@@ -20,18 +20,18 @@ def _clear_coreml_cache():
 
 class TestCoremlPaths:
     def test_default_models_dir(self):
-        from eyegen.backends.coreml.constants import DEFAULT_COREML_MODELS_DIR
+        from eyegen.paths import DEFAULT_MODELS_DIR
 
-        assert coreml.get_coreml_models_dir() == DEFAULT_COREML_MODELS_DIR
+        assert coreml.get_coreml_models_dir() == DEFAULT_MODELS_DIR / "coreml"
 
     def test_models_dir_env_override(self, monkeypatch):
         monkeypatch.setenv("COREML_MODELS_DIR", "~/custom/coreml")
         assert coreml.get_coreml_models_dir() == Path.home() / "custom" / "coreml"
 
     def test_default_venv(self):
-        from eyegen.backends.coreml.constants import DEFAULT_COREML_VENV
+        from eyegen.paths import DEFAULT_MODELS_DIR
 
-        assert coreml.get_coreml_venv() == DEFAULT_COREML_VENV
+        assert coreml.get_coreml_venv() == DEFAULT_MODELS_DIR / ".coreml-venv"
 
     def test_venv_env_override(self, monkeypatch):
         monkeypatch.setenv("COREML_VENV", "~/custom/venv")

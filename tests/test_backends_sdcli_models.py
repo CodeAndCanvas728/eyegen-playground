@@ -10,6 +10,7 @@ import pytest
 
 from eyegen.backends.sdcli.constants import SDCLI_MODELS
 from eyegen.backends.sdcli.models import list_sdcli_models, pull_sdcli_model
+from eyegen.config import Backend
 
 MODEL = "flux-3-image-klein-gguf"
 MODEL_FILES = (
@@ -21,10 +22,9 @@ MODEL_FILES = (
 
 def test_the_catalogue_holds_the_three_files():
     spec = SDCLI_MODELS[MODEL]
-    assert spec["diffusion_model"] in MODEL_FILES
-    assert spec["llm"] in MODEL_FILES
-    assert spec["vae"] in MODEL_FILES
-    assert set(spec["sources"]) == set(MODEL_FILES)
+    assert set(spec["sources"]) == {"diffusion_model", "llm", "vae"}
+    names = {source["file"] for source in spec["sources"].values()}
+    assert names == set(MODEL_FILES)
 
 
 def test_pulling_an_unknown_model_says_so():
@@ -38,40 +38,65 @@ def test_pulling_downloads_the_files(tmp_path, monkeypatch):
 
     def fake_download(repo_id, filename, local_dir):
         downloaded.append((repo_id, filename))
-        path = tmp_path / filename
+        path = tmp_path / MODEL / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"x")
         return str(path)
 
     with patch("huggingface_hub.hf_hub_download", side_effect=fake_download):
         directory = pull_sdcli_model(MODEL)
 
-    assert directory == tmp_path
+    assert directory == tmp_path / MODEL
     assert len(downloaded) == 3
     for name in MODEL_FILES:
-        assert (tmp_path / name).is_file()
+        assert (tmp_path / MODEL / name).is_file()
 
 
 def test_pulling_skips_a_file_that_is_already_there(tmp_path, monkeypatch):
     pytest.importorskip("huggingface_hub")
     monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path))
+    directory = tmp_path / MODEL
+    directory.mkdir()
     for name in MODEL_FILES:
-        (tmp_path / name).write_bytes(b"x")
+        (directory / name).write_bytes(b"x")
 
     with patch("huggingface_hub.hf_hub_download") as download:
-        directory = pull_sdcli_model(MODEL)
+        pulled = pull_sdcli_model(MODEL)
 
-    assert directory == tmp_path
+    assert pulled == directory
     download.assert_not_called()
 
 
 def test_the_listing_says_whether_the_files_are_there(tmp_path, monkeypatch):
     monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path))
-    (tmp_path / MODEL_FILES[0]).write_bytes(b"x")
+    directory = tmp_path / MODEL
+    directory.mkdir()
+    (directory / MODEL_FILES[0]).write_bytes(b"x")
 
     models = list_sdcli_models()
     entry = next(m for m in models if m["name"] == MODEL)
     assert not entry["installed"]
     assert entry["present"] == [MODEL_FILES[0]]
+
+
+def test_the_users_own_models_are_in_the_listing(tmp_path, monkeypatch):
+    """A model the user described is one this backend can run."""
+    from eyegen.model_catalogue import upsert_spec
+    from eyegen.model_specs import ModelSource, ModelSpec
+
+    monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path))
+    upsert_spec(
+        ModelSpec(
+            name="mine",
+            backend=Backend.SDCLI,
+            sources={"diffusion_model": ModelSource(repo="owner/repo", file="mine.gguf")},
+        )
+    )
+
+    models = list_sdcli_models()
+    entry = next(m for m in models if m["name"] == "mine")
+    assert entry["files"] == ["mine.gguf"]
+    assert not entry["installed"]
 
 
 def test_the_gui_pulls_through_the_stable_diffusion_puller(tmp_path):

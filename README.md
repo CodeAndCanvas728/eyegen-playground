@@ -5,13 +5,16 @@ Comes with a native macOS GUI and a full-featured CLI.
 
 Six generation backends:
 - **MLX (diffusionkit)** — Apple Silicon native, SD3.5 quantized
-- **MFLUX** — MLX-native FLUX, FLUX.2, Z-Image, FIBO, Qwen, SeedVR2 (20+ models)
+- **MFLUX** — MLX-native FLUX, FLUX.2, FLUX.3, Z-Image, FIBO, Qwen, Krea, Ideogram, SeedVR2 (40+ models)
 - **OllamaDiffuser (GGUF)** — 40+ quantized models (FLUX, SDXL, SD1.5, SD3.5, PixArt-Sigma, etc.)
 - **Bonsai (PrismML)** — 1.58-bit ternary + 1-bit binary FLUX.2 Klein 4B for Apple Silicon (third-party, opt-in)
 - **CoreML (Apple Neural Engine)** — SD 1.x/2.x via Apple's `python_coreml_stable_diffusion` (opt-in, sidecar venv)
 - **stable-diffusion.cpp** — FLUX.3 Image Klein as a GGUF transformer, through the `sd-cli` binary (opt-in)
 
 The backend is auto-detected from the model name, or you can choose manually.
+
+A model the tool does not know can be described in `models.json` and run like
+any other — see [Adding a model the tool does not know](#adding-a-model-the-tool-does-not-know).
 
 **Requires:** Apple Silicon Mac (M1/M2/M3/M4) · 16 GB+ RAM recommended
 
@@ -20,7 +23,7 @@ The backend is auto-detected from the model name, or you can choose manually.
 ## Setup (one-time)
 
 ```bash
-cd mlx-sd35-workspace
+cd mygen-playground
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -176,6 +179,10 @@ source venv/bin/activate
 ./generate.py generate "a cat" --backend coreml
 ./generate.py generate "a cat" --backend sdcli
 
+# Use a model for this run only, without changing the configured default
+./generate.py generate "a cat" --model flux-3-image-klein-gguf
+./generate.py generate "a cat" --model my-own-model
+
 # MFLUX with custom quantization
 ./generate.py generate "a cat" --backend mflux --quantize 8
 ```
@@ -193,6 +200,7 @@ source venv/bin/activate
 | `--image` | `-i` | Input image path for img2img mode (not supported by Bonsai or CoreML) |
 | `--denoise` | `-d` | Denoise strength for img2img, 0.05–1.0 (default: 0.75) |
 | `--backend` | `-b` | `auto` (default), `mlx`, `mflux`, `ollamadiffuser`, `bonsai`, or `coreml` |
+| `--model` | `-m` | Model to use for this run, instead of the configured default |
 | `--quantize` | `-q` | MFLUX quantization: `4` (default), `8`, or omit for full precision |
 
 > `--width`/`--height` are ignored when `--image` is provided.
@@ -209,15 +217,33 @@ source venv/bin/activate
 ./generate.py config-reset                       # restore factory defaults
 ```
 
-Configurable keys: `model`, `num_inference_steps`, `guidance_scale`, `width`, `height`, `backend`, `mflux_quantize`.
+Configurable keys: `model`, `num_inference_steps`, `guidance_scale`, `width`, `height`, `backend`, `mflux_quantize`, `hf_cache_dir`, `models_dir`.
 
 ### Utility commands
 
 ```bash
 ./generate.py list-outputs   # list all generated images
-./generate.py list-models    # list MFLUX + GGUF models
+./generate.py list-models    # list your own models, MFLUX, GGUF and stable-diffusion.cpp models
 ./generate.py status         # system info, backends, model availability
+./generate.py --version      # the version of the installed package
 ```
+
+### Fetching a model
+
+```bash
+# A model the tool already knows
+./generate.py pull flux.1-dev-gguf-q4ks
+./generate.py pull flux-3-image-klein-gguf
+
+# A model the tool does not know: a repository and its files
+./generate.py pull --from-hf owner/repo --as my-model \
+    --file diffusion_model=owner/repo:model.gguf
+
+# Keep the backends up to date
+./generate.py update-backends
+```
+
+See [Adding a model the tool does not know](#adding-a-model-the-tool-does-not-know) for the whole story.
 
 ### HuggingFace authentication
 
@@ -252,17 +278,26 @@ Get a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/
 
 ## MFLUX Models
 
-MFLUX is an MLX-native implementation of state-of-the-art image generation models. It runs entirely on Apple Silicon via MLX — no torch overhead — and supports 20+ models across multiple architectures.
+MFLUX is an MLX-native implementation of state-of-the-art image generation models. It runs entirely on Apple Silicon via MLX — no torch overhead — and supports 40+ models across a dozen architectures.
 
 ### Available models
 
+MFLUX 0.23 knows 43 models. The families:
+
 | Family | Models | Typical steps |
 |--------|--------|---------------|
-| **FLUX.1** | dev, schnell, kontext, fill, redux, depth | 4–50 |
-| **FLUX.2** | klein-4b, klein-9b, klein-base-4b, klein-base-9b | 4–12 |
+| **FLUX.1** | dev, schnell, kontext, fill, redux, depth, controlnet-canny, controlnet-upscaler | 4–50 |
+| **FLUX.2** | klein-4b, klein-9b, klein-base-4b, klein-base-9b, klein-9b-kv | 4–12 |
+| **FLUX.3** | image-klein, image-klein-base | 16–50 |
 | **Z-Image** | z-image, z-image-turbo | 4–20 |
-| **FIBO** | fibo, fibo-lite, fibo-edit | 20–50 |
-| **Qwen** | qwen-image, qwen-image-edit | 20–50 |
+| **FIBO** | fibo, fibo-lite, fibo-edit, fibo-edit-rmbg | 20–50 |
+| **Qwen Image** | qwen-image, qwen-image-edit, qwen-image-2.1, qwen-image-2.1-turbo | 8–50 |
+| **Krea 2** | krea-2, krea-2-raw, krea-dev | 4–28 |
+| **Ideogram 4** | ideogram-4-fp8 | 20–50 |
+| **ERNIE-Image** | ernie-image, ernie-image-turbo | 4–50 |
+| **Boogu** | boogu-image-turbo | 4 |
+| **Ming-Image** | ming-image-design | 20–50 |
+| **Lens** | lens-turbo | 4 |
 | **SeedVR2** | seedvr2-3b, seedvr2-7b | 20–50 |
 
 Run `./generate.py list-models` for the full list with HuggingFace model IDs.
@@ -325,12 +360,17 @@ In the GUI, enter the model name in the **Model** field and click **Pull…**.
 
 ### Auto-detection
 
-The backend is chosen automatically based on the model name:
-- Contains `gguf` → OllamaDiffuser
-- Matches a known MFLUX alias (dev, schnell, flux2-klein-4b, z-image, fibo, etc.) → MFLUX
-- Everything else → MLX (diffusionkit)
+The backend is chosen automatically from the model name:
 
-Override with `--backend mlx`, `--backend mflux`, or `--backend ollamadiffuser` on the CLI, or use the **Backend** dropdown in the GUI.
+1. **Your own catalogue** (`models.json`) — a model you described runs the way you described it, whatever its name looks like.
+2. The stable-diffusion.cpp catalogue.
+3. Contains `gguf` → OllamaDiffuser.
+4. A Bonsai identifier (`bonsai-*`, `prism-ml/bonsai-*`) → Bonsai.
+5. A CoreML alias, an `apple/coreml-stable-diffusion-*` id, or `coreml_model_path` → CoreML.
+6. A known MFLUX alias → MFLUX.
+7. A diffusionkit checkpoint → MLX.
+
+Override with `--backend mlx`, `--backend mflux`, `--backend ollamadiffuser`, `--backend bonsai`, `--backend coreml` or `--backend sdcli` on the CLI, or the **Backend** dropdown in the GUI. A backend that contradicts your own catalogue is an error rather than a silent choice: the model would run through a runtime that cannot read it.
 
 ### Using a GGUF model
 
@@ -523,29 +563,122 @@ Run `./generate.py list-coreml-models` to see installed models.
 
 ---
 
+## Adding a model the tool does not know
+
+Every model EyeGen runs is described by a **specification**: the backend that
+runs it, the files it is made of, the repository each file comes from, and the
+steps and guidance it was trained for. The catalogues that ship with the tool
+are specifications too, and your own models live in `models.json` next to your
+config file (`config/models.json` in a checkout, the application-support
+folder for the bundled app).
+
+### From a repository, in one command
+
+```bash
+./generate.py pull --from-hf unsloth/flux-3-image-klein-GGUF \
+    --as klein-q4 \
+    --file diffusion_model=unsloth/flux-3-image-klein-GGUF:flux-3-image-klein-UD-Q4_K_XL.gguf \
+    --file llm=Qwen/Qwen3-VL-4B-Instruct-GGUF:Qwen3VL-4B-Instruct-Q4_K_M.gguf \
+    --file vae=black-forest-labs/flux-3-image-klein:ae.safetensors \
+    --steps 16 --guidance 1.0 --sampler euler
+```
+
+The specification is written to `models.json` and the files are fetched. Then
+use it, for one run or for good:
+
+```bash
+./generate.py generate "a red fox in a snow-covered forest" --model klein-q4
+./generate.py config-set model klein-q4
+```
+
+`--file` takes `role=repository:filename`. The role is the part the file plays,
+and the names are the ones `sd-cli` itself uses: `diffusion_model`, `vae`,
+`llm`, `t5xxl`, `clip_l`, `clip_g`, `clip_vision`, `llm_vision`, `tokenizer`,
+`control_net`. The repository may be left out when it is the one `--from-hf`
+names. A model of one file needs one `--file`; the roles it does not name are
+not passed to the binary.
+
+### By hand
+
+`config/models.json` is a plain file, and editing it is supported:
+
+```json
+{
+  "models": {
+    "klein-q4": {
+      "backend": "sdcli",
+      "sources": {
+        "diffusion_model": {"repo": "unsloth/flux-3-image-klein-GGUF", "file": "flux-3-image-klein-UD-Q4_K_XL.gguf"},
+        "vae": {"repo": "black-forest-labs/flux-3-image-klein", "file": "ae.safetensors"}
+      },
+      "steps": 16,
+      "guidance": 1.0,
+      "sampling_method": "euler",
+      "description": "FLUX.3 Image Klein, 16-step distilled"
+    }
+  }
+}
+```
+
+A model in this file runs the way it is written here, whatever its name looks
+like: a model called `flux.1-dev-gguf-q4ks` with `"backend": "coreml"` runs
+through CoreML.
+
+A model's name is one plain name — the directory its files are written to,
+under `models_dir/sdcli/`. A name with a path in it (`../etc`) is refused.
+
+Two fields are for the backends whose runtime knows a fixed set of models:
+`alias` names one of that backend's own models, and `path` is a directory on
+this machine that holds a local copy of it.
+
+### What each backend can do with a specification
+
+| Backend | An arbitrary repository |
+|---|---|
+| stable-diffusion.cpp | **Yes.** Any model `sd-cli` can run: the roles map to the binary's own flags. |
+| CoreML | **Yes.** The repository is fetched whole; `convert-coreml` turns a PyTorch model into one. |
+| OllamaDiffuser | **Yes, for GGUF models.** The specification is written to the registry file the package reads, and a variant it has never heard of takes every `.gguf` in the repository. The text encoders and VAE come from the FLUX and SD 3.5 families, so a GGUF of another family is not runnable through it. |
+| MLX (diffusionkit) | **No.** Its checkpoints are a table inside that package, and the architecture of each is code there. A specification names one of the models diffusionkit has. |
+| MFLUX | **No.** The architecture is chosen by the alias, and the aliases are the package's. A specification names one of its aliases (`"alias"`), and `path` points it at a local copy. |
+| Bonsai | **No.** Its variants are a closed list in the Bonsai demo repository. A specification names one of them. |
+
+---
+
 ## File Structure
 
 ```
-mlx-sd35-workspace/
-├── gui.py                # PySide6 GUI (primary interface)
-├── generate.py           # Typer CLI
-├── core.py               # Shared generation logic (5-backend dispatcher)
-├── core_bonsai.py        # Bonsai (PrismML) backend wrapper
-├── core_coreml.py        # CoreML (Apple Neural Engine) backend wrapper
-├── create_app.sh         # Builds ~/Applications/EyeGen.app
+mygen-playground/
+├── gui.py                # PySide6 GUI entry (primary interface)
+├── generate.py           # Typer CLI entry
+├── eyegen/               # The package
+│   ├── cli/              # The commands: generate, pull, models, config, status, hf
+│   ├── gui/              # The window, its mixins, its workers
+│   ├── backends/         # One subpackage per backend
+│   │   ├── bonsai/       # PrismML ternary models
+│   │   ├── coreml/       # Apple Neural Engine, via a sidecar venv
+│   │   ├── sdcli/        # stable-diffusion.cpp, through its command line
+│   │   └── runner.py     # The subprocess plumbing they share
+│   ├── model_specs.py    # What a model is: its files, its settings
+│   ├── model_catalogue.py# Where the user's own models are kept
+│   ├── paths.py          # Where the models are kept: one root, by convention
+│   ├── config.py         # The configuration and the paths
+│   └── generation.py     # The dispatcher that runs a backend
 ├── scripts/
 │   ├── setup-bonsai.sh   # One-time installer for Bonsai
-│   └── setup-coreml.sh   # One-time installer for CoreML sidecar venv
-├── requirements.txt      # Python dependencies
+│   ├── setup-coreml.sh   # One-time installer for CoreML sidecar venv
+│   └── generate_theme.py # Generates gui/style/*.qss from the tokens
 ├── config/
 │   ├── config.json       # Generation defaults
+│   ├── models.json       # Your own model specifications (see above)
 │   └── gui_state.json    # GUI state (auto-saved on close)
+├── tests/                # pytest
 ├── outputs/              # Generated images (auto-created)
 └── venv/                 # Virtual environment (after setup)
 
 ~/models/                 # Unified model artifact tree
 ├── .hf-cache/hub/        # HuggingFace download cache (HF_HUB_CACHE)
 └── eyegen/               # All EyeGen-specific artifacts
+    ├── sdcli/            # One directory per model: transformer, encoder, VAE
     ├── saved-mflux/      # Output of ./generate.py save-model
     ├── bonsai-demo/      # Bonsai-Image-Demo vendor (created by setup-bonsai)
     │   ├── .venv/        # Py 3.11 venv with patched mflux-prism + mlx
@@ -553,6 +686,17 @@ mlx-sd35-workspace/
     ├── coreml/           # Downloaded/converted CoreML model bundles
     └── .coreml-venv/     # Py 3.11 sidecar venv with python_coreml_stable_diffusion
 ```
+
+The root is one setting. `models_dir` in `config/config.json` moves everything under it — `./generate.py config-set models_dir /Volumes/Models` — and `EYEGEN_MODELS_DIR` does the same for one run, which is the way to use a different disk without editing a file.
+
+The stable-diffusion.cpp models each have a directory of their own, because their files have the same names: `ae.safetensors` is a VAE whichever model it belongs to. An install from before that change keeps its files in one flat directory and is asked for them in a per-model one, so the tool will say the files are missing. Move them, and the model is back:
+
+```bash
+mkdir -p ~/models/eyegen/sdcli/flux-3-image-klein-gguf
+mv ~/models/eyegen/flux3-klein/* ~/models/eyegen/sdcli/flux-3-image-klein-gguf/
+```
+
+The same is true of `./generate.py save-model`, which now writes under `saved-mflux/` rather than into the root itself.
 
 ---
 

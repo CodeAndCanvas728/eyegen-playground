@@ -137,7 +137,7 @@ def _print_coreml_status():
 
 def _print_sdcli_status(config: EyeGenConfig):
     model = config.model or ""
-    if model not in sdcli.SDCLI_MODELS:
+    if model not in sdcli.sdcli_specs():
         return
     status = sdcli.validate_sdcli_install(model)
     if status.installed:

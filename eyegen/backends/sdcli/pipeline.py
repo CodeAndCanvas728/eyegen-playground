@@ -11,8 +11,9 @@ from PIL import Image
 
 from eyegen.backends.runner import BaseSubprocessRunner
 from eyegen.config import EyeGenConfig
+from eyegen.model_specs import ModelSpec
 
-from .constants import SDCLI_MODELS, TOOL_DEFAULT_GUIDANCE, TOOL_DEFAULT_STEPS
+from .constants import SDCLI_MODELS, SDCLI_ROLE_FLAGS, TOOL_DEFAULT_GUIDANCE, TOOL_DEFAULT_STEPS
 from .install import get_sdcli_timeout, validate_sdcli_install
 
 log = logging.getLogger(__name__)
@@ -22,17 +23,25 @@ def resolve_settings(
     model: str,
     steps: Optional[int],
     guidance: Optional[float],
+    spec: Optional[ModelSpec] = None,
 ) -> tuple[int, float]:
     """The steps and guidance to use for *model*.
 
     A setting the user has left at the tool-wide default is the model's to
     choose; one they have changed is theirs.
     """
-    spec = SDCLI_MODELS.get(model) or {}
+    if spec is None and model in SDCLI_MODELS:
+        spec = ModelSpec.from_dict(model, SDCLI_MODELS[model])
+    # A setting the model states is the model's, even when it is zero: a
+    # guidance of 0 is a value a model can be trained for.
     if steps is None or steps == TOOL_DEFAULT_STEPS:
-        steps = spec.get("steps", TOOL_DEFAULT_STEPS)
+        steps = TOOL_DEFAULT_STEPS
+        if spec is not None and spec.steps is not None:
+            steps = spec.steps
     if guidance is None or guidance == TOOL_DEFAULT_GUIDANCE:
-        guidance = spec.get("cfg_scale", TOOL_DEFAULT_GUIDANCE)
+        guidance = TOOL_DEFAULT_GUIDANCE
+        if spec is not None and spec.guidance is not None:
+            guidance = spec.guidance
     return steps, guidance
 
 
@@ -51,8 +60,17 @@ class SdCliWrapper(BaseSubprocessRunner):
     # backend builds, not a list of what the binary could take.
     FLAGS_WITH_ARGS = {
         "--diffusion-model",
-        "--llm",
+        "--high-noise-diffusion-model",
+        "--uncond-diffusion-model",
         "--vae",
+        "--llm",
+        "--llm_vision",
+        "--t5xxl",
+        "--clip_l",
+        "--clip_g",
+        "--clip_vision",
+        "--tokenizer",
+        "--control-net",
         "-p",
         "--cfg-scale",
         "--steps",
@@ -66,19 +84,38 @@ class SdCliWrapper(BaseSubprocessRunner):
     }
     FLAGS_WITHOUT_ARGS = {"--offload-to-cpu"}
 
-    def __init__(self, config: EyeGenConfig, model: str):
+    def __init__(self, config: EyeGenConfig, model: str, spec: Optional[ModelSpec] = None):
         super().__init__(config)
         self.model = model
-        self.spec = SDCLI_MODELS.get(model)
-        if self.spec is None:
-            raise ValueError(f"Unknown stable-diffusion.cpp model: {model}")
+        if spec is None:
+            if model not in SDCLI_MODELS:
+                raise ValueError(f"Unknown stable-diffusion.cpp model: {model}")
+            spec = ModelSpec.from_dict(model, SDCLI_MODELS[model])
+        self.spec = spec
+        self._check_roles()
 
-        status = validate_sdcli_install(model)
+        status = validate_sdcli_install(model, spec=spec, config=config)
         if not status.installed:
             raise RuntimeError(status.message)
         self.binary = status.binary
         self.model_dir = status.model_dir
         self.timeout = get_sdcli_timeout()
+
+    def _check_roles(self) -> None:
+        """Refuse a file whose role the binary has no flag for.
+
+        A role the binary does not know would be dropped, and the model
+        would run without it: a command line with no transformer is a
+        failure the user sees much later, if at all.
+        """
+        unknown = [role for role in self.spec.sources if role not in SDCLI_ROLE_FLAGS]
+        if unknown:
+            known = ", ".join(sorted(SDCLI_ROLE_FLAGS))
+            raise ValueError(
+                f"The model '{self.model}' names a role the stable-diffusion.cpp "
+                f"backend does not know: {', '.join(sorted(unknown))}. "
+                f"The roles it knows are: {known}."
+            )
 
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Allow only the flags this backend passes."""
@@ -110,14 +147,13 @@ class SdCliWrapper(BaseSubprocessRunner):
         negative_prompt: str = "",
     ) -> List[str]:
         spec = self.spec
-        cmd = [
-            str(self.binary),
-            "--diffusion-model",
-            str(self.model_dir / spec["diffusion_model"]),
-            "--llm",
-            str(self.model_dir / spec["llm"]),
-            "--vae",
-            str(self.model_dir / spec["vae"]),
+        cmd = [str(self.binary)]
+        for role, flag in SDCLI_ROLE_FLAGS.items():
+            source = spec.sources.get(role)
+            if source is None:
+                continue
+            cmd += [flag, str(self.model_dir / source.name)]
+        cmd += [
             "-p",
             prompt,
             "--cfg-scale",
@@ -125,7 +161,7 @@ class SdCliWrapper(BaseSubprocessRunner):
             "--steps",
             str(steps),
             "--sampling-method",
-            spec.get("sampling_method", "euler"),
+            spec.sampling_method or "euler",
             "-W",
             str(width),
             "-H",
@@ -181,7 +217,9 @@ class SdCliWrapper(BaseSubprocessRunner):
         **kwargs,
     ) -> Image.Image:
         """Render *prompt* and return the image."""
-        steps, guidance = resolve_settings(self.model, num_inference_steps, guidance_scale)
+        steps, guidance = resolve_settings(
+            self.model, num_inference_steps, guidance_scale, spec=self.spec
+        )
         self._warn_about_img2img(image_path, denoise)
 
         with tempfile.TemporaryDirectory(prefix="eyegen-sdcli-") as tmp:
@@ -212,7 +250,11 @@ class SdCliWrapper(BaseSubprocessRunner):
                 return img.convert("RGB")
 
 
-def get_sdcli_pipeline(config: EyeGenConfig, model: Optional[str] = None) -> SdCliWrapper:
+def get_sdcli_pipeline(
+    config: EyeGenConfig,
+    model: Optional[str] = None,
+    spec: Optional[ModelSpec] = None,
+) -> SdCliWrapper:
     """Build the wrapper for the configured model."""
     name = model or config.model or ""
-    return SdCliWrapper(config, name)
+    return SdCliWrapper(config, name, spec=spec)

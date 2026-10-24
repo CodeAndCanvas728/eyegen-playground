@@ -5,6 +5,16 @@ class UnsupportedModelError(ValueError):
     """Raised when *detect_backend* cannot resolve a model name to any backend."""
 
 
+class ModelBackendConflict(ValueError):
+    """Raised when a chosen backend contradicts the model's specification.
+
+    A model the user described in their own catalogue runs the way they
+    described it. Asking for a different backend than the one that
+    description names would run the model's files through a runtime that
+    cannot read them, so it is an error rather than a silent choice.
+    """
+
+
 class QuantizationError(RuntimeError):
     """Raised when MLX quantized-weight dequantization fails at inference.
 

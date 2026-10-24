@@ -1,5 +1,6 @@
 """Internal helpers for the `generate` CLI command."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
@@ -12,7 +13,6 @@ from eyegen import (
     Backend,
     EyeGenConfig,
     QuantizationError,
-    detect_backend,
     generate_image,
     get_mflux_pipeline,
     get_ollama_pipeline,
@@ -21,7 +21,8 @@ from eyegen import (
     validate_dimensions,
     validate_image_path,
 )
-from eyegen.backends import bonsai, coreml, sdcli
+from eyegen.backends import bonsai, coreml, resolve_model, sdcli
+from eyegen.model_specs import ResolvedModel, apply_spec
 
 
 def validate_cli_backend(backend: str) -> str:
@@ -121,21 +122,22 @@ def print_generation_settings(
         typer.echo(f"   Seed: {seed}")
 
 
-def load_pipeline(resolved_backend: Backend, config: EyeGenConfig, quantize: Optional[int]):
+def load_pipeline(resolved: ResolvedModel, config: EyeGenConfig, quantize: Optional[int]):
     typer.echo("📦 Loading model...")
-    if resolved_backend == Backend.OLLAMA:
+    config = apply_spec(config, resolved.spec)
+    if resolved.backend == Backend.OLLAMA:
         return get_ollama_pipeline(config)
-    if resolved_backend == Backend.MFLUX:
+    if resolved.backend == Backend.MFLUX:
         q = quantize if quantize is not None else config.mflux_quantize
         if q is not None:
             typer.echo(f"   Quantize: {q}-bit")
         return get_mflux_pipeline(config, quantize=q)
-    if resolved_backend == Backend.BONSAI:
+    if resolved.backend == Backend.BONSAI:
         return bonsai.get_bonsai_pipeline(config)
-    if resolved_backend == Backend.SDCLI:
-        return sdcli.get_sdcli_pipeline(config)
-    if resolved_backend == Backend.COREML:
-        return coreml.get_coreml_pipeline(config)
+    if resolved.backend == Backend.SDCLI:
+        return sdcli.get_sdcli_pipeline(config, resolved.name, spec=resolved.spec)
+    if resolved.backend == Backend.COREML:
+        return coreml.get_coreml_pipeline(config, spec=resolved.spec)
     return get_pipeline(config)
 
 
@@ -205,13 +207,21 @@ def handle_quantization_error(
         raise typer.Exit(1) from retry_err
 
 
-def _resolve_backend_and_model(backend: str) -> tuple[Backend, str, EyeGenConfig]:
-    """Validate backend and resolve model + backend from config."""
+def _resolve_backend_and_model(
+    backend: str, model_override: Optional[str]
+) -> tuple[ResolvedModel, EyeGenConfig]:
+    """Validate backend and resolve model + backend from config.
+
+    A model given on the command line is used for this run only: the
+    configuration file is left as it was.
+    """
     validate_cli_backend(backend)
     config = load_config()
+    if model_override:
+        config = replace(config, model=model_override)
     model = config.model or DEFAULT_CONFIG.model
-    resolved_backend = detect_backend(model, backend, config=config)
-    return resolved_backend, model, config
+    resolved = resolve_model(model, backend, config=config)
+    return resolved, config
 
 
 def _resolve_generation_params(
@@ -252,21 +262,24 @@ def build_generation_params(
     image: Optional[Path],
     denoise: Optional[float],
     quantize: Optional[int],
+    model: Optional[str] = None,
 ):
     """Resolve and validate all generation parameters."""
-    resolved_backend, model, config = _resolve_backend_and_model(backend)
+    resolved, config = _resolve_backend_and_model(backend, model)
     num_steps, guidance_scale, h, w = _resolve_generation_params(
         config, steps, guidance, height, width
     )
-    image_path, denoise_value = setup_img2img(image, denoise, resolved_backend, h, w)
+    image_path, denoise_value = setup_img2img(image, denoise, resolved.backend, h, w)
 
-    if resolved_backend == Backend.SDCLI:
+    if resolved.backend == Backend.SDCLI:
         # The model's own settings win over the tool-wide defaults.
         from eyegen.backends.sdcli.pipeline import resolve_settings
 
-        num_steps, guidance_scale = resolve_settings(model, num_steps, guidance_scale)
+        num_steps, guidance_scale = resolve_settings(
+            resolved.name, num_steps, guidance_scale, spec=resolved.spec
+        )
 
-    err = _validate_generation_params(resolved_backend, w, h, image_path)
+    err = _validate_generation_params(resolved.backend, w, h, image_path)
     if err:
         typer.echo(f"❌ {err}", err=True)
         raise typer.Exit(1)
@@ -274,8 +287,7 @@ def build_generation_params(
     output_path = resolve_output(output)
     return (
         config,
-        model,
-        resolved_backend,
+        resolved,
         num_steps,
         guidance_scale,
         h,

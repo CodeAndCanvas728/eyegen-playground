@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
-from .install import _sidecar_has_coreml, _sidecar_python, get_coreml_models_dir
+from .install import (
+    _sidecar_has_coreml,
+    _sidecar_python,
+    get_coreml_model_dir,
+    get_coreml_models_dir,
+)
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +62,7 @@ def pull_preconverted_coreml_model(
 
     repo_id = PRECONVERTED_HF_MODELS.get(alias, alias)
     target_name = repo_id.split("/")[-1]
-    target_dir = get_coreml_models_dir() / target_name
+    target_dir = get_coreml_model_dir(target_name)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     def _cb(msg):

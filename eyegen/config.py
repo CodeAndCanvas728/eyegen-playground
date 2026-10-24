@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from eyegen.config_recovery import backup_corrupted_config, handle_parse_error
+from eyegen.paths import DEFAULT_MODELS_DIR
 
 log = logging.getLogger(__name__)
 
@@ -24,9 +25,8 @@ def pop_config_warnings() -> list[str]:
 
 _BUNDLED = getattr(sys, "frozen", None) == "macosx_app"
 
-MODELS_DIR = Path.home() / "models" / "eyegen"
+MODELS_DIR = DEFAULT_MODELS_DIR
 HF_CACHE_DIR = Path.home() / "models" / ".hf-cache" / "hub"
-
 if _BUNDLED:
     _APP_SUPPORT = Path.home() / "Library" / "Application Support" / "EyeGen"
     CONFIG_DIR = _APP_SUPPORT
@@ -77,6 +77,7 @@ class EyeGenConfig:
     mflux_quantize: Optional[int] = 4
     mflux_model_path: Optional[str] = None
     hf_cache_dir: Optional[str] = None
+    models_dir: Optional[str] = None
     bonsai_model_path: Optional[str] = None
     coreml_model_path: Optional[str] = None
     coreml_compute_unit: str = "CPU_AND_NE"

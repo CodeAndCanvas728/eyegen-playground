@@ -9,8 +9,8 @@ from eyegen._model_ops import (
     clear_mflux_cache,
     list_mflux_models,
     save_mflux_model,
-    validate_saved_model,
 )
+from eyegen.saved_models import validate_saved_model
 
 
 class TestListMfluxModels:

@@ -47,6 +47,46 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 - QSS rewritten with base-8 padding, `min-heights`, semantic classes, and focus states
 
+## [0.3.0] - 2026-10-23
+
+### Added
+- **Model specifications:** a model is now described by data — the backend that runs it, the files it is made of, the repository each file comes from, and the steps and guidance it was trained for. The user's own models live in `models.json` next to the config file, and the catalogues that ship with the tool are specifications too, so a model the user adds and a model that ships travel the same path.
+- **`generate --model`:** use a model for one run without touching the configuration file. The configured default is left as it was.
+- **`pull --from-hf`:** turn a HuggingFace repository into a model the tool can run — `./generate.py pull --from-hf owner/repo --as my-model --file diffusion_model=owner/repo:model.gguf --steps 16 --guidance 1.0`. The specification is written to the catalogue and the files are fetched.
+- **A model the tool does not know can now run through stable-diffusion.cpp:** the roles a file plays (`diffusion_model`, `vae`, `llm`, `t5xxl`, `clip_l`, `clip_g`, `clip_vision`, `llm_vision`, `tokenizer`, `control_net`) map to the binary's own flags, so any model `sd-cli` can run is one specification away. A model of one file carries one flag.
+- **A GGUF model from any repository:** the specification is written to the registry file OllamaDiffuser reads, and the file is fetched from the repository the user named.
+- `list-models` lists the models in the user's own catalogue, and the GUI's model dropdown offers them.
+- **Every model has a directory of its own:** `models_dir/sdcli/<model>/`, so two models cannot overwrite each other with files of the same name. The root is one setting — `models_dir` in the configuration, or `EYEGEN_MODELS_DIR` for one run — and everything under it follows it.
+- The GUI runs the models in the user's own catalogue: the worker carries the specification into the backend, which is what the dropdown has been offering since the catalogue was read.
+
+### Changed
+- The stable-diffusion.cpp catalogue is expressed as model specifications, and the backend reads one shape for every model.
+- A model name the tool does not know now says where to add it — the catalogue file and `pull --from-hf` — instead of being handed to OllamaDiffuser, which cannot resolve it.
+- `validate_saved_model` moved from `eyegen._model_ops` to `eyegen.saved_models`, its own module; the catalogue it reads moved to `eyegen.model_catalogue`.
+- **One resolver, both faces:** `resolve_model` is what the CLI and the GUI both ask, so they cannot answer the same question two ways.
+- `alias` and `path` in a specification mean something now: an alias becomes the model a fixed-set backend knows, a path becomes the local model it reads.
+- The README is up to date with the tool: the real package layout, the whole command list, the auto-detection order, and the families MFLUX 0.23 knows.
+- The tests that pin the contract with OllamaDiffuser fail where the package is required, rather than skipping: a green run that verified nothing is worse than a red one.
+
+### Fixed
+- **A model's name is checked before it becomes a path.** The name is the directory the model's files are written to, and a name like `../../etc` in `models.json` — or `pull --as ../../x` — would have put them outside the models root. The name is refused where the specification is made, and again where the directory is built; a catalogue the user edited badly says what is wrong rather than raising a traceback.
+- **A backend that runs a fixed set of models is refused up front.** `pull --from-hf owner/repo --backend mflux` said the wrong thing — that a stable-diffusion.cpp model needs a file — after the catalogue was written. It now says what is true, before anything is written.
+- **The GUI reloaded a model it had already loaded.** The loaded pipeline was kept under a key that did not include the specification, so a catalogue edited for a model that was already loaded kept the old pipeline. The specification is part of the key now.
+- **A backend that contradicts a specification is an error** naming both, rather than the specification's backend run in silence. Running the files through a runtime that cannot read them is a wrong picture, not a failure.
+- **A guidance of 0 survived:** the code asked whether the setting was there rather than what it was, so a model trained without guidance was given 7.5.
+- **A role the backend does not know was dropped silently,** and a model could be fetched for gigabytes and then run with no transformer at all. A role given twice kept the last one; both are refused where the command line is written, and by the backend where a hand-edited catalogue is the input.
+- **A file name with a path in it is refused:** the name becomes a path under the model's own directory, and a name like `../../../etc/passwd` would have written outside it.
+- **The OllamaDiffuser registry is applied before the package is imported,** everywhere, and only when there are entries. It was applied after the import in two places, and the package reads its table once.
+- `status` lists a model the user described; the CoreML hint names the option that exists (`--backend coreml`); the GUI's model dropdown logs a catalogue it cannot read instead of showing an empty list.
+- **`save-model` failed with a `TypeError`:** the validation returns a record, which two call sites unpacked as a pair. The bug is older than this branch.
+- `./generate.py --version` ran the app rather than printing the version, though the installed `generate` did print it.
+
+### Gotchas
+- **The old flat model directory is not read any more.** An install from before this version keeps the stable-diffusion.cpp files in `~/models/eyegen/flux3-klein` and is asked for them in `~/models/eyegen/sdcli/flux-3-image-klein-gguf`. Either re-pull, or move them: `mkdir -p ~/models/eyegen/sdcli/flux-3-image-klein-gguf && mv ~/models/eyegen/flux3-klein/* ~/models/eyegen/sdcli/flux-3-image-klein-gguf/`. The saved MFLUX models moved the same way, from the root into `saved-mflux/`.
+- OllamaDiffuser fetches a GGUF's text encoders and VAE for the FLUX and SD 3.5 families only: a GGUF of another family is not runnable through it, and the components are chosen by the family in the model's name.
+- The MLX backend cannot run a model that diffusionkit does not know: its checkpoints are a table inside that package, and the architecture of each is code there. A specification for MLX therefore names one of the models diffusionkit has.
+- The MFLUX and Bonsai backends run fixed sets of models for the same reason. A specification for them names one of their own models.
+
 ## [0.2.1] - 2026-07-07
 
 ### Fixed

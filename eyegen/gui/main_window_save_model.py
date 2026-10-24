@@ -2,9 +2,10 @@
 
 from PySide6.QtWidgets import QFileDialog, QLabel, QVBoxLayout
 
-from eyegen import MODELS_DIR, hf_status, list_mflux_models
+from eyegen import hf_status, list_mflux_models
 from eyegen.gui.dialogs import HFLoginDialog
 from eyegen.gui.main_window_lifecycle import restyle_label
+from eyegen.paths import saved_mflux_dir
 
 
 class MainWindowSaveModelMixin:
@@ -120,7 +121,7 @@ class MainWindowSaveModelMixin:
             alias = alias_combo.currentData()
             q = q_combo.currentData()
             q_label = f"{q}bit" if q else "fp"
-            path_input.setText(str(MODELS_DIR / f"{alias}-{q_label}"))
+            path_input.setText(str(saved_mflux_dir() / f"{alias}-{q_label}"))
 
         _update_default_path()
         alias_combo.currentIndexChanged.connect(lambda _: _update_default_path())
@@ -130,7 +131,7 @@ class MainWindowSaveModelMixin:
         pick_btn.setFixedWidth(30)
         pick_btn.clicked.connect(
             lambda: path_input.setText(
-                QFileDialog.getExistingDirectory(dlg, "Choose Directory", str(MODELS_DIR))
+                QFileDialog.getExistingDirectory(dlg, "Choose Directory", str(saved_mflux_dir()))
                 or path_input.text()
             )
         )

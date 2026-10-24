@@ -12,9 +12,9 @@ from eyegen.config import EyeGenConfig
 
 class TestBonsaiDir:
     def test_default_returns_constant(self):
-        from eyegen.backends.bonsai.constants import DEFAULT_BONSAI_DIR
+        from eyegen.paths import DEFAULT_MODELS_DIR
 
-        assert bonsai.get_bonsai_dir() == DEFAULT_BONSAI_DIR
+        assert bonsai.get_bonsai_dir() == DEFAULT_MODELS_DIR / "bonsai-demo"
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("BONSAI_DIR", "~/custom/bonsai")

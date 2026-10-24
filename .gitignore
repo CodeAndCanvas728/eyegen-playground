@@ -63,6 +63,8 @@ AGENTS.md
 
 # Project config (version controlled)
 config/config.json
+config/models.json
+config/ollamadiffuser-models.json
 
 # Temporary files
 tmp*

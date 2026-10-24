@@ -53,7 +53,7 @@ def pull_coreml_cmd(
     if target:
         typer.echo(f"✅ CoreML model downloaded to {target}")
         typer.echo("   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
-        typer.echo(f"       --model {alias}")
+        typer.echo(f"       --model {target.name}")
     else:
         typer.echo(f"❌ Failed to download CoreML model '{alias}'", err=True)
         raise typer.Exit(1)
@@ -94,7 +94,7 @@ def convert_coreml_cmd(
 ):
     """Convert a PyTorch Stable Diffusion model to CoreML."""
     if output is None:
-        output = coreml.get_coreml_models_dir() / hf_model_id.split("/")[-1]
+        output = coreml.get_coreml_model_dir(hf_model_id.split("/")[-1])
     output = output.expanduser()
 
     status = coreml.validate_coreml_install()

@@ -7,8 +7,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from eyegen import MODELS_DIR, validate_saved_model
+from eyegen import validate_saved_model
 from eyegen.gui.main_window_lifecycle import restyle_label
+from eyegen.paths import models_dir
 
 log = logging.getLogger("eyegen")
 
@@ -106,7 +107,8 @@ class MainWindowHandlersMixin:
             self.image_label.setPixmap(scaled)
 
     def _on_browse_model_path(self):
-        start_dir = str(MODELS_DIR) if MODELS_DIR.exists() else str(Path.home())
+        root = models_dir()
+        start_dir = str(root) if root.exists() else str(Path.home())
         path = QFileDialog.getExistingDirectory(self, "Select Saved Model Directory", start_dir)
         if path:
             self.model_path_input.setText(path)
@@ -134,7 +136,9 @@ class MainWindowHandlersMixin:
             self.quantize_combo.setEnabled(True)
             self.quantize_combo.setToolTip("MFLUX runtime quantization level")
             return
-        valid, meta = validate_saved_model(path)
+        validation = validate_saved_model(path)
+        valid = validation.valid
+        meta = validation.meta
         if valid and meta:
             ql = meta.get("quantization_level")
             q_str = f"{ql}-bit" if ql else "full precision"

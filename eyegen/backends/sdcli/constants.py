@@ -5,7 +5,6 @@ from pathlib import Path
 from eyegen.config import DEFAULT_CONFIG
 
 DEFAULT_SDCLI_BIN = Path.home() / ".local" / "bin" / "sd-cli"
-DEFAULT_SDCLI_MODEL_DIR = Path.home() / "models" / "eyegen" / "flux3-klein"
 
 # A render takes minutes, not seconds: sixteen steps at 1024x1024 is about
 # fifteen minutes on an M-series Mac. The generic subprocess timeout of
@@ -20,6 +19,23 @@ DEFAULT_SDCLI_TIMEOUT = 3600
 TOOL_DEFAULT_STEPS = DEFAULT_CONFIG.num_inference_steps
 TOOL_DEFAULT_GUIDANCE = DEFAULT_CONFIG.guidance_scale
 
+# The role a file plays in a model, and the flag the binary takes for it.
+# The names are the binary's own, so a model described in the upstream
+# documentation can be written down here without translating it.
+SDCLI_ROLE_FLAGS = {
+    "diffusion_model": "--diffusion-model",
+    "high_noise_diffusion_model": "--high-noise-diffusion-model",
+    "uncond_diffusion_model": "--uncond-diffusion-model",
+    "vae": "--vae",
+    "llm": "--llm",
+    "llm_vision": "--llm_vision",
+    "t5xxl": "--t5xxl",
+    "clip_l": "--clip_l",
+    "clip_g": "--clip_g",
+    "clip_vision": "--clip_vision",
+    "tokenizer": "--tokenizer",
+    "control_net": "--control-net",
+}
 # The models this backend knows how to run.
 #
 # FLUX.3 Image Klein is three files, not one: the transformer, the Qwen3-VL
@@ -27,29 +43,31 @@ TOOL_DEFAULT_GUIDANCE = DEFAULT_CONFIG.guidance_scale
 # repository holds only the transformer, so the other two come from elsewhere
 # and the sizes are what make the model expensive rather than the quality.
 #
-# ``cfg_scale`` is 1.0 and ``steps`` is 16 because the model is distilled: it
+# ``guidance`` is 1.0 and ``steps`` is 16 because the model is distilled: it
 # is trained to answer in that many steps, and anything more is wasted work.
+#
+# The entries are model specifications, the same shape as the ones a user
+# writes in models.json, so a model added there and a model shipped here
+# are read and run the same way.
 SDCLI_MODELS = {
     "flux-3-image-klein-gguf": {
-        "diffusion_model": "flux-3-image-klein-UD-Q4_K_XL.gguf",
-        "llm": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
-        "vae": "ae.safetensors",
+        "backend": "sdcli",
         "sources": {
-            "flux-3-image-klein-UD-Q4_K_XL.gguf": (
-                "unsloth/flux-3-image-klein-GGUF",
-                "flux-3-image-klein-UD-Q4_K_XL.gguf",
-            ),
-            "Qwen3VL-4B-Instruct-Q4_K_M.gguf": (
-                "Qwen/Qwen3-VL-4B-Instruct-GGUF",
-                "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
-            ),
-            "ae.safetensors": (
-                "black-forest-labs/flux-3-image-klein",
-                "ae.safetensors",
-            ),
+            "diffusion_model": {
+                "repo": "unsloth/flux-3-image-klein-GGUF",
+                "file": "flux-3-image-klein-UD-Q4_K_XL.gguf",
+            },
+            "llm": {
+                "repo": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+                "file": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+            },
+            "vae": {
+                "repo": "black-forest-labs/flux-3-image-klein",
+                "file": "ae.safetensors",
+            },
         },
-        "cfg_scale": 1.0,
         "steps": 16,
+        "guidance": 1.0,
         "sampling_method": "euler",
         "description": "FLUX.3 Image Klein, 16-step distilled, GGUF transformer",
     },

@@ -12,7 +12,7 @@ import pytest
 
 from eyegen.backends import _format_unsupported_error, detect_backend
 from eyegen.backends.sdcli.constants import SDCLI_MODELS
-from eyegen.cli.models import pull
+from eyegen.cli.pull import pull
 from eyegen.config import Backend
 
 # A name that follows a pull command: "pull flux-3-image-klein-gguf".

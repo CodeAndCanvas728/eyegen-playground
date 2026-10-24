@@ -1,10 +1,13 @@
 """Backend/controls visibility mixin for MainWindow."""
 
-from eyegen import DEFAULT_CONFIG, detect_backend
+from eyegen import DEFAULT_CONFIG, resolve_model
 from eyegen.config import Backend
 
 
 class MainWindowControlsMixin:
+    # Why the last resolution failed, when it did. The hint shows it.
+    _backend_problem = None
+
     def _on_mode_changed(self, index: int):
         is_img2img = index == 1
         self.img2img_controls.setVisible(is_img2img)
@@ -20,7 +23,7 @@ class MainWindowControlsMixin:
         """Return the concrete backend for the current model + dropdown.
 
         Returns ``None`` when the model name cannot be resolved to a backend
-        (``detect_backend`` raises ``ValueError``). Callers must treat ``None``
+        (``resolve_model`` raises ``ValueError``). Callers must treat ``None``
         as "unresolved" — generation is blocked but the GUI stays alive.
         """
         override = self.backend_combo.currentData()
@@ -29,17 +32,19 @@ class MainWindowControlsMixin:
 
         config = dataclasses.replace(self.config, model=model)
         try:
-            return detect_backend(model, override, config=config)
-        except ValueError:
+            return resolve_model(model, override, config=config).backend
+        except ValueError as exc:
+            self._backend_problem = str(exc)
             return None
 
     def _update_backend_dependent_controls(self):
         """Show/hide/enable controls based on the resolved backend."""
+        self._backend_problem = None
         backend = self._resolved_backend()
         self.generate_btn.setEnabled(backend is not None)
         if backend is None:
             self.backend_hint.setText(
-                "⚠ Unrecognized model name for the selected backend. "
+                f"⚠ {self._backend_problem or 'Unrecognized model name for the selected backend.'} "
                 "Pick a backend or enter a supported model to generate."
             )
             self.backend_hint.show()
