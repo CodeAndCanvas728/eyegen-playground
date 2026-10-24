@@ -72,9 +72,45 @@ def _get_mflux_aliases() -> set:
     return _mflux_aliases
 
 
+def _resolve_mflux_own_class(name: str):
+    """The class mflux runs *name* with, or None where it has no answer.
+
+    mflux resolves a name to one of its own registry entries and knows which
+    class owns that entry's weights. Asking it is the point: the table below
+    is this tool's own answer to the same question, and it went stale — the
+    families mflux has shipped since it was written fell through to Flux1,
+    which loads and renders noise, so nothing said it was wrong.
+
+    A name mflux cannot place is not a failure here. Its rules raise on a
+    name they have never seen, a key can have a class the package does not
+    ship, and the package can be absent altogether; in each of those the
+    table below decides, as it did before.
+    """
+    try:
+        from mflux.models.common.cli.save import MODEL_CLASSES
+        from mflux.models.common.resolution.config_resolution import ConfigResolution
+        from mflux.utils.exceptions import ModelConfigError
+    except ImportError:
+        return None
+
+    try:
+        key = ConfigResolution.resolve_key(name)
+    except ModelConfigError:
+        return None
+    return MODEL_CLASSES.get(key) if key else None
+
+
 def _resolve_mflux_class(model_config):
-    """Given a resolved ModelConfig, return the appropriate model class."""
+    """Given a resolved ModelConfig, return the appropriate model class.
+
+    mflux's own mapping answers first; the table is what is left when it has
+    no answer.
+    """
     name = model_config.model_name
+    own_class = _resolve_mflux_own_class(name)
+    if own_class is not None:
+        return own_class
+
     aliases = set(model_config.aliases)
 
     klein_names = {

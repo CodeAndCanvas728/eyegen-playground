@@ -42,6 +42,7 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Label hierarchy:** added `section-heading` (14px/600w) and `input-label` (13px/500w) classes, applied to 22 structural labels
 - **Focus states:** added visible focus indicators to buttons, combos, checkboxes via border-color change (no layout shift)
 - **Stop button:** added themed `[class="stop"]` QSS rule replacing hardcoded `#cc3333` inline style
+- **MFLUX ran its newer models through the wrong class.** The name-to-class table in `eyegen/_mflux` was written for the families mflux shipped then, and every family added since fell through to `Flux1` — which loads and renders noise, so nothing said it was wrong. mflux's own mapping (`ConfigResolution.resolve_key` → `MODEL_CLASSES`) is asked first now, and the table answers only where it has none: a name its rules cannot place, a key it ships no class for, or the package absent.
 
 ### Changed
 
