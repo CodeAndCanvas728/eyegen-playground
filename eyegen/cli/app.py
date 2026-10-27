@@ -50,7 +50,6 @@ app.command(name="pull-bonsai")(bonsai.pull_bonsai_cmd)
 app.command(name="list-bonsai-models")(bonsai.list_bonsai_models_cmd)
 
 app.command(name="setup-coreml")(coreml.setup_coreml_cmd)
-app.command(name="pull-coreml")(coreml.pull_coreml_cmd)
 app.command(name="convert-coreml")(coreml.convert_coreml_cmd)
 app.command(name="list-coreml-models")(coreml.list_coreml_models_cmd)
 

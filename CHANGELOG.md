@@ -5,7 +5,9 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-10-24
+## [Unreleased]
+
+## [0.4.0] - 2026-10-27
 
 ### Added
 - **A model that is already on this machine can be run by its path.** `./generate.py generate "a fox" --model ~/models/flux1-dev-Q4_K_M.gguf` — what a thing on disk is comes from what is there, not from how it is named: a GGUF file is OllamaDiffuser's own format, a directory laid out the way that package lays one out is a model for it, a directory of weights is a stable-diffusion.cpp model, and a bundle or a diffusers snapshot is CoreML's. The roles of a set of weights are read off the names — the binary takes a path per role, and nothing else says which file is the transformer — and what was decided is printed, so a role the user meant differently is one line of a specification away. A name a catalogue already answers to is suffixed (`klein-2`), so neither model is lost, and a diffusers snapshot is converted to CoreML on its first run; the conversion is kept and reused.
@@ -53,6 +55,11 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A local model is offered by its path in the GUI.** A name had to be resolved back to the directory it came from, and a catalogue could answer to it first; the path says which model is meant. The same model is no longer listed twice, and a local stable-diffusion.cpp model whose files are where they are is reported installed rather than "fetch it".
 - **A relative path is made absolute** before it reaches a runtime or becomes a symlink: a relative path means a different file to each of them.
 - **A diffusers snapshot no longer reaches the CoreML subprocess unconverted.** The first run converts it under the CoreML root and reuses that conversion; only a conversion that cannot run (no sidecar, or Apple's converter failing) stops it, with the command that runs the conversion by hand.
+- **A converted CoreML bundle runs without the PyTorch model it came from.** The wrapper launched Apple's pipeline with `--model-version`, which called `from_pretrained` and needed the original snapshot; it also treated `-o` as a folder and dropped the randomly chosen seed. The bundle now carries its tokenizer, scheduler and feature extractor in `pipeline_assets/`, a standalone `offline_runner.py` builds Apple's pipeline from those files, writes the image to the exact path it was given, and is passed the seed that names it. A bundle converted by an older version is given the assets without its models being converted again, and a run that could not save the assets keeps what it converted: the next run retries only the assets, and the files replace the old ones only once they are complete. A bundle is never handed another model's tokenizer and scheduler, and a size its models were not exported at is refused by name rather than answered with a differently-sized image. The dead `_offline_wrapper.py` module is deleted.
+
+### Removed
+
+- **`pull-coreml` and the GUI's "Download Model…" button.** Apple's pre-converted repositories keep their models nested (`original/packages`, `split_einsum/packages`) and ship no tokenizer or scheduler, so nothing this version can run was ever produced by that route — and its download is broken under `huggingface_hub` 2.x. `pull --from-hf --backend coreml` refuses with the command that converts instead, so no entry point offers a model that cannot run. Running those bundles is #9.
 
 ### Gotchas
 

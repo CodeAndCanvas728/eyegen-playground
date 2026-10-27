@@ -164,14 +164,6 @@ class MainWindowSettingsMixin:
         )
         self.coreml_setup_btn.clicked.connect(self._on_coreml_setup)
         coreml_layout.addWidget(self.coreml_setup_btn)
-        self.coreml_pull_btn = QPushButton("Download Model\u2026")
-        self.coreml_pull_btn.setFixedWidth(140)
-        self.coreml_pull_btn.setToolTip(
-            "Download a pre-converted CoreML model from Hugging Face.\n"
-            "Or use ./generate.py convert-coreml to convert a PyTorch model from scratch."
-        )
-        self.coreml_pull_btn.clicked.connect(self._on_coreml_pull)
-        coreml_layout.addWidget(self.coreml_pull_btn)
         layout.addWidget(self.coreml_row)
 
     def _build_hf_cache_row(self, layout):

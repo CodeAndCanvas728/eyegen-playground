@@ -151,9 +151,10 @@ def test_config_model_name_normalization():
     cfg = EyeGenConfig(model="apple/coreml-stable-diffusion-v1-5", backend=Backend.COREML)
     assert cfg.model == "apple-coreml-stable-diffusion-v1-5"
 
-    # 2. AUTO backend on init with apple coreml model should normalize
+    # 2. AUTO leaves the name alone: a repository id is not a CoreML bundle,
+    # and mangling it would only make the error message harder to read.
     cfg2 = EyeGenConfig(model="apple/coreml-stable-diffusion-v1-5", backend=Backend.AUTO)
-    assert cfg2.model == "apple-coreml-stable-diffusion-v1-5"
+    assert cfg2.model == "apple/coreml-stable-diffusion-v1-5"
 
     # 3. MLX backend on init should NOT normalize
     cfg3 = EyeGenConfig(model="apple/coreml-stable-diffusion-v1-5", backend=Backend.MLX)
@@ -163,8 +164,8 @@ def test_config_model_name_normalization():
     cfg3.backend = Backend.COREML
     assert cfg3.model == "apple-coreml-stable-diffusion-v1-5"
 
-    # 5. Setting model with slash on AUTO backend for coreml model should normalize
+    # 5. Setting a repository id on AUTO backend leaves it alone too
     cfg4 = EyeGenConfig(model="some/other", backend=Backend.AUTO)
     assert cfg4.model == "some/other"
     cfg4.model = "apple/coreml-stable-diffusion-v1-5"
-    assert cfg4.model == "apple-coreml-stable-diffusion-v1-5"
+    assert cfg4.model == "apple/coreml-stable-diffusion-v1-5"

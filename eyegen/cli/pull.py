@@ -93,15 +93,17 @@ def build_spec(
             f"The {backend_value.value} backend runs a fixed set of models and cannot "
             f"fetch '{name}' from a repository. Name one of its own models instead."
         )
+    if backend_value == Backend.COREML:
+        raise ValueError(
+            "A CoreML model is converted, not fetched: run "
+            "./generate.py convert-coreml <hf-model>, then name the bundle it made."
+        )
 
     parsed = [_parse_source(value, repo) for value in files]
     _check_roles([role for role, _ in parsed], backend_value)
     sources = {role: source for role, source in parsed}
 
-    if backend_value == Backend.COREML:
-        if sources:
-            raise ValueError("a CoreML model is a whole repository: give --from-hf and no --file")
-    elif backend_value == Backend.OLLAMA:
+    if backend_value == Backend.OLLAMA:
         if "diffusion_model" not in sources:
             raise ValueError(
                 "an OllamaDiffuser model needs one GGUF file: "
@@ -120,7 +122,6 @@ def build_spec(
         steps=steps,
         guidance=guidance,
         sampling_method=sampler,
-        repo=repo if backend_value == Backend.COREML else None,
     )
 
 
@@ -143,7 +144,7 @@ def pull(
         "sdcli",
         "--backend",
         "-b",
-        help="The backend that runs it: sdcli, ollamadiffuser, coreml",
+        help="The backend that runs it: sdcli, ollamadiffuser",
     ),
     file: Annotated[Optional[list[str]], typer.Option("--file", help=_FILE_HELP)] = None,
     steps: Optional[int] = typer.Option(

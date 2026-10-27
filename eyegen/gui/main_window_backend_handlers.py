@@ -2,10 +2,8 @@
 
 import logging
 
-from PySide6.QtWidgets import QInputDialog
-
 from eyegen import PROJECT_ROOT
-from eyegen.backends import bonsai, coreml
+from eyegen.backends import bonsai
 from eyegen.gui.main_window_lifecycle import restyle_label
 
 log = logging.getLogger("eyegen")
@@ -99,7 +97,6 @@ class MainWindowBackendHandlersMixin:
 
             status = coreml.validate_coreml_install(force=True)
             self.coreml_status_label.setText(status.message)
-            self.coreml_pull_btn.setEnabled(status.installed)
         except (OSError, ValueError, ImportError, AttributeError) as exc:
             self.coreml_status_label.setText(f"⚠ {exc}")
 
@@ -110,7 +107,6 @@ class MainWindowBackendHandlersMixin:
             restyle_label(self.status_label, "error")
             return
         self.coreml_setup_btn.setEnabled(False)
-        self.coreml_pull_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
         self.status_label.setText(
             "🍎 Setting up CoreML (one-time install, may take a few minutes)…"
@@ -127,54 +123,6 @@ class MainWindowBackendHandlersMixin:
 
     def _on_coreml_setup_finished(self, success: bool, message: str):
         self.coreml_setup_btn.setEnabled(True)
-        self.coreml_pull_btn.setEnabled(True)
-        self.generate_btn.setEnabled(True)
-        self.progress_bar.hide()
-        self.progress_bar.reset()
-        if success:
-            self.status_label.setText(f"✅ {message}")
-            restyle_label(self.status_label, "success")
-        else:
-            self.status_label.setText(f"❌ {message}")
-            restyle_label(self.status_label, "error")
-        self._refresh_coreml_status()
-
-    def _on_coreml_pull(self):
-        status = coreml.validate_coreml_install(force=True)
-        if not status.installed:
-            self.status_label.setText("⚠ CoreML not installed. Click 'Setup CoreML…' first.")
-            restyle_label(self.status_label, "warning")
-            return
-
-        alias, ok = QInputDialog.getItem(
-            self,
-            "Download CoreML model",
-            "Pre-converted CoreML models on Hugging Face:",
-            list(coreml.PRECONVERTED_HF_MODELS.keys()),
-            3,
-            False,
-        )
-        if not ok or not alias:
-            return
-
-        self.coreml_setup_btn.setEnabled(False)
-        self.coreml_pull_btn.setEnabled(False)
-        self.generate_btn.setEnabled(False)
-        self.status_label.setText(f"📥 Downloading {alias}…")
-        restyle_label(self.status_label, "info")
-        self.progress_bar.setRange(0, 0)
-        self.progress_bar.show()
-
-        from eyegen.gui.backend_workers import CoreMLDownloadWorker
-
-        self.coreml_pull_worker = CoreMLDownloadWorker(alias=alias)
-        self.coreml_pull_worker.status.connect(self._on_status)
-        self.coreml_pull_worker.finished.connect(self._on_coreml_pull_finished)
-        self.coreml_pull_worker.start()
-
-    def _on_coreml_pull_finished(self, success: bool, message: str):
-        self.coreml_setup_btn.setEnabled(True)
-        self.coreml_pull_btn.setEnabled(True)
         self.generate_btn.setEnabled(True)
         self.progress_bar.hide()
         self.progress_bar.reset()

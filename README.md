@@ -529,18 +529,14 @@ brew install python@3.11      # if not already installed
 You can also use the GUI: select **CoreML** in the Backend dropdown → click
 **Setup CoreML…**.
 
-### Pull a pre-converted model (fast)
+### Models come from a conversion
 
-Apple has pre-converted Stable Diffusion models on Hugging Face. Pulling
-these is the fastest path:
-
-```bash
-./generate.py pull-coreml                          # default: sd-2-1-base-palettized
-./generate.py pull-coreml sd-1-5-palettized
-./generate.py pull-coreml apple/coreml-stable-diffusion-v1-4
-```
-
-Or in the GUI: select **CoreML** → **Download Model…** → pick from a list.
+There is nothing to download: Apple's pre-converted Stable Diffusion
+repositories keep their models nested (`original/packages`,
+`split_einsum/packages`) and ship no tokenizer or scheduler files, so this
+version cannot run them; see
+[#9](https://git.codeandcanvas.eu/jonah/eyegen-playground/issues/9). Convert
+from the original PyTorch model instead.
 
 ### Convert a PyTorch model (15-20 min on M1 Pro)
 
@@ -549,14 +545,21 @@ Or in the GUI: select **CoreML** → **Download Model…** → pick from a list.
 ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base --quantize-nbits 6
 ```
 
+A converted bundle keeps the tokenizer, scheduler and feature-extractor files
+next to the models, so it runs without the PyTorch snapshot it came from.
+Re-running `convert-coreml` on a bundle made by an older version adds those
+files and leaves the models alone.
+
 Run `./generate.py list-coreml-models` to see installed models.
 
 ### CoreML constraints
 
 - **SD 1.x/2.x only**. SD3 and FLUX have CoreML conversions in Apple's
   package but require more memory; not first-class supported here.
-- **Image dimensions**: should be 512×512 and multiples of 8. Larger
-  sizes are technically supported but require custom conversion.
+- **One size per bundle.** The models are exported at a fixed resolution —
+  512×512 for SD 1.x/2.x — and the pipeline generates that size. Asking for
+  another (1024×1024, say) is refused with the bundle's own size named,
+  rather than answered with a smaller image: run it at that size.
 - **No img2img** in this wrapper (would need VAE encoder conversion —
   out of scope for first cut). The GUI switches back to txt2img if you
   select CoreML while on the img2img tab.

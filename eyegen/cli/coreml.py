@@ -8,6 +8,7 @@ import typer
 
 from eyegen import PROJECT_ROOT
 from eyegen.backends import coreml
+from eyegen.backends.coreml.offline_runner import has_models
 
 
 def setup_coreml_cmd():
@@ -26,36 +27,6 @@ def setup_coreml_cmd():
     rc = subprocess.run([str(script)], cwd=PROJECT_ROOT).returncode  # noqa: S603
     if rc != 0:
         typer.echo(f"❌ CoreML setup failed (exit {rc})", err=True)
-        raise typer.Exit(1)
-
-
-def pull_coreml_cmd(
-    alias: str = typer.Argument(
-        "sd-2-1-base-palettized",
-        help=(
-            "Alias (sd-1-4, sd-1-5, sd-2-1-base, sd-2-1-base-palettized, "
-            "sdxl-base, ...) or a full HuggingFace repo id."
-        ),
-    ),
-):
-    """Download a pre-converted CoreML model from Hugging Face."""
-    status = coreml.validate_coreml_install()
-    if not status.installed:
-        typer.echo(f"❌ {status.message}", err=True)
-        typer.echo("   Run: ./generate.py setup-coreml", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"📥 Downloading pre-converted CoreML model: {alias}")
-    target = coreml.pull_preconverted_coreml_model(
-        alias,
-        progress_callback=lambda m: typer.echo(f"   {m}"),
-    )
-    if target:
-        typer.echo(f"✅ CoreML model downloaded to {target}")
-        typer.echo("   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
-        typer.echo(f"       --model {target.name}")
-    else:
-        typer.echo(f"❌ Failed to download CoreML model '{alias}'", err=True)
         raise typer.Exit(1)
 
 
@@ -103,22 +74,29 @@ def convert_coreml_cmd(
         typer.echo("   Run: ./generate.py setup-coreml", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"🔄 Converting {hf_model_id} → CoreML at {output}")
-    typer.echo(f"   compute-unit: {compute_unit}")
-    typer.echo(f"   attention:    {attention}")
-    if quantize_nbits:
-        typer.echo(f"   quantize:     {quantize_nbits}-bit (palettization)")
-    typer.echo("   This may take 15-20 minutes on first run.")
+    if has_models(output):
+        typer.echo(f"📦 {output} holds the models already; adding the files a run needs")
+    else:
+        typer.echo(f"🔄 Converting {hf_model_id} → CoreML at {output}")
+        typer.echo(f"   compute-unit: {compute_unit}")
+        typer.echo(f"   attention:    {attention}")
+        if quantize_nbits:
+            typer.echo(f"   quantize:     {quantize_nbits}-bit (palettization)")
+        typer.echo("   This may take 15-20 minutes on first run.")
     typer.echo()
 
-    ok = coreml.convert_to_coreml(
-        hf_model_id=hf_model_id,
-        output_dir=output,
-        compute_unit=compute_unit,
-        attention_implementation=attention,
-        quantize_nbits=quantize_nbits,
-        progress_callback=lambda m: typer.echo(f"   {m}"),
-    )
+    try:
+        ok = coreml.convert_to_coreml(
+            hf_model_id=hf_model_id,
+            output_dir=output,
+            compute_unit=compute_unit,
+            attention_implementation=attention,
+            quantize_nbits=quantize_nbits,
+            progress_callback=lambda m: typer.echo(f"   {m}"),
+        )
+    except (RuntimeError, ValueError) as exc:
+        typer.echo(f"❌ {exc}", err=True)
+        raise typer.Exit(1) from exc
     if ok:
         typer.echo(f"\n✅ Converted model at {output}")
         typer.echo("   Use it via: ./generate.py generate 'prompt' --backend coreml \\")
@@ -139,7 +117,6 @@ def list_coreml_models_cmd():
     models = coreml.list_coreml_models()
     if not models:
         typer.echo("📦 No CoreML models installed yet.")
-        typer.echo("   Pre-converted (fast):  ./generate.py pull-coreml sd-2-1-base-palettized")
         typer.echo(
             "   Convert from PyTorch:  ./generate.py convert-coreml "
             "stabilityai/stable-diffusion-2-1-base"

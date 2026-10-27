@@ -11,7 +11,7 @@ is named after what it is rather than after a model:
 
     models_dir/
     ├── sdcli/<model>/     # one directory per model: transformer, encoder, VAE
-    ├── coreml/<model>/    # converted or pre-converted bundles
+    ├── coreml/<model>/    # converted bundles
     ├── saved-mflux/       # models saved for a faster load
     ├── bonsai-demo/       # the Bonsai checkout
     └── .coreml-venv/      # the CoreML sidecar

@@ -8,14 +8,17 @@ stops the caller, and then with the command that runs it by hand.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Optional
 
 from eyegen.artifacts import is_coreml_bundle, is_diffusers_snapshot
 
+from . import model_index
+from .assets import add_pipeline_assets, record_resolution
 from .install import get_coreml_model_dir
+from .models import convert_to_coreml
+from .offline_runner import BundleError, has_models, pipeline_assets_dir
 
 log = logging.getLogger(__name__)
 
@@ -25,24 +28,53 @@ def converted_if_needed(model_path: Path, compute_unit: str) -> Path:
     if not is_diffusers_snapshot(model_path):
         return model_path
     output = _converted_dir(model_path)
-    if is_coreml_bundle(output) and _converted_from(output) == str(model_path):
-        log.info("Using the CoreML conversion of %s at %s", model_path, output)
-        return output
+    if _converted_from(output) == str(model_path) and has_models(output):
+        if _has_pipeline_assets(output):
+            record_resolution(output, model_path)
+            log.info("Using the CoreML conversion of %s at %s", model_path, output)
+            return output
+        log.info(
+            "Adding the tokenizer and scheduler to the CoreML conversion of %s at %s",
+            model_path,
+            output,
+        )
+        if add_pipeline_assets(str(model_path), output):
+            return output
+        raise RuntimeError(_assets_message(model_path, output))
     log.info("Converting %s to CoreML at %s (this takes 15-20 minutes)", model_path, output)
-    from .models import convert_to_coreml
-
     converted = convert_to_coreml(
         str(model_path),
         output,
         compute_unit=compute_unit,
+        **_settings(output),
         progress_callback=lambda message: log.info("[coreml-convert] %s", message),
     )
-    if not converted or not is_coreml_bundle(output):
+    if not converted:
+        if has_models(output):
+            raise RuntimeError(_assets_message(model_path, output))
         raise RuntimeError(
             f"Could not convert {model_path} to CoreML. "
             f"Run ./generate.py convert-coreml {model_path} to see the error."
         )
     return output
+
+
+def _assets_message(model_path: Path, output: Path) -> str:
+    """What to say when the models are converted but the runner cannot use them."""
+    return (
+        f"The CoreML models in {output} are converted, but the tokenizer and scheduler "
+        f"the runner needs could not be saved. Run ./generate.py convert-coreml "
+        f"{model_path} to retry; the models are not converted again."
+    )
+
+
+def _has_pipeline_assets(directory: Path) -> bool:
+    """Whether a bundle has the files it needs to run without its source."""
+    try:
+        pipeline_assets_dir(directory)
+    except BundleError:
+        return False
+    return True
 
 
 def _converted_dir(snapshot: Path) -> Path:
@@ -82,9 +114,12 @@ def _converted_dir(snapshot: Path) -> Path:
 
 def _converted_from(directory: Path) -> Optional[str]:
     """The model a converted bundle was made from, when it says so."""
-    try:
-        meta = json.loads((directory / "model_index.json").read_text())
-    except (OSError, ValueError):
-        return None
-    value = meta.get("model_version") if isinstance(meta, dict) else None
+    value = model_index.read(directory).get("model_version")
     return value if isinstance(value, str) else None
+
+
+def _settings(directory: Path) -> dict:
+    """The conversion settings a bundle was made with, to finish it the same way."""
+    meta = model_index.read(directory)
+    keys = ("attention_implementation", "quantize_nbits")
+    return {key: meta[key] for key in keys if meta.get(key) is not None}

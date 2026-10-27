@@ -48,8 +48,6 @@ Always activate the venv before running any Python scripts: `source venv/bin/act
 
 # CoreML (Apple Neural Engine)
 ./generate.py setup-coreml                                # one-time install (creates sidecar Py 3.11 venv)
-./generate.py pull-coreml                                 # download pre-converted sd-2-1-base-palettized (default)
-./generate.py pull-coreml apple/coreml-stable-diffusion-v1-5
 ./generate.py convert-coreml stabilityai/stable-diffusion-2-1-base           # convert from PyTorch (15-20 min)
 ./generate.py list-coreml-models
 ```
@@ -72,9 +70,9 @@ Five Python files share a clean separation of concerns:
 
 - **`core.py`** — all shared logic: config loading/saving, backend detection (`detect_backend`), pipeline construction for MLX (`get_pipeline`), MFLUX (`get_mflux_pipeline`), and OllamaDiffuser (`get_ollama_pipeline`), unified image generation dispatcher (`generate_image`), model pulling (`pull_model`), model saving (`save_mflux_model`, `validate_saved_model`), model listing (`list_mflux_models`, `list_ollama_models`), HuggingFace authentication (`hf_login`, `hf_status`, `hf_logout`), dimension validation, and Unicode prompt sanitization. Both CLI and GUI import from here exclusively.
 - **`core_bonsai.py`** — Bonsai (PrismML) backend. Subprocess wrapper around the bonsai-demo's `scripts/generate.sh` (no direct MLX kernel imports — the bonsai-demo's own venv has the patched mflux + MLX). Provides `BonsaiWrapper` exposing the standard `generate_image()` interface, plus `validate_bonsai_install`, `list_bonsai_models`, `download_bonsai_model`, `get_bonsai_dir`.
-- **`core_coreml.py`** — CoreML (Apple Neural Engine) backend. Subprocess wrapper around Apple's `python_coreml_stable_diffusion` in a sidecar Py 3.11 venv at `~/models/eyegen/.coreml-venv/`. Provides `CoreMLWrapper` exposing the standard `generate_image()` interface, plus `validate_coreml_install`, `list_coreml_models`, `pull_preconverted_coreml_model`, `convert_to_coreml`.
-- **`generate.py`** — Typer-based CLI. Thin wrapper around `core.py` functions. Commands: `generate`, `pull`, `save-model`, `list-models`, `config-show`, `config-set`, `config-reset`, `list-outputs`, `status`, `clear-cache`, `update-backends`, `hf-login`, `hf-status`, `hf-logout`, `setup-bonsai`, `pull-bonsai`, `list-bonsai-models`, `setup-coreml`, `pull-coreml`, `convert-coreml`, `list-coreml-models`.
-- **`gui.py`** — PySide6 GUI. Runs generation in a `QThread` (`GenerationWorker`), model pulling in a `PullWorker` thread, model saving in a `SaveModelWorker` thread, and bonsai/coreml setup + download in dedicated `BonsaiSetupWorker`/`BonsaiDownloadWorker`/`CoreMLSetupWorker`/`CoreMLDownloadWorker` threads. Includes `HFLoginDialog` for HuggingFace authentication. Persists UI state to `config/gui_state.json` on close and restores it on next launch. Monkey-patches `diffusionkit.mlx.sample_euler` to inject a per-step progress callback (MLX only).
+- **`core_coreml.py`** — CoreML (Apple Neural Engine) backend. Subprocess wrapper around Apple's `python_coreml_stable_diffusion` in a sidecar Py 3.11 venv at `~/models/eyegen/.coreml-venv/`. Provides `CoreMLWrapper` exposing the standard `generate_image()` interface, plus `validate_coreml_install`, `list_coreml_models`, `convert_to_coreml`.
+- **`generate.py`** — Typer-based CLI. Thin wrapper around `core.py` functions. Commands: `generate`, `pull`, `save-model`, `list-models`, `config-show`, `config-set`, `config-reset`, `list-outputs`, `status`, `clear-cache`, `update-backends`, `hf-login`, `hf-status`, `hf-logout`, `setup-bonsai`, `pull-bonsai`, `list-bonsai-models`, `setup-coreml`, `convert-coreml`, `list-coreml-models`.
+- **`gui.py`** — PySide6 GUI. Runs generation in a `QThread` (`GenerationWorker`), model pulling in a `PullWorker` thread, model saving in a `SaveModelWorker` thread, and bonsai/coreml setup in dedicated `BonsaiSetupWorker`/`BonsaiDownloadWorker`/`CoreMLSetupWorker` threads. Includes `HFLoginDialog` for HuggingFace authentication. Persists UI state to `config/gui_state.json` on close and restores it on next launch. Monkey-patches `diffusionkit.mlx.sample_euler` to inject a per-step progress callback (MLX only).
 
 ### Six-backend system
 
@@ -156,7 +154,7 @@ Config and output paths retain the dev/bundled split:
 - Vendor: Apple's `python_coreml_stable_diffusion` (Apple Inc. license). Installed in a sidecar Py 3.11 venv at `~/models/eyegen/.coreml-venv/` by `scripts/setup-coreml.sh` (one-time).
 - Sidecar venv exists because Apple's package pins `diffusers==0.30.2`, `transformers==4.44.2`, `huggingface-hub==0.24.6`, `numpy<1.24`, `diffusionkit==0.4.0` — incompatible with EyeGen's Py 3.14 venv.
 - Requires `/opt/homebrew/bin/python3.11` (set `PYTHON_BIN` to override). Will not work on Py 3.12+.
-- Supports SD 1.x/2.x via pre-converted HF models (`apple/coreml-stable-diffusion-*`) or convert from scratch (`./generate.py convert-coreml`). Conversion is 15-20 min on M1 Pro.
+- Supports SD 1.x/2.x by converting a PyTorch model (`./generate.py convert-coreml`); a converted bundle runs without its source snapshot. Conversion is 15-20 min on M1 Pro. Apple's pre-converted `apple/coreml-stable-diffusion-*` repositories are not runnable yet (#9).
 - `coreml_compute_unit` config key: `CPU_AND_NE` (default, mobile + ANE), `CPU_AND_GPU` (Mac), `CPU_ONLY`, `ALL`.
 - CoreML SD 1.x/2.x does not support img2img in this wrapper (would require converting a VAE encoder — out of scope for first cut).
 

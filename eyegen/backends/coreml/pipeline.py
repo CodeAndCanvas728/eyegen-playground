@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 import re
@@ -16,6 +15,7 @@ from eyegen.backends.runner import BaseSubprocessRunner
 from eyegen.config import EyeGenConfig
 from eyegen.model_specs import ModelSpec
 
+from . import model_index
 from .constants import VALID_COMPUTE_UNITS
 from .conversion import converted_if_needed
 from .install import (
@@ -26,6 +26,11 @@ from .install import (
 
 log = logging.getLogger(__name__)
 
+# The sizes this tool converts to: SD 1.x/2.x and SDXL. A bundle that records
+# the size its models were exported at is held to that instead.
+_CONVERTED_SIZES = ((512, 512), (1024, 1024))
+_CONVERTED_SIZE_NAMES = " and ".join(f"{width}x{height}" for width, height in _CONVERTED_SIZES)
+
 
 class CoreMLWrapper(BaseSubprocessRunner):
     """Adapter that runs Apple's Stable Diffusion pipeline via subprocess."""
@@ -35,24 +40,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
         self.spec = spec
         self.compute_unit = self._resolve_compute_unit(config)
         self.model_path = converted_if_needed(self._resolve_model_path(config), self.compute_unit)
-        self.model_version = self._resolve_model_version(config)
         self._validate()
-
-    def _resolve_model_version(self, config: EyeGenConfig) -> str:
-        meta_path = self.model_path / "model_index.json"
-        if meta_path.is_file():
-            try:
-                meta = json.loads(meta_path.read_text())
-                if "model_version" in meta:
-                    return meta["model_version"]
-            except (OSError, ValueError) as exc:
-                log.debug("Failed to read model_index.json: %s", exc)
-        name = self.model_path.name
-        if name.startswith("models--"):
-            name = name[len("models--") :]
-            if "--" in name:
-                name = name.replace("--", "/")
-        return name
 
     def _resolve_model_path(self, config: EyeGenConfig) -> Path:
         if config.coreml_model_path:
@@ -62,8 +50,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
             if not p.is_dir():
                 raise FileNotFoundError(
                     f"coreml_model_path {p} is not a directory. "
-                    "Run: ./generate.py pull-coreml <alias>, "
-                    "or ./generate.py convert-coreml <hf-model> --output <dir>."
+                    "Run: ./generate.py convert-coreml <hf-model> --output <dir>."
                 )
             return p
         if self.spec is not None and self.spec.repo:
@@ -72,7 +59,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
                 return candidate
             raise RuntimeError(
                 f"CoreML model '{self.spec.repo}' not found at {candidate}. "
-                f"Run ./generate.py pull --from-hf {self.spec.repo} --backend coreml."
+                f"Run ./generate.py convert-coreml {self.spec.repo} to make it."
             )
         if not config.model:
             raise RuntimeError(
@@ -85,7 +72,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
             return candidate
         raise RuntimeError(
             f"CoreML model '{config.model}' not found at {candidate}. "
-            "Run ./generate.py pull-coreml <alias> to download it."
+            "Run ./generate.py convert-coreml <hf-model> to make it."
         )
 
     def _resolve_compute_unit(self, config: EyeGenConfig) -> str:
@@ -101,7 +88,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
         if not status.installed:
             raise RuntimeError(
                 f"{status.message} "
-                "Run ./scripts/setup-coreml.sh, then ./generate.py pull-coreml <alias>."
+                "Run ./scripts/setup-coreml.sh, then ./generate.py convert-coreml <hf-model>."
             )
         if not self.model_path.exists():
             raise RuntimeError(f"CoreML model dir does not exist: {self.model_path}")
@@ -134,6 +121,8 @@ class CoreMLWrapper(BaseSubprocessRunner):
             raise ValueError(f"cfg_weight must be >= 0, got {cfg_weight}")
         if seed is not None and not isinstance(seed, int):
             raise ValueError(f"seed must be an integer, got {type(seed).__name__}")
+        if seed is not None and not 0 <= seed < 2**32:
+            raise ValueError(f"seed must be between 0 and 2**32-1, got {seed}")
         if not (0.0 <= denoise <= 1.0):
             raise ValueError(f"denoise must be in [0, 1], got {denoise}")
 
@@ -156,12 +145,13 @@ class CoreMLWrapper(BaseSubprocessRunner):
         if py is None:
             raise RuntimeError("CoreML sidecar Python not found; run ./scripts/setup-coreml.sh")
 
-        seed_str = str(seed) if seed is not None else str(secrets.randbits(64))
-        out_path = output_dir / f".tmp_coreml_{seed_str}.png"
+        if seed is None:
+            seed = secrets.randbelow(2**32)
+        out_path = output_dir / f".tmp_coreml_{seed}.png"
         self._temp_output_path = out_path
 
         cmd = self._build_coreml_command(
-            prompt, cfg_weight, num_steps, seed, negative_prompt, out_path
+            prompt, cfg_weight, num_steps, width, height, seed, negative_prompt, out_path
         )
 
         returncode, stdout_lines, stderr_lines = self._execute_subprocess(
@@ -176,14 +166,16 @@ class CoreMLWrapper(BaseSubprocessRunner):
         prompt: str,
         cfg_weight: float,
         num_steps: int,
+        width: int,
+        height: int,
         seed: Optional[int],
         negative_prompt: str,
         out_path: pathlib.Path,
     ) -> list:
+        runner = Path(__file__).with_name("offline_runner.py")
         cmd = [
             str(_sidecar_python()),
-            "-m",
-            "python_coreml_stable_diffusion.pipeline",
+            str(runner),
             "--prompt",
             prompt,
             "--compute-unit",
@@ -192,8 +184,10 @@ class CoreMLWrapper(BaseSubprocessRunner):
             str(num_steps),
             "--guidance-scale",
             str(cfg_weight),
-            "--model-version",
-            self.model_version,
+            "--width",
+            str(width),
+            "--height",
+            str(height),
             "-i",
             str(self.model_path),
             "-o",
@@ -211,9 +205,7 @@ class CoreMLWrapper(BaseSubprocessRunner):
         if returncode != 0:
             stderr = "".join(stderr_lines)
             log.error("coreml stderr: %s", stderr[-2000:])
-            raise RuntimeError(
-                f"CoreML generation failed (exit {returncode}). Stderr: {stderr[-500:]}"
-            )
+            raise RuntimeError(_failure_message(returncode, stderr))
         if not out_path.is_file():
             raise RuntimeError(f"CoreML pipeline did not produce expected output: {out_path}")
 
@@ -226,18 +218,38 @@ class CoreMLWrapper(BaseSubprocessRunner):
             except (OSError, PermissionError):
                 pass
 
-    @staticmethod
-    def _check_request(width: int, height: int, image_path: Optional[str]) -> None:
-        """Reject unsupported options and invalid dimensions."""
+    def _check_request(self, width: int, height: int, image_path: Optional[str]) -> None:
+        """Reject unsupported options, and a size the bundle cannot generate.
+
+        The models are exported at one resolution, so this is refused here
+        rather than after the sidecar has loaded them; the runner checks it
+        again against the loaded models, which is what settles it.
+        """
         if image_path:
             raise ValueError("CoreML backend's SD 1.x/2.x pipeline does not support img2img.")
-        # Support SDXL (1024x1024) in addition to SD 1.x/2.x (512x512)
-        SUPPORTED_RESOLUTIONS = [(512, 512), (1024, 1024)]
-        if (width, height) not in SUPPORTED_RESOLUTIONS:
+        exported = model_index.resolution(self.model_path)
+        if exported is None:
+            if (width, height) not in _CONVERTED_SIZES:
+                raise ValueError(
+                    f"{self.model_path.name} does not record the size its models were exported "
+                    f"at, so only {_CONVERTED_SIZE_NAMES} can be generated (got {width}x{height}). "
+                    "Re-run ./generate.py convert-coreml to record it."
+                )
+            return
+        if (width, height) != exported:
             raise ValueError(
-                "CoreML models only support these resolutions: "
-                f"{SUPPORTED_RESOLUTIONS} (got {width}x{height})."
+                f"{self.model_path.name} generates {exported[0]}x{exported[1]} images only; "
+                f"asked for {width}x{height}. Set width and height to "
+                f"{exported[0]}x{exported[1]} to use it."
             )
+
+
+def _failure_message(returncode: int, stderr: str) -> str:
+    """What the runner reported, and its output when it reported nothing."""
+    for line in reversed(stderr.strip().splitlines()):
+        if line.startswith("Error: "):
+            return line[len("Error: ") :]
+    return f"CoreML generation failed (exit {returncode}). Stderr: {stderr[-500:]}"
 
 
 def get_coreml_pipeline(config: EyeGenConfig, spec: Optional[ModelSpec] = None) -> CoreMLWrapper:

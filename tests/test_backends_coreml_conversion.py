@@ -8,21 +8,21 @@ and Apple's converter are not run here; the conversion itself is replaced.
 import json
 from unittest import mock
 
+import coreml_layouts as layouts
 import pytest
 
 from eyegen.config import EyeGenConfig
 
 
 def _diffusers_snapshot(directory):
+    """A snapshot with no small files of its own: it must be converted to run."""
     (directory / "unet").mkdir(parents=True)
     (directory / "config.json").write_text("{}")
     return directory
 
 
 def _fake_conversion(model_id, output, **_kwargs):
-    output.mkdir(parents=True, exist_ok=True)
-    (output / "unet.mlpackage").mkdir()
-    (output / "model_index.json").write_text(json.dumps({"model_version": model_id}))
+    layouts.converted(output, model_id)
     return True
 
 
@@ -38,18 +38,19 @@ class TestCoreMLConversion:
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
 
         with mock.patch(
-            "eyegen.backends.coreml.models.convert_to_coreml",
+            "eyegen.backends.coreml.conversion.convert_to_coreml",
             side_effect=_fake_conversion,
         ) as convert:
             wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
 
         output = tmp_path / "coreml" / "my-model"
         assert wrapper.model_path == output
-        assert wrapper.model_version == str(snapshot)
+        meta = json.loads((output / "model_index.json").read_text())
+        assert meta["model_version"] == str(snapshot)
         assert convert.call_count == 1
         assert convert.call_args.args == (str(snapshot), output)
 
-        with mock.patch("eyegen.backends.coreml.models.convert_to_coreml") as again:
+        with mock.patch("eyegen.backends.coreml.conversion.convert_to_coreml") as again:
             second = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
 
         assert second.model_path == output
@@ -66,7 +67,7 @@ class TestCoreMLConversion:
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
 
         with mock.patch(
-            "eyegen.backends.coreml.models.convert_to_coreml",
+            "eyegen.backends.coreml.conversion.convert_to_coreml",
             side_effect=_fake_conversion,
         ):
             wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
@@ -90,7 +91,7 @@ class TestCoreMLConversion:
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
 
         with mock.patch(
-            "eyegen.backends.coreml.models.convert_to_coreml",
+            "eyegen.backends.coreml.conversion.convert_to_coreml",
             side_effect=_fake_conversion,
         ):
             wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
@@ -107,7 +108,99 @@ class TestCoreMLConversion:
         from eyegen.backends.coreml.pipeline import CoreMLWrapper
 
         with (
-            mock.patch("eyegen.backends.coreml.models.convert_to_coreml", return_value=False),
+            mock.patch("eyegen.backends.coreml.conversion.convert_to_coreml", return_value=False),
             pytest.raises(RuntimeError, match="convert-coreml"),
         ):
             CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_an_old_bundle_is_given_its_assets_without_converting_again(
+        self, mock_validate, tmp_path, monkeypatch
+    ):
+        mock_validate.return_value = mock.Mock(installed=True)
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path / "coreml"))
+        snapshot = layouts.snapshot(tmp_path / "my-model")
+        output = tmp_path / "coreml" / "my-model"
+        for name in layouts.MODEL_NAMES:
+            (output / f"{name}.mlpackage").mkdir(parents=True, exist_ok=True)
+        (output / "model_index.json").write_text(json.dumps({"model_version": str(snapshot)}))
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
+        with mock.patch("eyegen.backends.coreml.conversion.convert_to_coreml") as convert:
+            wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
+
+        assert wrapper.model_path == output
+        assert (output / "pipeline_assets" / "tokenizer" / "vocab.json").is_file()
+        assert json.loads((output / "model_index.json").read_text())["resolution"] == {
+            "height": 512,
+            "width": 512,
+        }
+        convert.assert_not_called()
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_an_old_bundle_gains_the_size_its_models_run_at(
+        self, mock_validate, tmp_path, monkeypatch
+    ):
+        mock_validate.return_value = mock.Mock(installed=True)
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path / "coreml"))
+        snapshot = layouts.snapshot(tmp_path / "my-model")
+        output = layouts.converted(tmp_path / "coreml" / "my-model", str(snapshot))
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
+        with mock.patch("eyegen.backends.coreml.conversion.convert_to_coreml") as convert:
+            CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
+
+        assert json.loads((output / "model_index.json").read_text())["resolution"] == {
+            "height": 512,
+            "width": 512,
+        }
+        convert.assert_not_called()
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_a_bundle_that_lost_a_model_is_finished_with_the_recorded_settings(
+        self, mock_validate, tmp_path, monkeypatch
+    ):
+        mock_validate.return_value = mock.Mock(installed=True)
+        monkeypatch.setenv("COREML_MODELS_DIR", str(tmp_path / "coreml"))
+        snapshot = layouts.snapshot(tmp_path / "my-model")
+        output = tmp_path / "coreml" / "my-model"
+        (output / "unet.mlpackage").mkdir(parents=True)
+        (output / "model_index.json").write_text(
+            json.dumps(
+                {
+                    "model_version": str(snapshot),
+                    "attention_implementation": "SPLIT_EINSUM_V2",
+                    "quantize_nbits": 6,
+                }
+            )
+        )
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
+        with mock.patch(
+            "eyegen.backends.coreml.conversion.convert_to_coreml",
+            side_effect=_fake_conversion,
+        ) as convert:
+            CoreMLWrapper(EyeGenConfig(coreml_model_path=str(snapshot)))
+
+        assert convert.call_args.kwargs["attention_implementation"] == "SPLIT_EINSUM_V2"
+        assert convert.call_args.kwargs["quantize_nbits"] == 6
+
+    @mock.patch("eyegen.backends.coreml.pipeline.validate_coreml_install")
+    def test_a_bundle_takes_the_size_its_conversion_recorded(self, mock_validate, tmp_path):
+        mock_validate.return_value = mock.Mock(installed=True)
+        bundle = layouts.converted(tmp_path / "bundle", "owner/model")
+        meta = json.loads((bundle / "model_index.json").read_text())
+        meta["resolution"] = {"height": 512, "width": 512}
+        (bundle / "model_index.json").write_text(json.dumps(meta))
+
+        from eyegen.backends.coreml.pipeline import CoreMLWrapper
+
+        wrapper = CoreMLWrapper(EyeGenConfig(coreml_model_path=str(bundle)))
+
+        with pytest.raises(ValueError, match="512x512 images only"):
+            wrapper.generate_image(
+                prompt="a fox", cfg_weight=7.5, num_steps=10, width=1024, height=1024
+            )

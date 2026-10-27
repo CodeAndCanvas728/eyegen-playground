@@ -4,7 +4,7 @@ import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
-from eyegen.backends import bonsai, coreml
+from eyegen.backends import bonsai
 
 
 class _ScriptWorker(QThread):
@@ -65,25 +65,3 @@ class BonsaiDownloadWorker(QThread):
 class CoreMLSetupWorker(_ScriptWorker):
     def _success_message(self) -> str:
         return "CoreML sidecar venv installed"
-
-
-class CoreMLDownloadWorker(QThread):
-    finished = Signal(bool, str)
-    status = Signal(str)
-
-    def __init__(self, alias: str):
-        super().__init__()
-        self.alias = alias
-
-    def run(self):
-        try:
-            target = coreml.pull_preconverted_coreml_model(
-                self.alias,
-                progress_callback=lambda m: self.status.emit(m),
-            )
-            if target:
-                self.finished.emit(True, f"CoreML model downloaded to {target}")
-            else:
-                self.finished.emit(False, f"Failed to download CoreML model '{self.alias}'")
-        except (OSError, ValueError, RuntimeError) as exc:
-            self.finished.emit(False, f"Download error: {exc}")

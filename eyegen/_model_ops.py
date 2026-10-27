@@ -96,15 +96,10 @@ def pull_spec(
         )
 
     if spec.backend == Backend.COREML:
-        from eyegen.backends.coreml.models import pull_preconverted_coreml_model
-
-        repo = spec.repo
-        if not repo:
-            raise ValueError(
-                f"The model '{spec.name}' names no repository. A CoreML model needs a 'repo'."
-            )
-        target = pull_preconverted_coreml_model(repo, progress_callback=progress_callback)
-        return target is not None
+        raise ValueError(
+            f"CoreML models are converted, not fetched. Run "
+            f"./generate.py convert-coreml {spec.repo or '<hf-model>'} to make '{spec.name}'."
+        )
 
     raise ValueError(
         f"The {spec.backend.value} backend runs a fixed set of models and cannot "

@@ -38,7 +38,7 @@ def detect_backend(
       1. A model in the stable-diffusion.cpp catalogue → SDCLI
       2. ``"gguf"`` in model name → OLLAMA  (substr match first — bonsai/hf "gguf" can't hijack)
       3. Bonsai/PrismML identifier pattern → BONSAI
-      4. CoreML bundle / pre-converted HF id / coreml_model_path set → COREML
+      4. A name the CoreML backend answers to / coreml_model_path set → COREML
       5. Known MFLUX alias → MFLUX
       6. diffusionkit MMDIT_CKPT entry → MLX
       7. otherwise → UnsupportedModelError
@@ -216,11 +216,10 @@ def _is_bonsai_model(model: str) -> bool:
 
 
 def _is_coreml_model(model: str, config: Optional[EyeGenConfig] = None) -> bool:
-    """Return True if *model* is a CoreML bundle or a known pre-converted HF id."""
+    """Return True if *model* is a name the CoreML backend answers to."""
     if config and config.coreml_model_path:
         return True
-    m = model.lower()
-    if m in {
+    return model.lower() in {
         "sd-1-4",
         "sd-1-5",
         "sd-1-5-palettized",
@@ -229,13 +228,7 @@ def _is_coreml_model(model: str, config: Optional[EyeGenConfig] = None) -> bool:
         "sd-2-1-base-palettized",
         "sdxl-base",
         "sdxl-ios",
-    }:
-        return True
-    if m.startswith("apple/coreml-stable-diffusion") or m.startswith(
-        "apple-coreml-stable-diffusion"
-    ):
-        return True
-    return False
+    }
 
 
 def _format_unsupported_error(model: str, attempted_backend: str) -> str:
@@ -257,9 +250,9 @@ def _format_unsupported_error(model: str, attempted_backend: str) -> str:
         "(e.g. bonsai-ternary-mlx) after running ./scripts/setup-bonsai.sh."
     )
     parts.append(
-        "For CoreML, use a known alias (sd-1-4, sd-1-5, sd-2-1-base, "
-        "sd-2-1-base-palettized) or a full HuggingFace repo id under "
-        "'apple/coreml-stable-diffusion-*' after running ./scripts/setup-coreml.sh."
+        "For CoreML, run ./scripts/setup-coreml.sh, convert a model with "
+        "./generate.py convert-coreml <hf-model>, then name the bundle it made "
+        "(e.g. stable-diffusion-2-1-base)."
     )
     parts.append(
         "For stable-diffusion.cpp, use 'flux-3-image-klein-gguf' "

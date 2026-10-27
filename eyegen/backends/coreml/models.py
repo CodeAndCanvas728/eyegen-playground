@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 import time
@@ -10,13 +9,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
-from .constants import PRECONVERTED_HF_MODELS, VALID_COMPUTE_UNITS
+from . import model_index
+from .assets import add_pipeline_assets
+from .constants import VALID_COMPUTE_UNITS
 from .install import (
     _sidecar_has_coreml,
     _sidecar_python,
-    get_coreml_model_dir,
     get_coreml_models_dir,
 )
+from .offline_runner import has_models
 
 log = logging.getLogger(__name__)
 
@@ -34,13 +35,7 @@ def list_coreml_models() -> list[dict]:
         mlpackage = list(child.glob("*.mlpackage"))
         if not (mlmodelc or mlpackage):
             continue
-        meta_path = child / "model_index.json"
-        meta = {}
-        if meta_path.is_file():
-            try:
-                meta = json.loads(meta_path.read_text())
-            except (OSError, ValueError):
-                meta = {}
+        meta = model_index.read(child)
         out.append(
             {
                 "name": child.name,
@@ -52,44 +47,6 @@ def list_coreml_models() -> list[dict]:
             }
         )
     return out
-
-
-def pull_preconverted_coreml_model(
-    alias: str,
-    progress_callback: Optional[Callable[[str], None]] = None,
-) -> Optional[Path]:
-    from huggingface_hub import snapshot_download
-
-    repo_id = PRECONVERTED_HF_MODELS.get(alias, alias)
-    target_name = repo_id.split("/")[-1]
-    target_dir = get_coreml_model_dir(target_name)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    def _cb(msg):
-        log.info("[coreml-pull] %s", msg)
-        if progress_callback:
-            progress_callback(msg)
-
-    try:
-        _cb(f"Downloading {repo_id} ...")
-        snapshot_download(
-            repo_id=repo_id,
-            local_dir=str(target_dir),
-            local_dir_use_symlinks=False,
-        )
-    except (OSError, ValueError) as exc:
-        log.error("Failed to download %s: %s", repo_id, exc)
-        return None
-
-    meta = {
-        "model_version": repo_id,
-        "compute_unit": "CPU_AND_NE",
-        "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-    (target_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
-    list_coreml_models.cache_clear()
-    _cb(f"Done. Model at {target_dir}")
-    return target_dir
 
 
 def convert_to_coreml(
@@ -105,12 +62,15 @@ def convert_to_coreml(
         raise ValueError(
             f"Invalid compute_unit {compute_unit!r}. Must be one of {VALID_COMPUTE_UNITS}."
         )
+    output_dir = Path(output_dir).expanduser()
+    if has_models(output_dir):
+        log.info("The models in %s are already converted; adding the files a run needs", output_dir)
+        return add_pipeline_assets(hf_model_id, output_dir)
+
     py = _sidecar_python()
     if py is None or not _sidecar_has_coreml():
         raise RuntimeError("CoreML sidecar venv not ready. Run: ./scripts/setup-coreml.sh")
-    output_dir = Path(output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
-
     cmd = [
         str(py),
         "-m",
@@ -142,16 +102,23 @@ def convert_to_coreml(
     if timed_out:
         raise subprocess.TimeoutExpired(cmd, timeout)
 
-    if returncode == 0:
-        meta = {
+    if returncode != 0:
+        return False
+    # Recorded before the assets are fetched: a conversion that cannot reach
+    # Hugging Face for the tokenizer has still converted every model, and the
+    # next run must find it rather than convert it all over again.
+    model_index.record(
+        output_dir,
+        {
             "model_version": hf_model_id,
             "compute_unit": compute_unit,
             "attention_implementation": attention_implementation,
+            "quantize_nbits": quantize_nbits,
             "converted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        (output_dir / "model_index.json").write_text(json.dumps(meta, indent=2) + "\n")
-        list_coreml_models.cache_clear()
-    return returncode == 0
+        },
+    )
+    list_coreml_models.cache_clear()
+    return add_pipeline_assets(hf_model_id, output_dir)
 
 
 def _run_conversion(

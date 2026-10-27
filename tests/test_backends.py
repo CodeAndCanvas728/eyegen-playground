@@ -38,6 +38,10 @@ def test_detect_backend_unsupported_raises():
     ):
         with pytest.raises(UnsupportedModelError):
             detect_backend("totally-unknown-model", Backend.AUTO)
+        # The pre-converted repositories were never runnable here: naming one
+        # must say so rather than claim it is a CoreML model.
+        with pytest.raises(UnsupportedModelError):
+            detect_backend("apple/coreml-stable-diffusion-v1-5", Backend.AUTO)
 
 
 def test_detect_backend_mlx_missing_raises():

@@ -96,16 +96,10 @@ class EyeGenConfig:
     def _normalize_model(self):
         model_val = self.__dict__.get("model", None)
         backend_val = self.__dict__.get("backend", None)
-        if model_val and backend_val:
-            is_coreml = (backend_val == Backend.COREML) or (
-                backend_val == Backend.AUTO
-                and (
-                    model_val.lower().startswith("apple/coreml-stable-diffusion")
-                    or model_val.lower().startswith("apple-coreml-stable-diffusion")
-                )
-            )
-            if is_coreml and "/" in model_val:
-                super().__setattr__("model", model_val.replace("/", "-"))
+        if model_val and backend_val == Backend.COREML and "/" in model_val:
+            # A CoreML bundle is a directory on this machine, named without a
+            # slash; a repository id reaches it only by way of a conversion.
+            super().__setattr__("model", model_val.replace("/", "-"))
 
     def validate(self) -> list[str]:  # noqa: C901
         """Validate settings and return a list of error messages (empty if valid)."""
