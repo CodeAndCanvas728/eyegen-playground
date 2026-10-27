@@ -15,17 +15,23 @@ echo "🔧 EyeGen — App Bundle Creator"
 echo "==============================="
 
 # Sanity checks
-if [ ! -d "$SCRIPT_DIR/venv" ]; then
-    echo "❌ No venv found. Run ./setup.sh first."
+PYTHON=""
+if [ -x "$SCRIPT_DIR/venv/bin/python" ] && "$SCRIPT_DIR/venv/bin/python" -c "pass" 2>/dev/null; then
+    PYTHON="$SCRIPT_DIR/venv/bin/python"
+elif [ -x "$SCRIPT_DIR/.venv/bin/python" ] && "$SCRIPT_DIR/.venv/bin/python" -c "pass" 2>/dev/null; then
+    PYTHON="$SCRIPT_DIR/.venv/bin/python"
+fi
+
+if [ -z "$PYTHON" ]; then
+    echo "❌ No working Python venv found in $SCRIPT_DIR (checked venv and .venv)."
+    echo "   Please run ./setup.sh first."
     exit 1
 fi
+
 if [ ! -f "$SCRIPT_DIR/gui.py" ]; then
     echo "❌ gui.py not found in $SCRIPT_DIR"
     exit 1
 fi
-
-# Resolve the Python interpreter inside the venv
-PYTHON="$SCRIPT_DIR/venv/bin/python"
 
 echo "✓ Workspace: $SCRIPT_DIR"
 echo "✓ Python:    $PYTHON"
@@ -77,7 +83,24 @@ PLIST
 # (x86_64) terminal. MLX is arm64-only and dlopen fails without this.
 cat > "$DEST/Contents/MacOS/$APP_NAME" << LAUNCHER
 #!/bin/bash
-exec arch -arm64 "$PYTHON" "$SCRIPT_DIR/gui.py" "\$@"
+LOG_FILE="\$HOME/Library/Logs/EyeGen.log"
+mkdir -p "\$(dirname "\$LOG_FILE")"
+
+if [ ! -x "$PYTHON" ] || ! "$PYTHON" -c "pass" 2>/dev/null; then
+    MSG="EyeGen cannot start: Python interpreter not found or not executable at:\n$PYTHON\n\nPlease re-run ./create_app.sh in the project directory."
+    echo "[\$(date '+%Y-%m-%d %H:%M:%S')] ERROR: \$MSG" >> "\$LOG_FILE"
+    osascript -e "display alert \"EyeGen Launch Error\" message \"\$MSG\" as critical" 2>/dev/null
+    exit 1
+fi
+
+if [ ! -f "$SCRIPT_DIR/gui.py" ]; then
+    MSG="EyeGen cannot start: gui.py not found at:\n$SCRIPT_DIR/gui.py\n\nPlease re-run ./create_app.sh in the project directory."
+    echo "[\$(date '+%Y-%m-%d %H:%M:%S')] ERROR: \$MSG" >> "\$LOG_FILE"
+    osascript -e "display alert \"EyeGen Launch Error\" message \"\$MSG\" as critical" 2>/dev/null
+    exit 1
+fi
+
+exec arch -arm64 "$PYTHON" "$SCRIPT_DIR/gui.py" "\$@" 2>> "\$LOG_FILE"
 LAUNCHER
 
 chmod +x "$DEST/Contents/MacOS/$APP_NAME"
