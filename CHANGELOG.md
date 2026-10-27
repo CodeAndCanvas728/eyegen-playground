@@ -28,6 +28,10 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- GUI now honours a configured `models_dir`, so models stored in the configured folder are recognised.
+- GUI and config now accept custom model directories (including external volumes) instead of rejecting them as unsafe paths.
+
 ## [0.4.0] - 2026-10-27
 
 ### Added
