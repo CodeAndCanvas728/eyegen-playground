@@ -28,6 +28,17 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- The models root is walked, so a model anywhere under it is found — a HuggingFace cache layout under the root, a folder the user dropped there — not only the three conventional backend sub-folders. A revision-hashed snapshot directory is named after the GGUF it holds.
+
+### Fixed
+- A symlinked GGUF keeps its own name: a HuggingFace cache links a blob whose name says nothing, and the tool now reads the link's name instead of resolving it away.
+- A lone GGUF is the transformer, not an encoder: a name hint may claim a file as `llm` only when another GGUF is left to be the transformer, so a single-file model under a `qwen-image`-style name is recognised.
+- The GUI opens ready instead of locked to a stale saved model: when the restored model no longer resolves, the first resolvable local model is selected instead.
+- A custom CoreML bundle path is no longer mangled by the repository-id normalisation, and a custom HuggingFace cache location is accepted outside the home-roots allow-list (traversal is still refused).
+- The UI: sections are separated by space and type rather than bordered boxes, the preview is a real canvas surface, inputs have room to breathe, and the mode switch is a proper segmented control. The QSS theme tokens are substituted for hyphenated names, so the stylesheet parses instead of being dropped.
+
+
 ### Fixed
 - GUI now honours a configured `models_dir`, so models stored in the configured folder are recognised.
 - GUI and config now accept custom model directories (including external volumes) instead of rejecting them as unsafe paths.
