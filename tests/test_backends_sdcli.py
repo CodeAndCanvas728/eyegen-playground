@@ -247,3 +247,28 @@ def test_a_local_model_is_not_pulled(tmp_path, monkeypatch):
         pull_sdcli_model("local-model", spec=spec)
 
     assert not (tmp_path / "local-model").exists()
+
+
+def test_a_model_too_large_for_the_machine_is_refused(tmp_path, binary, monkeypatch):
+    """A model sd-cli would load whole is refused before the machine dies."""
+    from eyegen.backends.sdcli import pipeline
+    from eyegen.backends.sdcli.pipeline import SdCliWrapper
+    from eyegen.config import EyeGenConfig
+
+    directory = tmp_path / "huge"
+    directory.mkdir()
+    (directory / "transformer.gguf").write_bytes(b"x" * 1024)
+    (directory / "ae.safetensors").write_bytes(b"x" * 1024)
+    spec = ModelSpec(
+        name="too-big",
+        backend=Backend.SDCLI,
+        sources={
+            "diffusion_model": ModelSource(path=str(directory / "transformer.gguf")),
+            "vae": ModelSource(path=str(directory / "ae.safetensors")),
+        },
+    )
+
+    monkeypatch.setattr(pipeline, "_physical_memory", lambda: 1024)  # a 1 KB machine
+
+    with pytest.raises(RuntimeError, match="more memory"):
+        SdCliWrapper(EyeGenConfig(), "too-big", spec=spec)

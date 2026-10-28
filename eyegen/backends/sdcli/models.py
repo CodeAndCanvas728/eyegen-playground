@@ -210,6 +210,10 @@ _QUANTIZED_HINTS = ("int8", "convrot", "q4_", "q5_", "q6_", "q8_", "q4_k", "q5_k
 _BULKY_HINTS = ("bf16", "fp16", "f16", "fp32", "float32", "f32")
 
 
+_QUANTIZED_HINTS = ("int8", "convrot", "q4_", "q5_", "q6_", "q8_", "q4_k", "q5_k", "q6_k", "q8_0")
+_BULKY_HINTS = ("bf16", "fp16", "f16", "fp32", "float32", "f32")
+
+
 def _pick_by_hints(files: list[str], hints: tuple[str, ...]) -> Optional[str]:
     """The one file of *files* a role names, or nothing.
 

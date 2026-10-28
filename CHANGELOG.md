@@ -29,6 +29,7 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Companion files are picked by how much memory they want: a repository that ships both a BF16 text encoder (17+ GB) and a quantised one now gets the quantised one, so a full-precision encoder can no longer take a 16 GB machine down. A model whose files total more than the machine's RAM is refused with a clear message before sd-cli loads it.
 - A lone GGUF in a HuggingFace cache layout is completed from the repository it came from: sd-cli needs the model's text encoder and VAE, and the tool now knows where they live, fetches them on first run, and says so instead of letting sd-cli fail on a transformer alone.
 - The models root is walked, so a model anywhere under it is found — a HuggingFace cache layout under the root, a folder the user dropped there — not only the three conventional backend sub-folders. A revision-hashed snapshot directory is named after the GGUF it holds.
 
