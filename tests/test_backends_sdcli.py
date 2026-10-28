@@ -272,3 +272,31 @@ def test_a_model_too_large_for_the_machine_is_refused(tmp_path, binary, monkeypa
 
     with pytest.raises(RuntimeError, match="more memory"):
         SdCliWrapper(EyeGenConfig(), "too-big", spec=spec)
+
+
+def test_offload_to_cpu_is_omitted_when_low_memory_mode_is_off(model_dir, binary):
+    from eyegen.config import EyeGenConfig
+
+    config = EyeGenConfig(sdcli_offload_to_cpu=False)
+    wrapper = SdCliWrapper(config, "flux-3-image-klein-gguf")
+    command = wrapper._build_command("a prompt", model_dir / "out.png", 16, 1.0, 512, 512, 7, None)
+
+    assert "--offload-to-cpu" not in command
+
+
+def test_offload_to_cpu_is_passed_when_low_memory_mode_is_on(model_dir, binary):
+    from eyegen.config import EyeGenConfig
+
+    config = EyeGenConfig(sdcli_offload_to_cpu=True)
+    wrapper = SdCliWrapper(config, "flux-3-image-klein-gguf")
+    command = wrapper._build_command("a prompt", model_dir / "out.png", 16, 1.0, 512, 512, 7, None)
+
+    assert "--offload-to-cpu" in command
+
+
+def test_config_round_trips_low_memory_mode():
+    from eyegen.config import EyeGenConfig
+
+    cfg = EyeGenConfig.from_dict({"sdcli_offload_to_cpu": "false"})
+    assert cfg.sdcli_offload_to_cpu is False
+    assert EyeGenConfig.from_dict(cfg.to_dict()).sdcli_offload_to_cpu is False
