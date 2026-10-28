@@ -24,3 +24,9 @@ def get_sdcli_pipeline(
     """Build the wrapper for the configured model."""
     name = model or config.model or ""
     return SdCliWrapper(config, name, spec=spec)
+
+
+def diffusion_path(spec: ModelSpec) -> str:
+    """The transformer's own path, for the message that names the model."""
+    source = spec.sources.get("diffusion_model")
+    return source.path if source is not None else ""
