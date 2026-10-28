@@ -29,6 +29,8 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Prompt boxes are bigger and resizable: the Prompt and Negative Prompt fields share a draggable vertical splitter, so the prompt can take as much room as the window allows instead of a fixed 120 px.
+- The model dropdown leads with the scanned models (shown by name, the path is a hover tooltip); the path picker stays behind the Custom entry.
 - **Low Memory mode** checkbox in the GUI: sd-cli's ``--offload-to-cpu`` is now a choice, not a constant. On by default, it places weights in RAM and streams each layer to the GPU when needed — slower, but with a smaller peak footprint; off when the box is unchecked, for machines with room to spare. Persisted in GUI state and part of the pipeline cache key.
 - Companion files are picked by how much memory they want: a repository that ships both a BF16 text encoder (17+ GB) and a quantised one now gets the quantised one, so a full-precision encoder can no longer take a 16 GB machine down. A model whose files total more than the machine's RAM is refused with a clear message before sd-cli loads it.
 - A lone GGUF in a HuggingFace cache layout is completed from the repository it came from: sd-cli needs the model's text encoder and VAE, and the tool now knows where they live, fetches them on first run, and says so instead of letting sd-cli fail on a transformer alone.
