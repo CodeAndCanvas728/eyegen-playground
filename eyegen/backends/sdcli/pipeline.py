@@ -24,17 +24,3 @@ def get_sdcli_pipeline(
     """Build the wrapper for the configured model."""
     name = model or config.model or ""
     return SdCliWrapper(config, name, spec=spec)
-
-
-def _physical_memory() -> int:
-    """The machine's physical memory in bytes, or a large number when unknown."""
-    try:
-        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
-    except (ValueError, OSError, AttributeError):
-        return 1 << 60
-
-
-def diffusion_path(spec: ModelSpec) -> str:
-    """The transformer's own path, for the message that names the model."""
-    source = spec.sources.get("diffusion_model")
-    return source.path if source is not None else ""
