@@ -34,6 +34,7 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - A symlinked GGUF keeps its own name: a HuggingFace cache links a blob whose name says nothing, and the tool now reads the link's name instead of resolving it away.
 - A lone GGUF is the transformer, not an encoder: a name hint may claim a file as `llm` only when another GGUF is left to be the transformer, so a single-file model under a `qwen-image`-style name is recognised.
+- The HuggingFace hub caches and the OllamaDiffuser model directory are scanned as roots of their own: a model either program downloaded is a model on this machine too. A hub snapshot is named after the repository it came from (``unsloth__flux-3-image-klein-GGUF``), and a catalogued model is not listed twice.
 - The GUI opens ready instead of locked to a stale saved model: when the restored model no longer resolves, the first resolvable local model is selected instead.
 - A custom CoreML bundle path is no longer mangled by the repository-id normalisation, and a custom HuggingFace cache location is accepted outside the home-roots allow-list (traversal is still refused).
 - The UI: sections are separated by space and type rather than bordered boxes, the preview is a real canvas surface, inputs have room to breathe, and the mode switch is a proper segmented control. The QSS theme tokens are substituted for hyphenated names, so the stylesheet parses instead of being dropped.
