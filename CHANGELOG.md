@@ -29,6 +29,7 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The CLI is on par with the GUI: `generate` gained `--negative-prompt`, `--use-t5/--no-t5` and `--offload-to-cpu/--no-offload-to-cpu`, each a per-run override that leaves the config file untouched; the T5 toggle is now a config value (`use_t5`) honoured by both surfaces; the T5 checkbox in the GUI reads that config value and persists like Low Memory mode; the GUI's generation config carries `use_t5` and the sdcli offload flag through to the worker.
 - Prompt boxes are bigger and resizable: the Prompt and Negative Prompt fields share a draggable vertical splitter, so the prompt can take as much room as the window allows instead of a fixed 120 px.
 - The model dropdown leads with the scanned models (shown by name, the path is a hover tooltip); the path picker stays behind the Custom entry.
 - **Low Memory mode** checkbox in the GUI: sd-cli's ``--offload-to-cpu`` is now a choice, not a constant. On by default, it places weights in RAM and streams each layer to the GPU when needed — slower, but with a smaller peak footprint; off when the box is unchecked, for machines with room to spare. Persisted in GUI state and part of the pipeline cache key.
