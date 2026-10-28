@@ -29,26 +29,22 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- The CLI is on par with the GUI: `generate` gained `--negative-prompt`, `--use-t5/--no-t5` and `--offload-to-cpu/--no-offload-to-cpu`, each a per-run override that leaves the config file untouched; the T5 toggle is now a config value (`use_t5`) honoured by both surfaces; the T5 checkbox in the GUI reads that config value and persists like Low Memory mode; the GUI's generation config carries `use_t5` and the sdcli offload flag through to the worker.
-- Prompt boxes are bigger and resizable: the Prompt and Negative Prompt fields share a draggable vertical splitter, so the prompt can take as much room as the window allows instead of a fixed 120 px.
-- The model dropdown leads with the scanned models (shown by name, the path is a hover tooltip); the path picker stays behind the Custom entry.
-- **Low Memory mode** checkbox in the GUI: sd-cli's ``--offload-to-cpu`` is now a choice, not a constant. On by default, it places weights in RAM and streams each layer to the GPU when needed — slower, but with a smaller peak footprint; off when the box is unchecked, for machines with room to spare. Persisted in GUI state and part of the pipeline cache key.
-- Companion files are picked by how much memory they want: a repository that ships both a BF16 text encoder (17+ GB) and a quantised one now gets the quantised one, so a full-precision encoder can no longer take a 16 GB machine down. A model whose files total more than the machine's RAM is refused with a clear message before sd-cli loads it.
-- A lone GGUF in a HuggingFace cache layout is completed from the repository it came from: sd-cli needs the model's text encoder and VAE, and the tool now knows where they live, fetches them on first run, and says so instead of letting sd-cli fail on a transformer alone.
-- The models root is walked, so a model anywhere under it is found — a HuggingFace cache layout under the root, a folder the user dropped there — not only the three conventional backend sub-folders. A revision-hashed snapshot directory is named after the GGUF it holds.
+- **A model is found wherever it is.** The models root is walked (so a HuggingFace cache layout or a dropped folder under it is found, not only the three conventional backend sub-folders), the HuggingFace hub caches are scanned as roots of their own, and so is the OllamaDiffuser model directory. A revision-hashed snapshot is named after the GGUF it holds; a hub snapshot after the repository it came from.
+- **A lone GGUF is completed from the repository it came from.** sd-cli needs the text encoder and VAE that a transformer alone does not carry; the tool knows they live in the GGUF's repository, picks the quantised companion (never a 17 GB full-precision encoder), fetches it on first run, and refuses before sd-cli if the model's files exceed the machine's RAM.
+- **Low Memory mode** checkbox in the GUI and `--offload-to-cpu/--no-offload-to-cpu` on the CLI: sd-cli's offload is now a choice. On by default, it streams weights from RAM to the GPU — slower, smaller peak footprint; off for machines with room.
+- **CLI on par with the GUI:** `generate` gained `--negative-prompt`, `--use-t5/--no-t5` and `--offload-to-cpu/--no-offload-to-cpu`, each a per-run override that leaves the config file untouched. The T5 toggle is a config value (`use_t5`) both surfaces honour.
+- **The model dropdown leads with the scanned models** (shown by name, path as hover tooltip); the path picker stays behind the Custom entry.
+- **Prompt boxes are bigger and resizable:** the Prompt and Negative Prompt fields share a draggable vertical splitter.
 
 ### Fixed
-- A symlinked GGUF keeps its own name: a HuggingFace cache links a blob whose name says nothing, and the tool now reads the link's name instead of resolving it away.
-- A lone GGUF is the transformer, not an encoder: a name hint may claim a file as `llm` only when another GGUF is left to be the transformer, so a single-file model under a `qwen-image`-style name is recognised.
-- The HuggingFace hub caches and the OllamaDiffuser model directory are scanned as roots of their own: a model either program downloaded is a model on this machine too. A hub snapshot is named after the repository it came from (``unsloth__flux-3-image-klein-GGUF``), and a catalogued model is not listed twice.
+- A symlinked GGUF keeps its own name: a HuggingFace cache links a blob whose name says nothing, and the link's name is what is read.
+- A lone GGUF is the transformer, not an encoder: a name hint may claim a file as `llm` only when another GGUF is left to be the transformer.
+- The GUI honours a configured `models_dir`, and accepts custom model directories (including external volumes) instead of rejecting them as unsafe paths; a custom CoreML bundle path is no longer mangled, and a custom HuggingFace cache location is accepted (traversal still refused).
 - The GUI opens ready instead of locked to a stale saved model: when the restored model no longer resolves, the first resolvable local model is selected instead.
-- A custom CoreML bundle path is no longer mangled by the repository-id normalisation, and a custom HuggingFace cache location is accepted outside the home-roots allow-list (traversal is still refused).
-- The UI: sections are separated by space and type rather than bordered boxes, the preview is a real canvas surface, inputs have room to breathe, and the mode switch is a proper segmented control. The QSS theme tokens are substituted for hyphenated names, so the stylesheet parses instead of being dropped.
+- A catalogued model is not listed twice.
+- The UI: sections separated by space and type rather than bordered boxes, a real canvas surface for the preview, room to breathe for inputs, a proper segmented mode switch, and the QSS theme tokens substitute hyphenated names so the stylesheet parses instead of being dropped.
 
-
-### Fixed
-- GUI now honours a configured `models_dir`, so models stored in the configured folder are recognised.
-- GUI and config now accept custom model directories (including external volumes) instead of rejecting them as unsafe paths.
+## [Unreleased]
 
 ## [0.4.0] - 2026-10-27
 
