@@ -90,11 +90,10 @@ def _print_own_models():
 
 def _print_local_models():
     """The models on this machine that no catalogue describes."""
-    from eyegen.artifact_scan import scan_undescribed
+    from eyegen.artifact_scan import scan_all
     from eyegen.config import Backend
-    from eyegen.paths import models_dir
 
-    found = scan_undescribed(models_dir())
+    found = [a for a in scan_all() if a.backend != Backend.MFLUX]
     if not found:
         return
     typer.echo()
@@ -103,13 +102,7 @@ def _print_local_models():
         typer.echo(
             f"  • {artifact.name:24s} {artifact.backend.value:16s} {artifact.spec.description}"
         )
-    if any(artifact.backend != Backend.MFLUX for artifact in found):
-        typer.echo("  (Use one with: ./generate.py generate 'your prompt' --model <path>)")
-    if any(artifact.backend == Backend.MFLUX for artifact in found):
-        typer.echo(
-            "  (A saved MFLUX model runs by name: "
-            "./generate.py generate 'your prompt' --model <name>)"
-        )
+    typer.echo("  (Use one with: ./generate.py generate 'your prompt' --model <path-or-name>)")
 
 
 def _print_sdcli_models():

@@ -41,6 +41,7 @@ def _make_cache_key(backend, config: EyeGenConfig, mflux_quantize, use_t5, spec=
         config.bonsai_model_path,
         config.coreml_model_path,
         config.coreml_compute_unit,
+        config.sdcli_offload_to_cpu,
         _spec_fingerprint(spec),
     )
 

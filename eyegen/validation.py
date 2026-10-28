@@ -131,6 +131,24 @@ def validate_safe_path(path: str | Path, name: str) -> Path:
     return p
 
 
+def validate_model_path(path: str | Path, name: str) -> Path:
+    """Resolve a user-chosen model directory without the general allow-list."""
+    p = Path(path)
+    if ".." in p.parts:
+        raise ValueError(f"Directory traversal attempt detected in {name}: {path}")
+
+    if p.exists():
+        try:
+            p = p.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(f"Could not resolve path for {name}: {exc}") from exc
+    else:
+        parent_resolved = p.parent.resolve(strict=False)
+        p = parent_resolved / p.name
+
+    return p
+
+
 def validate_model_name(name: str) -> str:
     """Refuse a model name that is not one directory name.
 

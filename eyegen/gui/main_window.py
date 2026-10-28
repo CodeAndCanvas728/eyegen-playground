@@ -178,6 +178,8 @@ class MainWindow(
         data["guidance_scale"] = self.guidance_spin.value()
         data["backend"] = self.backend_combo.currentData()
         data["mflux_quantize"] = self.quantize_combo.currentData()
+        data["sdcli_offload_to_cpu"] = self.low_memory_check.isChecked()
+        data["use_t5"] = self.t5_check.isChecked()
 
         resolved_backend = self._resolved_backend()
         model_path = self.model_path_input.text().strip()

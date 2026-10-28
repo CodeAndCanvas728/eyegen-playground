@@ -79,52 +79,15 @@ def setup_img2img(
     return image_path, denoise_value
 
 
-def print_generation_settings(
-    model: str,
-    resolved_backend: Backend,
+def load_pipeline(
+    resolved: ResolvedModel,
     config: EyeGenConfig,
-    prompt: str,
-    image_path: Optional[str],
-    denoise_value: float,
-    w: int,
-    h: int,
-    num_steps: int,
-    guidance_scale: float,
-    seed: Optional[int],
+    quantize: Optional[int],
+    use_t5: Optional[bool] = None,
 ):
-    backend_labels = {
-        Backend.MLX: "MLX (diffusionkit)",
-        Backend.OLLAMA: "OllamaDiffuser (GGUF)",
-        Backend.MFLUX: "MFLUX (MLX FLUX)",
-        Backend.BONSAI: "Bonsai (PrismML ternary 1.58-bit)",
-        Backend.COREML: "CoreML (Apple Neural Engine)",
-        Backend.SDCLI: "stable-diffusion.cpp (FLUX.3)",
-    }
-    backend_label = backend_labels.get(resolved_backend, resolved_backend.value)
-    typer.echo("✨ Generating image...")
-    typer.echo(f"   Backend: {backend_label}")
-    typer.echo(f"   Model: {model}")
-    if config.mflux_model_path and resolved_backend == Backend.MFLUX:
-        typer.echo(f"   Local model: {config.mflux_model_path}")
-    if resolved_backend == Backend.COREML:
-        if config.coreml_model_path:
-            typer.echo(f"   CoreML model: {config.coreml_model_path}")
-        typer.echo(f"   Compute unit: {config.coreml_compute_unit or 'CPU_AND_NE'}")
-    if resolved_backend == Backend.BONSAI:
-        if config.bonsai_model_path:
-            typer.echo(f"   Bonsai model: {config.bonsai_model_path}")
-    typer.echo(f"   Prompt: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
-    if image_path:
-        typer.echo(f"   Mode: img2img | Denoise: {denoise_value:.2f} | Input: {image_path}")
-    else:
-        typer.echo(f"   Steps: {num_steps} | Guidance: {guidance_scale} | Size: {w}x{h}")
-    if seed is not None:
-        typer.echo(f"   Seed: {seed}")
-
-
-def load_pipeline(resolved: ResolvedModel, config: EyeGenConfig, quantize: Optional[int]):
     typer.echo("📦 Loading model...")
     config = apply_spec(config, resolved.spec)
+    t5 = config.use_t5 if use_t5 is None else use_t5
     if resolved.backend == Backend.OLLAMA:
         return get_ollama_pipeline(config, name=resolved.name, spec=resolved.spec)
     if resolved.backend == Backend.MFLUX:
@@ -138,7 +101,9 @@ def load_pipeline(resolved: ResolvedModel, config: EyeGenConfig, quantize: Optio
         return sdcli.get_sdcli_pipeline(config, resolved.name, spec=resolved.spec)
     if resolved.backend == Backend.COREML:
         return coreml.get_coreml_pipeline(config, spec=resolved.spec)
-    return get_pipeline(config)
+    if resolved.backend == Backend.MLX and t5:
+        typer.echo("   T5 encoder: on")
+    return get_pipeline(config, use_t5=t5)
 
 
 def save_output_image(gen_image, output: Path, w: int, h: int, image_path: Optional[str]):
@@ -208,17 +173,25 @@ def handle_quantization_error(
 
 
 def _resolve_backend_and_model(
-    backend: str, model_override: Optional[str]
+    backend: str,
+    model_override: Optional[str],
+    offload_to_cpu: Optional[bool] = None,
+    use_t5: Optional[bool] = None,
 ) -> tuple[ResolvedModel, EyeGenConfig]:
     """Validate backend and resolve model + backend from config.
 
     A model given on the command line is used for this run only: the
-    configuration file is left as it was.
+    configuration file is left as it was. The same holds for the per-run
+    toggles that shadow the configured defaults.
     """
     validate_cli_backend(backend)
     config = load_config()
     if model_override:
         config = replace(config, model=model_override)
+    if offload_to_cpu is not None:
+        config = replace(config, sdcli_offload_to_cpu=offload_to_cpu)
+    if use_t5 is not None:
+        config = replace(config, use_t5=use_t5)
     model = config.model or DEFAULT_CONFIG.model
     resolved = resolve_model(model, backend, config=config)
     return resolved, config
@@ -263,9 +236,14 @@ def build_generation_params(
     denoise: Optional[float],
     quantize: Optional[int],
     model: Optional[str] = None,
+    negative_prompt: Optional[str] = None,
+    offload_to_cpu: Optional[bool] = None,
+    use_t5: Optional[bool] = None,
 ):
     """Resolve and validate all generation parameters."""
-    resolved, config = _resolve_backend_and_model(backend, model)
+    resolved, config = _resolve_backend_and_model(
+        backend, model, offload_to_cpu=offload_to_cpu, use_t5=use_t5
+    )
     num_steps, guidance_scale, h, w = _resolve_generation_params(
         config, steps, guidance, height, width
     )
@@ -296,4 +274,9 @@ def build_generation_params(
         denoise_value,
         output_path,
         quantize,
+        negative_prompt or "",
     )
+
+
+# What a run prints is the run's report, not its mechanics.
+from eyegen.cli.report import print_generation_settings  # noqa: E402,F401

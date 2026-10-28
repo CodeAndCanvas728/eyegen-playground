@@ -23,6 +23,9 @@ from PySide6.QtWidgets import (
 class MainWindowUIMixin:
     def _build_ui(self):
         central = QWidget()
+        # The name is what the stylesheet paints: without it the page shows
+        # the platform's unpainted window colour behind the content.
+        central.setObjectName("pageHost")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -69,15 +72,17 @@ class MainWindowUIMixin:
         controls_scroll = QScrollArea()
         controls_scroll.setWidgetResizable(True)
         controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        controls_scroll.setMaximumWidth(420)
-        controls_scroll.setMinimumWidth(300)
+        controls_scroll.setFrameShape(QScrollArea.NoFrame)
+        controls_scroll.setMaximumWidth(500)
+        controls_scroll.setMinimumWidth(380)
 
         controls_container = QWidget()
         self.controls_layout = QVBoxLayout(controls_container)
-        self.controls_layout.setContentsMargins(16, 16, 16, 16)
-        self.controls_layout.setSpacing(16)
+        self.controls_layout.setContentsMargins(28, 28, 28, 28)
+        self.controls_layout.setSpacing(22)
 
         self.mode_tabs = QTabBar()
+        self.mode_tabs.setProperty("segment", True)
         self.mode_tabs.addTab("Text to Image")
         self.mode_tabs.addTab("Image to Image")
         self.mode_tabs.currentChanged.connect(self._on_mode_changed)
@@ -86,16 +91,12 @@ class MainWindowUIMixin:
         self.img2img_controls = self._build_img2img_controls()
         self.controls_layout.addWidget(self.img2img_controls)
 
-        prompt_card = QWidget()
-        prompt_card.setProperty("card", True)
-        prompt_card_layout = QVBoxLayout(prompt_card)
-        prompt_card_layout.setContentsMargins(0, 0, 0, 0)
-        prompt_card_layout.setSpacing(12)
-        self._build_prompt_section(prompt_card_layout)
-        self.controls_layout.addWidget(prompt_card)
+        # A section is headed and spaced, not boxed: the ground is one
+        # surface, and space is what separates one thing from another.
+        self._build_prompt_section(self.controls_layout)
 
-        self.generate_btn = QPushButton("✨  Generate")
-        self.generate_btn.setMinimumHeight(44)
+        self.generate_btn = QPushButton("Generate")
+        self.generate_btn.setMinimumHeight(48)
         self.generate_btn.setProperty("gradient", True)
         self.generate_btn.setToolTip("Generate (Cmd+Return / Ctrl+Return)")
         self.generate_btn.clicked.connect(self._on_generate)
@@ -107,14 +108,8 @@ class MainWindowUIMixin:
 
         self._build_advanced_settings(self.controls_layout)
 
-        bottom_card = QWidget()
-        bottom_card.setProperty("card", True)
-        bottom_card_layout = QVBoxLayout(bottom_card)
-        bottom_card_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_card_layout.setSpacing(12)
-        self._build_model_backend_seed(bottom_card_layout)
-        bottom_card_layout.addStretch()
-        self.controls_layout.addWidget(bottom_card)
+        self._build_model_backend_seed(self.controls_layout)
+        self.controls_layout.addStretch()
 
         preview = self._build_preview_panel()
 
@@ -180,7 +175,7 @@ class MainWindowUIMixin:
 
     def _build_t5_row(self, layout):
         self.t5_check = QCheckBox("Use T5 encoder (better quality, slower)")
-        self.t5_check.setChecked(True)
+        self.t5_check.setChecked(self.config.use_t5)
         layout.addWidget(self.t5_check)
 
     def _build_guidance_slider(self, advanced_layout):
@@ -194,12 +189,9 @@ class MainWindowUIMixin:
         advanced_layout.addWidget(self.guidance_slider)
 
     def _build_model_backend_seed(self, layout):
-        model_label = QLabel("Model")
-        model_label.setProperty("class", "section-heading")
-        layout.addWidget(model_label)
-        model_row = QHBoxLayout()
+        layout.addSpacing(8)
+        self._add_section_label(layout, "Model")
         self.model_stack = QStackedWidget()
-        self.model_stack.setMaximumWidth(310)
 
         self.model_dropdown = QComboBox()
         self.model_dropdown.setToolTip("Select a discovered model or 'Custom...' to type your own")
@@ -208,33 +200,67 @@ class MainWindowUIMixin:
 
         self.model_input = QLineEdit()
         self.model_input.setText(self.config.model)
-        self.model_input.setToolTip("Hugging Face model ID or OllamaDiffuser model name")
+        self.model_input.setToolTip(
+            "Type a model name, or a path to a model file or folder on this machine"
+        )
         self.model_input.editingFinished.connect(self._update_backend_dependent_controls)
         self.model_stack.addWidget(self.model_input)
 
-        model_row.addWidget(self.model_stack)
+        layout.addWidget(self.model_stack)
+        layout.addLayout(self._build_model_actions())
 
-        self.pull_btn = QPushButton("Pull…")
-        self.pull_btn.setFixedWidth(50)
-        self.pull_btn.setToolTip("Download this GGUF model via OllamaDiffuser")
-        self.pull_btn.clicked.connect(self._on_pull_model)
-        model_row.addWidget(self.pull_btn)
-        layout.addLayout(model_row)
-
-        backend_label = QLabel("Backend")
-        backend_label.setProperty("class", "section-heading")
-        layout.addWidget(backend_label)
+        layout.addSpacing(8)
+        self._add_section_label(layout, "Backend")
         self.backend_combo = QComboBox()
         self._populate_backend_combo()
         self.backend_combo.currentIndexChanged.connect(self._on_backend_changed)
         layout.addWidget(self.backend_combo)
 
-        seed_label = QLabel("Seed")
-        seed_label.setProperty("class", "section-heading")
-        layout.addWidget(seed_label)
+        layout.addSpacing(8)
+        self._add_section_label(layout, "Seed")
         self.seed_input = QLineEdit()
         self.seed_input.setPlaceholderText("Random")
         layout.addWidget(self.seed_input)
+
+        layout.addSpacing(8)
+        self.low_memory_check = QCheckBox("Low Memory mode")
+        self.low_memory_check.setChecked(self.config.sdcli_offload_to_cpu)
+        self.low_memory_check.setToolTip(
+            "Offloads the model's weights to the CPU instead of keeping them in "
+            "GPU memory, for edge devices.\n"
+            "Trade-off: generation is slower, because every layer is copied from "
+            "RAM to the GPU as it is needed."
+        )
+        self.low_memory_check.toggled.connect(self._on_low_memory_toggled)
+        layout.addWidget(self.low_memory_check)
+
+    def _on_low_memory_toggled(self, checked: bool):
+        """Low Memory mode is a per-run preference; it lives in the run's config."""
+        self.config.sdcli_offload_to_cpu = bool(checked)
+
+    def _add_section_label(self, layout, text):
+        label = QLabel(text)
+        label.setProperty("class", "section-heading")
+        layout.addWidget(label)
+
+    def _build_model_actions(self):
+        """The little actions under the field, not squeezed beside it:
+        a long path or a long name may use the whole width."""
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(10)
+        self.browse_model_btn = QPushButton("Browse Model…")
+        self.browse_model_btn.setCursor(Qt.PointingHandCursor)
+        self.browse_model_btn.setToolTip("Choose a model file or folder on this machine")
+        self.browse_model_btn.clicked.connect(self._on_browse_model)
+        actions_row.addWidget(self.browse_model_btn)
+
+        self.pull_btn = QPushButton("Download…")
+        self.pull_btn.setCursor(Qt.PointingHandCursor)
+        self.pull_btn.setToolTip("Download this GGUF model via OllamaDiffuser")
+        self.pull_btn.clicked.connect(self._on_pull_model)
+        actions_row.addWidget(self.pull_btn)
+        actions_row.addStretch()
+        return actions_row
 
     def _populate_backend_combo(self):
         from eyegen.config import Backend

@@ -29,11 +29,6 @@ from eyegen.model_specs import ModelSpec
 # model has one too.
 OLLAMA_ENCODER_FILES = ("clip_l.safetensors", "t5xxl_fp16.safetensors", "t5xxl.safetensors")
 
-# The names that say which family a GGUF model belongs to. The package reads
-# the family off the name of the directory the model is in.
-FLUX_HINTS = ("flux", "flux1")
-SD35_HINTS = ("3.5", "sd3.5", "stable-diffusion-3-5")
-
 
 @dataclass(frozen=True)
 class Artifact:
@@ -53,8 +48,14 @@ def describe(path: Path) -> Optional[Artifact]:
     another program's directory, and compared with the paths in a
     specification, and a relative path means a different file to each of
     them.
+
+    A symlink is not followed. A model in a HuggingFace cache is a link to
+    a blob whose name says nothing, and the link's own name — the one the
+    user sees and the one that says what the file is — is what is read.
     """
-    target = Path(path).expanduser().resolve()
+    target = Path(path).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
     if target.is_file():
         return _describe_file(target)
     if target.is_dir():
@@ -62,25 +63,18 @@ def describe(path: Path) -> Optional[Artifact]:
     return None
 
 
-def local_model_name(stem: str) -> str:
-    """The name a local GGUF file is known by.
+def huggingface_repo_of(model_path: Path) -> Optional[str]:
+    """The repository a HuggingFace cache path was downloaded from.
 
-    The package reads the family off the name of the directory the model is
-    in — FLUX or SD 3.5 — and fetches different parts for each. A name that
-    says neither is given the family the package uses for most of its models.
+    A cache keeps one directory per repository, ``models--<org>--<repo>``,
+    so walking up to it from a file inside it names the repository. A
+    model that another program placed there keeps its own story: the
+    companions it shipped with are still in that repository.
     """
-    lowered = stem.lower()
-    if any(hint in lowered for hint in (*FLUX_HINTS, *SD35_HINTS)):
-        return stem
-    return f"flux-{stem}"
-
-
-def family_of(name: str) -> str:
-    """The family a GGUF model belongs to, as the package names it."""
-    lowered = name.lower()
-    if any(hint in lowered for hint in SD35_HINTS):
-        return "sd3.5"
-    return "flux"
+    for parent in model_path.parents:
+        if parent.name.startswith("models--"):
+            return parent.name[len("models--") :].replace("--", "/", 1)
+    return None
 
 
 def _describe_file(path: Path) -> Optional[Artifact]:
@@ -165,11 +159,16 @@ def _describe_directory(path: Path) -> Optional[Artifact]:
     roles, inferred = infer_sdcli_roles(path)
     if "diffusion_model" not in roles:
         return None
+    # A directory that holds one GGUF and nothing else is that file's model;
+    # its own name is a HuggingFace revision hash, which says nothing.
+    name = path.name
+    if len(ggufs) == 1 and not any(path.glob("*.safetensors")):
+        name = ggufs[0].stem
     return Artifact(
-        name=path.name,
+        name=name,
         backend=Backend.SDCLI,
         spec=ModelSpec(
-            name=path.name,
+            name=name,
             backend=Backend.SDCLI,
             sources={role: ModelSource(path=str(file)) for role, file in roles.items()},
             description=f"a stable-diffusion.cpp model at {path}",
@@ -194,7 +193,11 @@ def infer_sdcli_roles(directory: Path) -> tuple[dict[str, Path], list[str]]:
     roles: dict[str, Path] = {}
     inferred: list[str] = []
 
-    for path in ggufs:
+    # A name may claim a GGUF as an encoder only when another GGUF is left
+    # to be the transformer: a directory of one GGUF is a model of one file,
+    # and that file is the model.
+    hintable = ggufs if len(ggufs) > 1 else []
+    for path in hintable:
         role = _gguf_role(path.name)
         if role and role not in roles:
             roles[role] = path
@@ -274,3 +277,8 @@ def _size(path: Path) -> int:
         return path.stat().st_size
     except OSError:
         return 0
+
+
+# What a GGUF is called, and which family it belongs to, is the package's
+# business: the helpers live with the package's conventions.
+from eyegen.gguf_family import FLUX_HINTS, SD35_HINTS, family_of, local_model_name  # noqa: E402,F401

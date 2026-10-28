@@ -22,6 +22,9 @@ from eyegen.cli._generate_helpers import (
 
 def generate(
     prompt: str = typer.Argument(..., help="Image description"),
+    negative_prompt: Optional[str] = typer.Option(
+        None, "--negative-prompt", "-n", help="What to avoid (optional)"
+    ),
     output: Annotated[
         Optional[Path],
         typer.Option("--output", "-o", help="Output file path (default: outputs/timestamp.png)"),
@@ -54,6 +57,17 @@ def generate(
         help="Denoise strength for img2img (0.05=keep original, 1.0=full redraw; default: 0.75)",
         min=0.05,
         max=1.0,
+    ),
+    use_t5: Optional[bool] = typer.Option(
+        None, "--use-t5/--no-t5", help="Use the T5 text encoder (better quality, slower)"
+    ),
+    offload_to_cpu: Optional[bool] = typer.Option(
+        None,
+        "--offload-to-cpu/--no-offload-to-cpu",
+        help=(
+            "sd-cli: place weights in RAM and stream them to the GPU (slower, smaller "
+            "footprint; edge devices). Overrides the configured Low Memory mode."
+        ),
     ),
     backend: str = typer.Option(
         Backend.AUTO.value,
@@ -90,6 +104,7 @@ def generate(
             denoise_value,
             output_path,
             quantize,
+            negative_prompt_value,
         ) = build_generation_params(
             backend,
             output,
@@ -101,6 +116,9 @@ def generate(
             denoise,
             quantize,
             model,
+            negative_prompt=negative_prompt,
+            use_t5=use_t5,
+            offload_to_cpu=offload_to_cpu,
         )
     except ValueError as exc:
         # A model the tool cannot run, a backend that contradicts the model,
@@ -128,7 +146,7 @@ def generate(
     )
 
     try:
-        pipeline = load_pipeline(resolved, config, quantize)
+        pipeline = load_pipeline(resolved, config, quantize, use_t5=config.use_t5)
         gen_image = generate_image(
             pipeline,
             prompt,
@@ -137,6 +155,7 @@ def generate(
             w,
             h,
             seed,
+            negative_prompt=negative_prompt_value,
             image_path=image_path,
             denoise=denoise_value,
             backend=resolved_backend,

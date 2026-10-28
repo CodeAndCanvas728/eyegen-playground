@@ -1,6 +1,5 @@
 """Configuration and path constants for EyeGen."""
 
-import json
 import logging
 import sys
 from dataclasses import asdict, dataclass, fields
@@ -8,19 +7,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from eyegen.config_recovery import backup_corrupted_config, handle_parse_error
 from eyegen.paths import DEFAULT_MODELS_DIR
 
 log = logging.getLogger(__name__)
-
-_config_warnings: list[str] = []
-
-
-def pop_config_warnings() -> list[str]:
-    """Return accumulated config-load warnings and clear them."""
-    warnings = list(_config_warnings)
-    _config_warnings.clear()
-    return warnings
 
 
 _BUNDLED = getattr(sys, "frozen", None) == "macosx_app"
@@ -84,6 +73,15 @@ class EyeGenConfig:
     subprocess_timeout: int = 300
     download_timeout: int = 1800
     convert_timeout: int = 1800
+    #: Whether sd-cli places its weights in RAM and streams them to the GPU
+    #: per layer instead of keeping them resident. There is no VRAM to save
+    #: on Apple Silicon — the memory is unified — so the trade is a slower
+    #: generate against a smaller peak footprint; the flag is sd-cli's
+    #: ``--offload-to-cpu``.
+    sdcli_offload_to_cpu: bool = True
+    #: Whether the T5 text encoder is used. T5 is better quality but slower
+    #: and not applicable to every backend.
+    use_t5: bool = True
 
     def __post_init__(self):
         self._normalize_model()
@@ -99,6 +97,12 @@ class EyeGenConfig:
         if model_val and backend_val == Backend.COREML and "/" in model_val:
             # A CoreML bundle is a directory on this machine, named without a
             # slash; a repository id reaches it only by way of a conversion.
+            # A path that is on this machine is the bundle itself, and is
+            # left as the path the user gave.
+            from pathlib import Path
+
+            if Path(model_val).expanduser().exists():
+                return
             super().__setattr__("model", model_val.replace("/", "-"))
 
     def validate(self) -> list[str]:  # noqa: C901
@@ -131,19 +135,26 @@ class EyeGenConfig:
         if self.convert_timeout <= 0:
             errors.append("Convert timeout must be greater than 0.")
 
-        from eyegen.validation import validate_safe_path
+        from eyegen.validation import validate_model_path
 
         for path_field, path_val in [
             ("coreml_model_path", self.coreml_model_path),
             ("mflux_model_path", self.mflux_model_path),
             ("bonsai_model_path", self.bonsai_model_path),
-            ("hf_cache_dir", self.hf_cache_dir),
         ]:
             if path_val:
                 try:
-                    validate_safe_path(path_val, path_field)
+                    validate_model_path(path_val, path_field)
                 except ValueError as exc:
                     errors.append(str(exc))
+
+        # A cache is kept wherever the user keeps their models, which may be
+        # a volume of its own; traversal is still refused.
+        if self.hf_cache_dir:
+            try:
+                validate_model_path(self.hf_cache_dir, "hf_cache_dir")
+            except ValueError as exc:
+                errors.append(str(exc))
 
         return errors
 
@@ -168,8 +179,15 @@ class EyeGenConfig:
         cls._coerce_int(kwargs, "subprocess_timeout")
         cls._coerce_int(kwargs, "download_timeout")
         cls._coerce_int(kwargs, "convert_timeout")
+        cls._coerce_bool(kwargs, "sdcli_offload_to_cpu")
+        cls._coerce_bool(kwargs, "use_t5")
         cls._coerce_backend(kwargs)
         return cls(**kwargs)
+
+    @staticmethod
+    def _coerce_bool(kwargs: dict, key: str):
+        if key in kwargs and kwargs[key] is not None and not isinstance(kwargs[key], bool):
+            kwargs[key] = str(kwargs[key]).strip().lower() in ("1", "true", "yes", "on")
 
     @staticmethod
     def _coerce_int(kwargs: dict, key: str):
@@ -233,52 +251,6 @@ class EyeGenConfig:
 
 DEFAULT_CONFIG = EyeGenConfig()
 
-
-def _write_default_config() -> None:
-    """Write a fresh config, after the old one turned out to be unusable."""
-    save_config(EyeGenConfig())
-
-
-def load_config() -> EyeGenConfig:
-    """Load configuration from config.json, migrate/normalize it, or return defaults."""
-    if not CONFIG_FILE.exists():
-        return EyeGenConfig()
-
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            data = json.load(f)
-    except json.JSONDecodeError as e:
-        backup_corrupted_config(e, CONFIG_FILE, _write_default_config, _config_warnings.append)
-        return EyeGenConfig()
-
-    if not isinstance(data, dict):
-        log.warning("config.json root is not a dictionary. Resetting to defaults.")
-        handle_parse_error(
-            ValueError("Root is not a dictionary"),
-            _write_default_config,
-            _config_warnings.append,
-        )
-        return EyeGenConfig()
-
-    try:
-        cfg = EyeGenConfig.from_dict(data)
-        normalized_dict = cfg.to_dict()
-        if normalized_dict != data:
-            log.warning("Config required migration/normalization; saving config.")
-            try:
-                save_config(cfg)
-            except (OSError, PermissionError, ValueError) as save_err:
-                log.error("Failed to save migrated config: %s", save_err)
-        return cfg
-    except (ValueError, TypeError) as e:
-        handle_parse_error(e, _write_default_config, _config_warnings.append)
-        return EyeGenConfig()
-
-
-def save_config(config: EyeGenConfig):
-    """Save configuration to config.json after running EyeGenConfig validation."""
-    errors = config.validate()
-    if errors:
-        raise ValueError("; ".join(errors))
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config.to_dict(), f, indent=2)
+# The file half of the configuration lives with the file: load/save and
+# the warnings they raise are re-exported here so callers keep one import.
+from eyegen.config_io import load_config, pop_config_warnings, save_config  # noqa: E402,F401

@@ -104,3 +104,63 @@ def bonsai_dir(config=None) -> Path:
 def saved_mflux_dir(config=None) -> Path:
     """The directory holding the models saved for a faster load."""
     return models_dir(config) / "saved-mflux"
+
+
+#: The directories under the root that the convention owns. A model found
+#: in one of them belongs to that backend's own listing; a model anywhere
+#: else is found by the walk.
+CONVENTIONAL_SUBDIRS = ("sdcli", "coreml", "saved-mflux")
+
+
+def is_conventional_subdir(directory: Path) -> bool:
+    """Whether *directory* is one of the convention's own under the root."""
+    return directory.name in CONVENTIONAL_SUBDIRS
+
+
+#: Where HuggingFace keeps its hub caches, and where OllamaDiffuser keeps
+#: its own models — other programs' directories, scanned as their own roots.
+HF_HUB_DIRS_ENV = "EYEGEN_HF_HUB_DIRS"
+OLLAMA_MODELS_DIR_ENV = "EYEGEN_OLLAMA_MODELS_DIR"
+
+
+def hf_hub_dirs(config=None) -> list[Path]:
+    """The HuggingFace hub caches to scan, most recent first.
+
+    The configured cache, the tool's default, and the package's own default
+    are all places a model may have been downloaded to. The environment
+    override names exactly one place, for a single run or a test.
+    """
+    override = os.environ.get(HF_HUB_DIRS_ENV)
+    if override:
+        return [Path(p).expanduser() for p in override.split(os.pathsep)]
+
+    candidates: list[Path] = []
+    if config is not None and getattr(config, "hf_cache_dir", None):
+        candidates.append(Path(config.hf_cache_dir).expanduser())
+    from eyegen.config import HF_CACHE_DIR  # lazy: config imports this module
+
+    candidates.append(HF_CACHE_DIR)
+    candidates.append(Path.home() / ".cache" / "huggingface" / "hub")
+
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        result.append(candidate)
+    return result
+
+
+def ollama_models_dir() -> Path:
+    """The directory OllamaDiffuser keeps its own models in."""
+    override = os.environ.get(OLLAMA_MODELS_DIR_ENV)
+    if override:
+        return Path(override).expanduser()
+    try:
+        from ollamadiffuser.core.config.settings import settings  # type: ignore[import-untyped]
+
+        return Path(settings.models_dir)
+    except (ImportError, AttributeError):
+        return Path.home() / ".ollamadiffuser" / "models"

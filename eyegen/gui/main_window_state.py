@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 from eyegen.config import Backend
+from eyegen.saved_models import validate_saved_model
 
 log = logging.getLogger("eyegen")
 
@@ -34,6 +35,7 @@ class MainWindowStateMixin:
             "bonsai_model_path": self.config.bonsai_model_path or "",
             "coreml_model_path": self.config.coreml_model_path or "",
             "coreml_compute_unit": self.config.coreml_compute_unit or "CPU_AND_NE",
+            "low_memory": self.low_memory_check.isChecked(),
         }
 
     def _restore_state(self):
@@ -109,7 +111,12 @@ class MainWindowStateMixin:
         self.image_thumbnail.show()
 
     def _restore_optional_fields(self, s: dict):
+        if "low_memory" in s and isinstance(s["low_memory"], bool):
+            self.low_memory_check.setChecked(s["low_memory"])
         if "mflux_model_path" in s and s["mflux_model_path"]:
-            self.model_path_input.setText(s["mflux_model_path"])
+            candidate = s["mflux_model_path"]
+            validation = validate_saved_model(candidate)
+            if validation.valid:
+                self.model_path_input.setText(candidate)
         if "hf_cache_dir" in s and s["hf_cache_dir"]:
             self.hf_cache_input.setText(s["hf_cache_dir"])

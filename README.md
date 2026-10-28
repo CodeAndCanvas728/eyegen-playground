@@ -191,16 +191,19 @@ source venv/bin/activate
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--steps` | | Inference steps (default: 30, 4 for Bonsai) |
-| `--guidance` | | Guidance scale 1.0–15.0 (default: 7.5, 1.0 for Bonsai) |
+| `--steps` | | Inference steps (default: 30, 4 for Bonsai, 16 for FLUX.3) |
+| `--guidance` | | Guidance scale 1.0–15.0 (default: 7.5, 1.0 for Bonsai/FLUX.3) |
 | `--width` | | Output width in pixels, multiple of 8 (MLX/CoreML/GGUF) or 32 (Bonsai) |
 | `--height` | | Output height in pixels, multiple of 8 (MLX/CoreML/GGUF) or 32 (Bonsai) |
 | `--seed` | | Random seed for reproducibility |
+| `--negative-prompt` | `-n` | What to avoid in the image (optional) |
+| `--use-t5` / `--no-t5` | | T5 text encoder, better quality but slower (MLX; default: on) |
+| `--offload-to-cpu` / `--no-offload-to-cpu` | | sd-cli: stream weights from RAM to the GPU — slower, smaller footprint, for edge devices (default: on) |
 | `--output` | `-o` | Output file path (default: `outputs/YYYYMMDD_HHMMSS.png`) |
 | `--image` | `-i` | Input image path for img2img mode (not supported by Bonsai or CoreML) |
 | `--denoise` | `-d` | Denoise strength for img2img, 0.05–1.0 (default: 0.75) |
 | `--backend` | `-b` | `auto` (default), `mlx`, `mflux`, `ollamadiffuser`, `bonsai`, or `coreml` |
-| `--model` | `-m` | Model to use for this run, instead of the configured default |
+| `--model` | `-m` | Model to use for this run — a name or a path to a model file/folder on this machine |
 | `--quantize` | `-q` | MFLUX quantization: `4` (default), `8`, or omit for full precision |
 
 > `--width`/`--height` are ignored when `--image` is provided.
@@ -217,7 +220,7 @@ source venv/bin/activate
 ./generate.py config-reset                       # restore factory defaults
 ```
 
-Configurable keys: `model`, `num_inference_steps`, `guidance_scale`, `width`, `height`, `backend`, `mflux_quantize`, `hf_cache_dir`, `models_dir`.
+Configurable keys: `model`, `num_inference_steps`, `guidance_scale`, `width`, `height`, `backend`, `mflux_quantize`, `use_t5`, `sdcli_offload_to_cpu`, `hf_cache_dir`, `models_dir`.
 
 ### Utility commands
 

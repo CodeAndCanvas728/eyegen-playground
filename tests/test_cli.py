@@ -83,6 +83,7 @@ class TestBuildGenerationParams:
             denoise,
             out_path,
             quantize,
+            *_,
         ) = result
         assert resolved.backend == Backend.MLX
         assert resolved.name == EyeGenConfig().model
@@ -154,3 +155,59 @@ class TestLoadPipeline:
         mock_get.return_value = "pipeline"
         result = load_pipeline(ResolvedModel("model", Backend.MLX), EyeGenConfig(), None)
         assert result == "pipeline"
+
+
+class TestGeneratePerRunToggles:
+    @patch("eyegen.cli._generate_helpers.load_config")
+    def test_offload_and_t5_overrides_shadow_but_do_not_write_config(
+        self, mock_load_config, tmp_path, monkeypatch
+    ):
+        from eyegen.config import EyeGenConfig
+
+        config = EyeGenConfig(model="flux-3-image-klein-gguf")
+        mock_load_config.return_value = config
+        monkeypatch.setattr("eyegen.cli._generate_helpers.OUTPUT_DIR", tmp_path)
+
+        run_config, resolved, *_ = build_generation_params(
+            "sdcli",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            offload_to_cpu=False,
+            use_t5=False,
+        )
+
+        assert run_config.sdcli_offload_to_cpu is False
+        assert run_config.use_t5 is False
+        assert config.sdcli_offload_to_cpu is True  # the file was not touched
+        assert config.use_t5 is True
+        assert resolved.backend == Backend.SDCLI
+
+    @patch("eyegen.cli._generate_helpers.load_config")
+    def test_negative_prompt_reaches_the_run(self, mock_load_config, tmp_path, monkeypatch):
+        from eyegen.config import EyeGenConfig
+
+        mock_load_config.return_value = EyeGenConfig()
+        monkeypatch.setattr("eyegen.cli._generate_helpers.OUTPUT_DIR", tmp_path)
+
+        _config, _resolved, *_rest, negative = build_generation_params(
+            "mlx",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            negative_prompt="blurry, low quality",
+        )
+
+        assert negative == "blurry, low quality"

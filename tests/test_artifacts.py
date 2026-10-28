@@ -206,3 +206,45 @@ def test_a_backend_that_contradicts_a_path_is_an_error(tmp_path):
 
     with pytest.raises(ModelBackendConflict, match="cannot run it"):
         resolve_model(str(gguf), Backend.MFLUX)
+
+
+def test_a_symlinked_gguf_keeps_its_own_name(tmp_path):
+    """A HuggingFace cache links a blob whose name says nothing."""
+    blob = tmp_path / "blobs" / "e79c8a009f2ecbdb6c70fd663d9aea9ee304a0d91f347e4169a756b8ad141b41"
+    blob.parent.mkdir()
+    blob.write_bytes(b"x" * 8)
+    snapshot = tmp_path / "snapshots" / "7959e658915f52274897fb573ffeda49de8dc16b"
+    snapshot.mkdir(parents=True)
+    link = snapshot / "qwen-image-2.1-UC-Q4_K_M.gguf"
+    link.symlink_to(blob)
+
+    artifact = describe(link)
+
+    assert artifact is not None
+    assert artifact.backend == Backend.OLLAMA
+    assert artifact.spec.sources["diffusion_model"].path == str(link)
+
+
+def test_a_lone_gguf_is_the_transformer_not_an_encoder(tmp_path):
+    """One file is one model; a name may not claim it as its encoder."""
+    directory = tmp_path / "qwen-image"
+    directory.mkdir()
+    _gguf(directory, "qwen-image-2.1-UC-Q4_K_M.gguf")
+
+    roles, inferred = infer_sdcli_roles(directory)
+
+    assert roles["diffusion_model"].name == "qwen-image-2.1-UC-Q4_K_M.gguf"
+    assert "llm" not in roles
+    assert any("diffusion_model" in line for line in inferred)
+
+
+def test_a_directory_of_one_gguf_is_named_after_the_file(tmp_path):
+    """A revision hash is where the model is, not what it is called."""
+    snapshot = tmp_path / "snapshots" / "7959e658915f52274897fb573ffeda49de8dc16b"
+    snapshot.mkdir(parents=True)
+    _gguf(snapshot, "qwen-image-2.1-UC-Q4_K_M.gguf")
+
+    artifact = describe(snapshot)
+
+    assert artifact is not None
+    assert artifact.name == "qwen-image-2.1-UC-Q4_K_M"

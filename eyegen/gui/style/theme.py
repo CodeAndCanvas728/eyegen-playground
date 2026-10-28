@@ -116,6 +116,13 @@ class LazyThemeDict(dict):
         return list(self._cache.keys())
 
 
+class _QssTemplate(string.Template):
+    # Token names contain hyphens (e.g. text-primary), which the default
+    # Template idpattern does not accept, so they were left unsubstituted
+    # and Qt could not parse the resulting stylesheet.
+    idpattern = r"[a-zA-Z_][a-zA-Z0-9_-]*"
+
+
 def _load_qss(name: str, tokens: dict) -> str:
     p = Path(__file__).parent / name
     if not p.exists():
@@ -123,7 +130,7 @@ def _load_qss(name: str, tokens: dict) -> str:
             f"Required stylesheet '{name}' is missing in '{p.parent}'. "
             "Please ensure the application is correctly installed and all assets are present."
         )
-    return string.Template(p.read_text()).safe_substitute(tokens)
+    return _QssTemplate(p.read_text()).safe_substitute(tokens)
 
 
 ALL_THEMES = LazyThemeDict()

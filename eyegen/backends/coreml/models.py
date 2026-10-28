@@ -23,8 +23,8 @@ log = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def list_coreml_models() -> list[dict]:
-    models_dir = get_coreml_models_dir()
+def _list_coreml_models_cached() -> list[dict]:
+    models_dir = get_coreml_models_dir(None)
     out = []
     if not models_dir.is_dir():
         return out
@@ -47,6 +47,38 @@ def list_coreml_models() -> list[dict]:
             }
         )
     return out
+
+
+def list_coreml_models(config=None) -> list[dict]:
+    if config is None:
+        return list(_list_coreml_models_cached())
+    models_dir = get_coreml_models_dir(config)
+    out = []
+    if not models_dir.is_dir():
+        return out
+    for child in sorted(models_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        mlmodelc = list(child.glob("*.mlmodelc"))
+        mlpackage = list(child.glob("*.mlpackage"))
+        if not (mlmodelc or mlpackage):
+            continue
+        meta = model_index.read(child)
+        out.append(
+            {
+                "name": child.name,
+                "path": str(child),
+                "resources_path": str(child),
+                "model_version": meta.get("model_version", child.name),
+                "compute_unit": meta.get("compute_unit", "CPU_AND_NE"),
+                "format": "mlmodelc" if mlmodelc else "mlpackage",
+            }
+        )
+    return out
+
+
+# Back-compat: expose cache_clear on the public name for tests.
+list_coreml_models.cache_clear = _list_coreml_models_cached.cache_clear
 
 
 def convert_to_coreml(

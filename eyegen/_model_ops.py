@@ -15,7 +15,9 @@ log = logging.getLogger(__name__)
 def _apply_hf_cache_safe(hf_cache_dir: str | None) -> None:
     """Validate and apply the HuggingFace cache directory."""
     if hf_cache_dir:
-        validate_safe_path(hf_cache_dir, "hf_cache_dir")
+        from eyegen.validation import validate_model_path
+
+        validate_model_path(hf_cache_dir, "hf_cache_dir")
     from eyegen.backends import _apply_hf_cache
 
     _apply_hf_cache({"hf_cache_dir": hf_cache_dir})

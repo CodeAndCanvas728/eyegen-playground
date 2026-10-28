@@ -121,7 +121,9 @@ class MainWindowSaveModelMixin:
             alias = alias_combo.currentData()
             q = q_combo.currentData()
             q_label = f"{q}bit" if q else "fp"
-            path_input.setText(str(saved_mflux_dir() / f"{alias}-{q_label}"))
+            path_input.setText(
+                str(saved_mflux_dir(getattr(self, "config", None)) / f"{alias}-{q_label}")
+            )
 
         _update_default_path()
         alias_combo.currentIndexChanged.connect(lambda _: _update_default_path())
@@ -131,7 +133,9 @@ class MainWindowSaveModelMixin:
         pick_btn.setFixedWidth(30)
         pick_btn.clicked.connect(
             lambda: path_input.setText(
-                QFileDialog.getExistingDirectory(dlg, "Choose Directory", str(saved_mflux_dir()))
+                QFileDialog.getExistingDirectory(
+                    dlg, "Choose Directory", str(saved_mflux_dir(getattr(self, "config", None)))
+                )
                 or path_input.text()
             )
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -159,3 +160,62 @@ def validate_sdcli_install(
         missing_files=[],
         message=f"sd-cli ready at {binary}",
     )
+
+
+def _sysctl_hw_memsize() -> Optional[int]:
+    """The machine's physical memory via ``sysctl hw.memsize``, or None."""
+    import ctypes
+
+    # The full path matters: a bare name ("libc") is not in the dyld
+    # cache of every Python that could run the tool, while the absolute
+    # path always resolves. sysctlbyname lives in libSystem.
+    libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    libc.sysctlbyname.restype = ctypes.c_int
+    libc.sysctlbyname.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    value = ctypes.c_ulonglong()
+    size = ctypes.c_size_t(ctypes.sizeof(value))
+    if libc.sysctlbyname(b"hw.memsize", ctypes.byref(value), ctypes.byref(size), None, 0) == 0:
+        return int(value.value)
+    return None
+
+
+def _sysconf_physical_pages_bytes() -> Optional[int]:
+    """Physical memory via sysconf, or None when the platform does not answer."""
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def physical_memory() -> int:
+    """The machine's physical memory in bytes.
+
+    macOS reports it through ``sysctl hw.memsize``; the generic path is
+    sysconf. When neither can be read, the run is refused rather than
+    guessed at: a guard that answers "an exabyte" when it cannot see would
+    open wide and let a model that freezes the machine through.
+    """
+    if sys.platform == "darwin":
+        size = _sysctl_hw_memsize()
+        if size is not None:
+            return size
+    size = _sysconf_physical_pages_bytes()
+    if size is None:
+        raise RuntimeError(
+            "Could not determine this machine's memory, so it cannot be checked that "
+            "the model fits into it. Refusing to run a model sd-cli loads whole rather "
+            "than risk a freeze."
+        )
+    return size
+
+
+def diffusion_path(spec) -> str:
+    """The transformer's own path, for the message that names the model."""
+    source = spec.sources.get("diffusion_model")
+    return source.path if source is not None else ""

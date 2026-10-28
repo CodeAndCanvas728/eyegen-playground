@@ -106,8 +106,22 @@ class MainWindowHandlersMixin:
             )
             self.image_label.setPixmap(scaled)
 
+    def _on_browse_model(self):
+        dialog = QFileDialog(self, "Select a Model File or Folder", str(Path.home()))
+        # The Directory file mode is the one macOS open panel that takes a
+        # file *or* a folder (the static helpers force ShowDirsOnly, which
+        # would hide the files). Cancelling closes the panel: nothing else
+        # opens in its place.
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        if not dialog.exec():
+            return
+        path = dialog.selectedFiles()[0]
+        if path:
+            self.model_input.setText(path)
+            self._update_backend_dependent_controls()
+
     def _on_browse_model_path(self):
-        root = models_dir()
+        root = models_dir(getattr(self, "config", None))
         start_dir = str(root) if root.exists() else str(Path.home())
         path = QFileDialog.getExistingDirectory(self, "Select Saved Model Directory", start_dir)
         if path:

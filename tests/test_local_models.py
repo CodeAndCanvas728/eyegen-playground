@@ -11,6 +11,23 @@ from eyegen.artifact_scan import scan_root
 from eyegen.config import Backend
 
 
+@pytest.fixture(autouse=True)
+def _isolated_roots(tmp_path, monkeypatch):
+    """Point every scanned root at a fresh, empty directory.
+
+    The listing walks the models root, the HuggingFace hub caches, and the
+    OllamaDiffuser model directory: a test must not see the machine's own
+    models, or what a previous test left behind.
+    """
+    for env in (
+        "EYEGEN_MODELS_DIR",
+        "EYEGEN_HF_HUB_DIRS",
+        "EYEGEN_OLLAMA_MODELS_DIR",
+    ):
+        monkeypatch.setenv(env, str(tmp_path / env))
+    yield
+
+
 def _gguf(directory, name="flux1-dev-Q4_K_M.gguf", size=8):
     path = directory / name
     path.write_bytes(b"x" * size)
@@ -150,3 +167,122 @@ def test_a_catalogue_that_cannot_be_read_still_shows_what_is_here(tmp_path, monk
     assert "Could not read the model catalogue" in result.output
     assert "On this machine" in result.output
     assert "klein" in result.output
+
+
+def test_the_scan_finds_a_model_in_a_huggingface_cache_under_the_root(tmp_path, monkeypatch):
+    """A cache under the root holds the model too: what is there says what it is."""
+    monkeypatch.setenv("EYEGEN_MODELS_DIR", str(tmp_path))
+    cache = tmp_path / "models--abenzerps--Qwen-Image-2.1-Uncensored-Quantized"
+    blob = cache / "blobs" / "e79c8a009f2ecbdb6c70fd663d9aea9ee304a0d91f347e4169a756b8ad141b41"
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(b"x" * 8)
+    snapshot = cache / "snapshots" / "7959e658915f52274897fb573ffeda49de8dc16b"
+    snapshot.mkdir(parents=True)
+    (snapshot / "qwen-image-2.1-UC-Q4_K_M.gguf").symlink_to(blob)
+
+    found = {artifact.name: artifact.backend for artifact in scan_root(tmp_path)}
+
+    assert found == {"qwen-image-2.1-UC-Q4_K_M": Backend.SDCLI}
+
+
+def test_the_gui_offers_a_local_model_under_its_own_backend(tmp_path, monkeypatch):
+    """A model that is here is offered by path whichever backend runs it."""
+    mixin = _mixin()
+    monkeypatch.setenv("EYEGEN_MODELS_DIR", str(tmp_path))
+    directory = tmp_path / "sdcli" / "klein"
+    directory.mkdir(parents=True)
+    _gguf(directory, "transformer.gguf", size=64)
+    (directory / "ae.safetensors").write_bytes(b"x")
+
+    models = mixin()._get_models_for_backend(Backend.SDCLI)
+
+    assert ("klein", str(directory)) in models
+
+
+def _hub_cache(root, repo_id, files):
+    """A HuggingFace hub cache holding one snapshot of *repo_id*."""
+    repo = root / f"models--{repo_id.replace('/', '--')}"
+    snapshot = repo / "snapshots" / "abcdef123456"
+    snapshot.mkdir(parents=True)
+    for name, size in files.items():
+        (snapshot / name).write_bytes(b"x" * size)
+    return repo
+
+
+def test_the_scan_finds_a_model_in_a_huggingface_hub(tmp_path):
+    """A hub cache is scanned as the root it is, named after the repository."""
+    _hub_cache(
+        tmp_path / "hub",
+        "unsloth/flux-3-image-klein-GGUF",
+        {
+            "flux-3-image-klein-UD-Q4_K_XL.gguf": 16,
+            "Qwen3VL-4B-Instruct-Q4_K_M.gguf": 8,
+            "ae.safetensors": 4,
+        },
+    )
+
+    from eyegen.artifact_scan import scan_hf_hub
+
+    found = scan_hf_hub(tmp_path / "hub")
+
+    assert len(found) == 1
+    assert found[0].name == "unsloth__flux-3-image-klein-GGUF"
+    assert found[0].backend == Backend.SDCLI
+    assert set(found[0].spec.sources) == {"diffusion_model", "llm", "vae"}
+
+
+def test_the_scan_finds_a_model_ollamadiffuser_keeps(tmp_path):
+    """The package's model directory is a root of its own."""
+    from eyegen.artifact_scan import scan_ollama_models
+
+    directory = tmp_path / "ollama" / "flux1-dev-Q4_K_M"
+    directory.mkdir(parents=True)
+    _gguf(directory, "flux1-dev-Q4_K_M.gguf", size=16)
+    (directory / "clip_l.safetensors").write_bytes(b"x")
+
+    found = scan_ollama_models(tmp_path / "ollama")
+
+    assert len(found) == 1
+    assert found[0].name == "flux1-dev-Q4_K_M"
+    assert found[0].backend == Backend.OLLAMA
+
+
+def test_the_gui_offers_models_from_the_hub_and_ollama_dirs(tmp_path, monkeypatch):
+    """The dropdown shows what the other roots hold, by path."""
+    mixin = _mixin()
+    monkeypatch.setenv("EYEGEN_HF_HUB_DIRS", str(tmp_path / "hub"))
+    monkeypatch.setenv("EYEGEN_OLLAMA_MODELS_DIR", str(tmp_path / "ollama"))
+    _hub_cache(
+        tmp_path / "hub",
+        "unsloth/flux-3-image-klein-GGUF",
+        {"flux-3-image-klein-UD-Q4_K_XL.gguf": 16, "ae.safetensors": 4},
+    )
+    ollama_dir = tmp_path / "ollama" / "flux1-dev-Q4_K_M"
+    ollama_dir.mkdir(parents=True)
+    _gguf(ollama_dir, "flux1-dev-Q4_K_M.gguf", size=16)
+    (ollama_dir / "clip_l.safetensors").write_bytes(b"x")
+
+    models = {display: value for display, value in mixin()._get_local_models()}
+
+    assert models.get("unsloth__flux-3-image-klein-GGUF") is not None
+    assert models.get("flux1-dev-Q4_K_M") is not None
+
+
+def test_the_cli_listing_shows_what_the_other_roots_hold(tmp_path, monkeypatch):
+    """list-models reports a model the hub or the package holds."""
+    from typer.testing import CliRunner
+
+    from eyegen.cli.app import app
+
+    monkeypatch.setenv("EYEGEN_HF_HUB_DIRS", str(tmp_path / "hub"))
+    _hub_cache(
+        tmp_path / "hub",
+        "unsloth/flux-3-image-klein-GGUF",
+        {"flux-3-image-klein-UD-Q4_K_XL.gguf": 16, "ae.safetensors": 4},
+    )
+
+    result = CliRunner().invoke(app, ["list-models"])
+
+    assert result.exit_code == 0, result.output
+    assert "On this machine" in result.output
+    assert "unsloth__flux-3-image-klein-GGUF" in result.output

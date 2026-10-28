@@ -1,6 +1,7 @@
 """stable-diffusion.cpp CLI backend constants."""
 
 from pathlib import Path
+from typing import Optional
 
 from eyegen.config import DEFAULT_CONFIG
 
@@ -76,3 +77,30 @@ SDCLI_MODELS = {
 # The upstream documentation for this model is the stable-diffusion.cpp
 # repository's docs/flux3.md.
 SDCLI_DOC_URL = "https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/flux3.md"
+
+
+def resolve_settings(
+    model: str,
+    steps: Optional[int],
+    guidance: Optional[float],
+    spec=None,
+) -> tuple[int, float]:
+    """The steps and guidance the model wants.
+
+    A setting the user has left at the tool-wide default is the model's to
+    choose; one they have changed is theirs.
+    """
+    if spec is None and model in SDCLI_MODELS:
+        from eyegen.model_specs import ModelSpec
+
+        spec = ModelSpec.from_dict(model, SDCLI_MODELS[model])
+    # A setting the model states is the model's, even when it is zero.
+    if steps is None or steps == TOOL_DEFAULT_STEPS:
+        steps = TOOL_DEFAULT_STEPS
+        if spec is not None and spec.steps is not None:
+            steps = spec.steps
+    if guidance is None or guidance == TOOL_DEFAULT_GUIDANCE:
+        guidance = TOOL_DEFAULT_GUIDANCE
+        if spec is not None and spec.guidance is not None:
+            guidance = spec.guidance
+    return steps, guidance

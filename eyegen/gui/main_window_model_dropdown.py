@@ -2,6 +2,8 @@
 
 import logging
 
+from PySide6.QtCore import Qt
+
 from eyegen.config import Backend
 
 log = logging.getLogger("eyegen")
@@ -36,12 +38,12 @@ class MainWindowModelDropdownMixin:
         self.model_dropdown.blockSignals(False)
 
     def _get_models_for_backend(self, backend):
-        if backend == Backend.SDCLI:
-            # The stable-diffusion.cpp listing already carries the user's own.
-            return self._get_sdcli_models()
         own = self._get_own_models(backend)
+        local = self._local_models_for(backend)
+        if backend == Backend.SDCLI:
+            return self._merge_by_name(local, self._get_sdcli_models())
         if backend == Backend.COREML:
-            return own + self._get_coreml_models()
+            return self._merge_by_name(local, own + self._get_coreml_models())
         elif backend == Backend.MFLUX:
             return own + self._get_mflux_models()
         elif backend == Backend.BONSAI:
@@ -49,11 +51,41 @@ class MainWindowModelDropdownMixin:
         else:
             return self._get_auto_models()
 
+    def _merge_by_name(self, local, others):
+        """Local models first, then the ones no local model answers to by name."""
+        seen = {display for display, _value in local}
+        seen |= {value for _display, value in local}
+        kept = [
+            (display, value)
+            for display, value in others
+            if display not in seen and value not in seen
+        ]
+        return local + kept
+
+    def _local_artifacts(self):
+        """The models on this machine that no catalogue describes."""
+        try:
+            from eyegen.artifact_scan import scan_all
+
+            return scan_all(getattr(self, "config", None))
+        except (ImportError, OSError):
+            return []
+
+    def _local_models_for(self, backend):
+        """The local models the given backend runs, offered by path."""
+        return [
+            (artifact.name, str(artifact.path))
+            for artifact in self._local_artifacts()
+            if artifact.backend == backend
+        ]
+
     def _get_sdcli_models(self):
         try:
             from eyegen.backends.sdcli import list_sdcli_models
 
-            return [(m["name"], m["name"]) for m in list_sdcli_models()]
+            return [
+                (m["name"], m["name"]) for m in list_sdcli_models(getattr(self, "config", None))
+            ]
         except (ImportError, OSError):
             return []
 
@@ -61,7 +93,9 @@ class MainWindowModelDropdownMixin:
         try:
             from eyegen.backends.coreml import list_coreml_models
 
-            return [(m["name"], m["name"]) for m in list_coreml_models()]
+            return [
+                (m["name"], m["name"]) for m in list_coreml_models(getattr(self, "config", None))
+            ]
         except (ImportError, OSError):
             return []
 
@@ -132,24 +166,18 @@ class MainWindowModelDropdownMixin:
         directory, and a catalogue may already answer to the name. A saved
         MFLUX model is left out here because it is offered by name above.
         """
-        try:
-            from eyegen.artifact_scan import scan_undescribed
-            from eyegen.paths import models_dir
-
-            return [
-                (artifact.name, str(artifact.path))
-                for artifact in scan_undescribed(models_dir())
-                if artifact.backend != Backend.MFLUX
-            ]
-        except (ImportError, OSError):
-            return []
+        return [
+            (artifact.name, str(artifact.path))
+            for artifact in self._local_artifacts()
+            if artifact.backend != Backend.MFLUX
+        ]
 
     def _get_saved_mflux_models(self):
         """The models saved for a faster load."""
         try:
             from eyegen.paths import saved_mflux_dir
 
-            directory = saved_mflux_dir()
+            directory = saved_mflux_dir(getattr(self, "config", None))
             if directory.is_dir():
                 return [
                     (child.name, child.name)
@@ -163,6 +191,12 @@ class MainWindowModelDropdownMixin:
     def _add_models_to_dropdown(self, models):
         for display, value in models:
             self.model_dropdown.addItem(display, value)
+            # A scanned model is shown by name; the path is one hover away.
+            label = str(value)
+            if label != display and label != "__custom__":
+                self.model_dropdown.setItemData(
+                    self.model_dropdown.count() - 1, label, Qt.ToolTipRole
+                )
 
     def _add_custom_option(self):
         self.model_dropdown.addItem("Custom\u2026", "__custom__")
@@ -172,12 +206,33 @@ class MainWindowModelDropdownMixin:
         if idx >= 0:
             self.model_dropdown.setCurrentIndex(idx)
             self.model_stack.setCurrentIndex(0)
-        else:
-            for i in range(self.model_dropdown.count()):
-                if self.model_dropdown.itemData(i) == old_text:
-                    self.model_dropdown.setCurrentIndex(i)
-                    self.model_stack.setCurrentIndex(0)
-                    break
-            else:
-                self.model_input.setText(old_text)
+            return
+        for i in range(self.model_dropdown.count()):
+            if self.model_dropdown.itemData(i) == old_text:
+                self.model_dropdown.setCurrentIndex(i)
                 self.model_stack.setCurrentIndex(0)
+                return
+        # The model the state saves is no longer on this machine, or never
+        # resolves here. Keep showing what it can run: pick the first model
+        # that resolves, so the app opens ready rather than locked to a name
+        # that no backend answers to.
+        for i in range(self.model_dropdown.count()):
+            data = self.model_dropdown.itemData(i)
+            if data == "__custom__":
+                continue
+            resolved = self._try_resolve(str(data))
+            if resolved:
+                self.model_dropdown.setCurrentIndex(i)
+                self.model_input.setText(str(data))
+                self.model_stack.setCurrentIndex(0)
+                return
+        self.model_input.setText(old_text)
+        self.model_stack.setCurrentIndex(0)
+
+    def _try_resolve(self, model):
+        from eyegen import resolve_model
+
+        try:
+            return resolve_model(model, self.backend_combo.currentData()) is not None
+        except (ValueError, ImportError, OSError):
+            return False

@@ -198,3 +198,85 @@ def test_mflux_resolves_the_flux3_class():
 def _is_mocked(key: str) -> bool:
     """True for the packages another test module mocks when it is imported."""
     return key.split(".")[0] in ("mflux", "mlx")
+
+
+def test_a_lone_gguf_from_a_huggingface_cache_is_completed_from_its_repository(
+    tmp_path, monkeypatch
+):
+    """A transformer alone is not the whole model; its repository ships the rest."""
+    from eyegen.backends.sdcli.models import complete_local_spec
+    from eyegen.model_specs import ModelSource, ModelSpec
+
+    repo_dir = tmp_path / "models--abenzerps--Qwen-Image-2.1-Uncensored-Quantized"
+    snapshot = repo_dir / "snapshots" / "7959e658915f52274897fb573ffeda49de8dc16b"
+    snapshot.mkdir(parents=True)
+    gguf = snapshot / "qwen-image-2.1-UC-Q4_K_M.gguf"
+    gguf.write_bytes(b"x" * 8)
+
+    spec = ModelSpec(
+        name="qwen-image-2.1-UC-Q4_K_M",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+
+    monkeypatch.setattr(
+        "eyegen.backends.sdcli.models._repo_files",
+        lambda repo: [
+            "README.md",
+            "qwen-image-2.1-UC-Q4_K_M.gguf",
+            "text_encoders/qwen3vl_8b_bf16.safetensors",
+            "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+            "vae/qwen_image_2.1_vae_bf16.safetensors",
+        ],
+    )
+
+    completed = complete_local_spec(spec)
+
+    assert completed.sources["vae"].repo == "abenzerps/Qwen-Image-2.1-Uncensored-Quantized"
+    assert completed.sources["vae"].file == "vae/qwen_image_2.1_vae_bf16.safetensors"
+    # The quantised text encoder, not the 17 GB BF16 one.
+    assert completed.sources["llm"].file == "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+
+
+def test_a_gguf_outside_a_cache_is_left_alone(tmp_path):
+    """Without a repository, nothing can be fetched: the spec is what it is."""
+    from eyegen.backends.sdcli.models import complete_local_spec
+    from eyegen.model_specs import ModelSource, ModelSpec
+
+    directory = tmp_path / "elsewhere"
+    directory.mkdir()
+    gguf = directory / "transformer.gguf"
+    gguf.write_bytes(b"x" * 8)
+    spec = ModelSpec(
+        name="local",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+
+    assert complete_local_spec(spec) is spec
+
+
+def test_a_text_encoder_in_full_precision_is_not_the_one_picked():
+    """A BF16 encoder is tens of gigabytes; the quantized one runs on a laptop."""
+    from eyegen.backends.sdcli.models import _pick_by_hints
+
+    files = [
+        "text_encoders/qwen3vl_8b_bf16.safetensors",
+        "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+    ]
+    hints = ("t5xxl", "clip_l", "clip_g", "qwen3vl", "llm", "instruct", "text_encoder", "/llm")
+
+    assert _pick_by_hints(files, hints) == "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+
+
+def test_a_gguf_transformer_beats_a_bf16_one():
+    """A BF16 transformer is a fallback, not a first choice."""
+    from eyegen.backends.sdcli.models import _pick_by_hints
+
+    files = [
+        "qwen-image-2.1-UC-BF16.gguf",
+        "qwen-image-2.1-UC-Q4_K_M.gguf",
+    ]
+    hints = ("qwen", "diffusion", "transformer")
+
+    assert _pick_by_hints(files, hints) == "qwen-image-2.1-UC-Q4_K_M.gguf"
