@@ -5,6 +5,11 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-10-30
+
+### Fixed
+- **The text encoder a repository ships is one this machine can run.** sd.cpp's int8 convrot weights have no Metal kernel, so the auto-completed `qwen3vl_8b_int8_convrot.safetensors` aborted the run mid-encoding (`kernel_mul_mm_i8_i8 … not found in any metal library`). int8/convrot encoders are no longer picked; when a repository offers none that runs, the documented companion — the 5 GB `Qwen3VL-8B-Instruct-Q4_K_M.gguf` from Qwen/Qwen3-VL-8B-Instruct-GGUF, sd.cpp's own recommendation for Qwen-Image-2.1 — is fetched instead of a 17 GB bf16. A repository of another model family keeps its full-precision encoder, with a warning. Models already affected pick up the companion on the next run; the orphaned int8 file can be deleted afterwards.
+
 ## [0.5.0] - 2026-10-28
 
 ### Added
@@ -22,24 +27,6 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - A first-run companion download lands in the configured `models_dir` tree even when `EYEGEN_MODELS_DIR` points elsewhere — the two could previously disagree, and the re-validation then said "could not be fetched" for files that were there.
 - The GUI honours a configured `models_dir`, and accepts custom model directories (including external volumes) instead of rejecting them as unsafe paths; a custom CoreML bundle path is no longer mangled, and a custom HuggingFace cache location is accepted (traversal still refused).
 - `Browse Model…` opens the macOS picker for a file **or** a folder in one panel; pressing Cancel closes it cleanly instead of chaining into a second dialog.
-- The GUI opens ready instead of locked to a stale saved model: when the restored model no longer resolves, the first resolvable local model is selected instead.
-- A catalogued model is not listed twice.
-- The UI: sections separated by space and type rather than bordered boxes, a real canvas surface for the preview, room to breathe for inputs, a proper segmented mode switch, and the QSS theme tokens substitute hyphenated names so the stylesheet parses instead of being dropped.
-
-## [Unreleased]
-
-### Added
-- **A model is found wherever it is.** The models root is walked (so a HuggingFace cache layout or a dropped folder under it is found, not only the three conventional backend sub-folders), the HuggingFace hub caches are scanned as roots of their own, and so is the OllamaDiffuser model directory. A revision-hashed snapshot is named after the GGUF it holds; a hub snapshot after the repository it came from.
-- **A lone GGUF is completed from the repository it came from.** sd-cli needs the text encoder and VAE that a transformer alone does not carry; the tool knows they live in the GGUF's repository, picks the quantised companion (never a 17 GB full-precision encoder), fetches it on first run, and refuses before sd-cli if the model's files exceed the machine's RAM.
-- **Low Memory mode** checkbox in the GUI and `--offload-to-cpu/--no-offload-to-cpu` on the CLI: sd-cli's offload is now a choice. On by default, it streams weights from RAM to the GPU — slower, smaller peak footprint; off for machines with room.
-- **CLI on par with the GUI:** `generate` gained `--negative-prompt`, `--use-t5/--no-t5` and `--offload-to-cpu/--no-offload-to-cpu`, each a per-run override that leaves the config file untouched. The T5 toggle is a config value (`use_t5`) both surfaces honour.
-- **The model dropdown leads with the scanned models** (shown by name, path as hover tooltip); the path picker stays behind the Custom entry.
-- **Prompt boxes are bigger and resizable:** the Prompt and Negative Prompt fields share a draggable vertical splitter.
-
-### Fixed
-- A symlinked GGUF keeps its own name: a HuggingFace cache links a blob whose name says nothing, and the link's name is what is read.
-- A lone GGUF is the transformer, not an encoder: a name hint may claim a file as `llm` only when another GGUF is left to be the transformer.
-- The GUI honours a configured `models_dir`, and accepts custom model directories (including external volumes) instead of rejecting them as unsafe paths; a custom CoreML bundle path is no longer mangled, and a custom HuggingFace cache location is accepted (traversal still refused).
 - The GUI opens ready instead of locked to a stale saved model: when the restored model no longer resolves, the first resolvable local model is selected instead.
 - A catalogued model is not listed twice.
 - The UI: sections separated by space and type rather than bordered boxes, a real canvas surface for the preview, room to breathe for inputs, a proper segmented mode switch, and the QSS theme tokens substitute hyphenated names so the stylesheet parses instead of being dropped.

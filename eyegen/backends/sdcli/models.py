@@ -13,6 +13,7 @@ from eyegen.model_specs import ModelSpec
 
 from .constants import SDCLI_MODELS
 from .install import get_sdcli_model_dir, source_is_here
+from .pick import VAE_HINTS, pick_by_hints, resolve_llm
 
 log = logging.getLogger(__name__)
 
@@ -163,7 +164,10 @@ def complete_local_spec(spec: ModelSpec) -> ModelSpec:
     VAE as well. When the GGUF sits in a HuggingFace cache layout, the
     repository it came from is known (``models--<org>--<repo>``), and the
     companions are the other weight files of that repository: a VAE and a
-    text encoder, picked by what they are called. When that repository
+    text encoder, picked by what they are called. When the only encoders
+    on offer are formats this machine cannot run (an int8 convrot encoder
+    has no Metal kernel), the encoder comes from a documented companion
+    repository instead. When that repository
     cannot even be listed, the model may be half of one, and the run is
     refused with that said — quietly running a model without its encoder
     hands the failure to sd-cli, where it is a mystery instead of a plan.
@@ -188,10 +192,8 @@ def complete_local_spec(spec: ModelSpec) -> ModelSpec:
             "Their download starts from that listing, so it cannot begin while the "
             "repository is unreachable — check the connection and run again."
         )
-    vae = _pick_by_hints(files, ("vae", "ae.safetensors", "flux_vae"))
-    llm = _pick_by_hints(
-        files, ("t5xxl", "clip_l", "clip_g", "qwen3vl", "llm", "instruct", "text_encoder", "/llm")
-    )
+    vae = pick_by_hints(files, VAE_HINTS)
+    llm, llm_repo = resolve_llm(files, repo)
     if not vae and not llm:
         return spec
 
@@ -199,56 +201,8 @@ def complete_local_spec(spec: ModelSpec) -> ModelSpec:
     if vae:
         new_sources["vae"] = ModelSource(repo=repo, file=vae)
     if llm:
-        new_sources["llm"] = ModelSource(repo=repo, file=llm)
+        new_sources["llm"] = ModelSource(repo=llm_repo, file=llm)
     log.info("Completed local model %s from %s: vae=%s llm=%s", spec.name, repo, vae, llm)
     # rebuild the specification as itself, changed: a hand-rolled copy
     # lists the fields it knows and drops the ones it does not (`alias`).
     return replace(spec, sources=new_sources, repo=repo)
-
-
-_QUANTIZED_HINTS = ("int8", "convrot", "q4_", "q5_", "q6_", "q8_", "q4_k", "q5_k", "q6_k", "q8_0")
-_BULKY_HINTS = ("bf16", "fp16", "f16", "fp32", "float32", "f32")
-
-
-_QUANTIZED_HINTS = ("int8", "convrot", "q4_", "q5_", "q6_", "q8_", "q4_k", "q5_k", "q6_k", "q8_0")
-_BULKY_HINTS = ("bf16", "fp16", "f16", "fp32", "float32", "f32")
-
-
-def _pick_by_hints(files: list[str], hints: tuple[str, ...]) -> Optional[str]:
-    """The one file of *files* a role names, or nothing.
-
-    Weights are called by what they do: a file with ``vae`` in its name or
-    path is the VAE. The first hint that matches decides, and the match is
-    the first file the hint names, so the answer does not depend on the
-    order a repository happens to list its files in.
-
-    A quantized file beats a full-precision one when a repository ships
-    both: a text encoder in BF16 is enormous, and on a laptop it is the
-    file that takes the machine down. ``int8``, the ``Q*`` quantisations
-    and GGUF are preferred over ``bf16``/``fp16``/``fp32``.
-    """
-    lowered = [f.lower() for f in files]
-    for hint in hints:
-        matches = [(index, name) for index, name in enumerate(lowered) if hint in name]
-        if not matches:
-            continue
-        by_slimness = {index: _slimness(name) for index, name in matches}
-        chosen = min(matches, key=lambda pair: by_slimness[pair[0]])
-        return files[chosen[0]]
-    return None
-
-
-def _slimness(name: str) -> int:
-    """How much memory a file's format wants: lower is slimmer."""
-    if any(h in name for h in _QUANTIZED_HINTS):
-        return 0
-    if any(h in name for h in _BULKY_HINTS) or _is_bulky_gguf(name):
-        return 2
-    if name.endswith(".gguf"):
-        return 1
-    return 1
-
-
-def _is_bulky_gguf(name: str) -> bool:
-    """Whether a GGUF carries its weights at full precision."""
-    return name.endswith(".gguf") and any(h in name for h in _BULKY_HINTS)
