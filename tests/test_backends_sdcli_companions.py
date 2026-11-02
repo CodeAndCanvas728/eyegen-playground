@@ -5,6 +5,8 @@ and the VAE, and when they cannot be named the run must say so instead
 of handing the failure to the binary.
 """
 
+import logging
+
 import pytest
 
 from eyegen.backends.sdcli import models
@@ -99,3 +101,95 @@ def test_a_first_run_fetch_lands_in_the_configured_tree(tmp_path, monkeypatch):
     assert fetched_into == [expected]
     assert wrapper.model_dir == expected
     assert not (env_tree / "sdcli" / "lone-gguf").exists()
+
+
+def test_a_failed_fetch_names_the_repository_each_file_comes_from(tmp_path, monkeypatch):
+    """The advice after a failed download points at the right repository.
+
+    The text encoder may come from a companion repository, and telling the
+    user to fetch it from the model's own repository sends them for a file
+    that is not there.
+    """
+    transformer = (
+        tmp_path
+        / "models--owner--Qwen-Image-2.1-Uncensored-Quantized"
+        / "snapshots"
+        / "abc123"
+        / "qwen-image-2.1-UC-Q4_K_M.gguf"
+    )
+    transformer.parent.mkdir(parents=True)
+    transformer.write_bytes(b"x")
+    spec = ModelSpec(
+        name="qwen-image-2.1-UC-Q4_K_M",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(transformer))},
+    )
+    monkeypatch.setattr(
+        models,
+        "_repo_files",
+        lambda repo: [
+            "qwen-image-2.1-UC-Q4_K_M.gguf",
+            "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+        ],
+    )
+    binary = tmp_path / "sd-cli"
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("SDCLI_BIN", str(binary))
+    monkeypatch.setattr(models, "pull_sdcli_model", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="Qwen/Qwen3-VL-8B-Instruct-GGUF"):
+        SdCliWrapper(EyeGenConfig(), "qwen-image-2.1-UC-Q4_K_M", spec=spec)
+
+
+def test_an_encoder_the_machine_cannot_run_refuses_the_run(tmp_path, monkeypatch):
+    """An int8 encoder is no kernel on Metal: the run says so, or fails oddly."""
+    snapshot = tmp_path / "models--owner--flux-3-image-klein-GGUF" / "snapshots" / "abc123"
+    snapshot.mkdir(parents=True)
+    gguf = snapshot / "flux-3-image-klein-UD-Q4_K_XL.gguf"
+    gguf.write_bytes(b"x" * 8)
+
+    spec = ModelSpec(
+        name="flux-3-image-klein-UD-Q4_K_XL",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+    monkeypatch.setattr(
+        models,
+        "_repo_files",
+        lambda repo: [
+            "flux-3-image-klein-UD-Q4_K_XL.gguf",
+            "text_encoders/clip_l_int8_convrot.safetensors",
+            "ae.safetensors",
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="clip_l_int8_convrot") as raised:
+        complete_local_spec(spec)
+
+    assert "Metal backend has no kernel" in str(raised.value)
+
+
+def test_a_repository_with_no_encoder_at_all_is_warned_about(tmp_path, monkeypatch, caplog):
+    """No encoder and no companion: the absence is said out loud."""
+    snapshot = tmp_path / "models--owner--repo" / "snapshots" / "abc123"
+    snapshot.mkdir(parents=True)
+    gguf = snapshot / "transformer.gguf"
+    gguf.write_bytes(b"x" * 8)
+
+    spec = ModelSpec(
+        name="transformer",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+    monkeypatch.setattr(
+        models,
+        "_repo_files",
+        lambda repo: ["transformer.gguf", "ae.safetensors"],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        completed = complete_local_spec(spec)
+
+    assert "llm" not in completed.sources
+    assert "no text encoder" in caplog.text

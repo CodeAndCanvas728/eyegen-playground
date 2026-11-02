@@ -97,11 +97,21 @@ class SdCliWrapper(SdCliRenderMixin, BaseSubprocessRunner):
                 status = validate_sdcli_install(self.model, spec=spec, config=config)
             if not status.installed:
                 missing = ", ".join(sorted(set(status.missing_files)))
+                # The files come from different repositories: the text
+                # encoder may be a companion's, not the model's own. Saying
+                # one repository for all of them sends the user to fetch a
+                # file that is not there.
+                origins = ", ".join(
+                    f"{role} from {source.repo}"
+                    for role, source in spec.sources.items()
+                    if not source.is_local
+                )
                 raise RuntimeError(
                     f"The model at {diffusion_path(spec)} is only the transformer; "
                     f"sd-cli also needs its companions, which could not be fetched:\n{missing}\n"
-                    f"The files come from {spec.repo} — run the generation again when "
-                    "the download can complete, or fetch them with huggingface-cli."
+                    f"The files come from {origins or spec.repo} — run the generation "
+                    "again when the download can complete, or fetch them with "
+                    "huggingface-cli."
                 )
         if not status.installed:
             raise RuntimeError(status.message)

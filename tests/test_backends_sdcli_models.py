@@ -234,8 +234,10 @@ def test_a_lone_gguf_from_a_huggingface_cache_is_completed_from_its_repository(
 
     assert completed.sources["vae"].repo == "abenzerps/Qwen-Image-2.1-Uncensored-Quantized"
     assert completed.sources["vae"].file == "vae/qwen_image_2.1_vae_bf16.safetensors"
-    # The quantised text encoder, not the 17 GB BF16 one.
-    assert completed.sources["llm"].file == "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+    # The documented companion GGUF: the repository's own encoders are int8
+    # convrot (no Metal kernel) and a 17 GB bf16.
+    assert completed.sources["llm"].repo == "Qwen/Qwen3-VL-8B-Instruct-GGUF"
+    assert completed.sources["llm"].file == "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
 
 
 def test_a_gguf_outside_a_cache_is_left_alone(tmp_path):
@@ -256,22 +258,23 @@ def test_a_gguf_outside_a_cache_is_left_alone(tmp_path):
     assert complete_local_spec(spec) is spec
 
 
-def test_a_text_encoder_in_full_precision_is_not_the_one_picked():
-    """A BF16 encoder is tens of gigabytes; the quantized one runs on a laptop."""
-    from eyegen.backends.sdcli.models import _pick_by_hints
+def test_an_int8_text_encoder_is_not_the_one_picked():
+    """int8 convrot aborts on this machine's Metal backend; bf16 at least runs."""
+    from eyegen.backends.sdcli.pick import LLM_HINTS, UNRUNNABLE_HINTS, pick_by_hints
 
     files = [
         "text_encoders/qwen3vl_8b_bf16.safetensors",
         "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
     ]
-    hints = ("t5xxl", "clip_l", "clip_g", "qwen3vl", "llm", "instruct", "text_encoder", "/llm")
 
-    assert _pick_by_hints(files, hints) == "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+    assert pick_by_hints(files, LLM_HINTS, exclude=UNRUNNABLE_HINTS) == (
+        "text_encoders/qwen3vl_8b_bf16.safetensors"
+    )
 
 
 def test_a_gguf_transformer_beats_a_bf16_one():
     """A BF16 transformer is a fallback, not a first choice."""
-    from eyegen.backends.sdcli.models import _pick_by_hints
+    from eyegen.backends.sdcli.pick import pick_by_hints
 
     files = [
         "qwen-image-2.1-UC-BF16.gguf",
@@ -279,4 +282,4 @@ def test_a_gguf_transformer_beats_a_bf16_one():
     ]
     hints = ("qwen", "diffusion", "transformer")
 
-    assert _pick_by_hints(files, hints) == "qwen-image-2.1-UC-Q4_K_M.gguf"
+    assert pick_by_hints(files, hints) == "qwen-image-2.1-UC-Q4_K_M.gguf"

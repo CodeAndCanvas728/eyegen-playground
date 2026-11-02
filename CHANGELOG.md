@@ -5,6 +5,14 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-11-02
+
+### Fixed
+- **The text encoder a repository ships is one this machine can run.** sd.cpp's int8 convrot weights have no Metal kernel, so the auto-completed `qwen3vl_8b_int8_convrot.safetensors` aborted the run mid-encoding (`kernel_mul_mm_i8_i8 … not found in any metal library`). int8/convrot encoders are no longer picked; when a repository offers none that runs, the documented companion — the 5 GB `Qwen3VL-8B-Instruct-Q4_K_M.gguf` from Qwen/Qwen3-VL-8B-Instruct-GGUF, sd.cpp's own recommendation for Qwen-Image-2.1 — is fetched instead of a 17 GB bf16. A repository of another model family keeps its full-precision encoder, with a warning. Models already affected pick up the companion on the next run; the orphaned int8 file can be deleted afterwards.
+- **The companion is chosen by the model family, not by the spelling of a file name.** `qwen3_vl_8b`, `Qwen3-VL-8B` and a repository called `Qwen-Image-2.1` all name the same family, and the pairing is looked up in the repository's own name and in the transformer's file name. A repository whose only encoder cannot run here is refused, with that file named, instead of running a half a model.
+- **The model is never taken for its own text encoder.** A transformer called `…-Instruct-….gguf` matches the encoder hints and is the slimmest file in the listing, so it was handed to sd-cli as the encoder; the model's own file is now passed over, as the scan path already does.
+- **The advice after a failed companion download points at the right repository.** The text encoder can come from a companion repository, and the message named only the model's own — sending the user for a file that is not there.
+
 ## [0.5.0] - 2026-10-28
 
 ### Added
