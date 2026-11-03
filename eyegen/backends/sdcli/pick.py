@@ -96,7 +96,7 @@ def resolve_llm(files: list[str], repo: str, transformer: Optional[str] = None) 
     rejected = tuple(
         f
         for f in candidates
-        if _is_encoder_shaped(f) and any(bad in f.lower() for bad in UNRUNNABLE_HINTS)
+        if is_encoder_shaped(f) and any(bad in f.lower() for bad in UNRUNNABLE_HINTS)
     )
     llm = pick_by_hints(candidates, LLM_HINTS, exclude=UNRUNNABLE_HINTS)
     if llm is not None and slimness(llm.lower()) < 2:
@@ -156,7 +156,7 @@ def _claims_transformer(name: str, transformer: Optional[str], files: list[str])
     return False
 
 
-def _is_encoder_shaped(name: str) -> bool:
+def is_encoder_shaped(name: str) -> bool:
     """Whether a file's name says that it is a text encoder."""
     lowered = name.lower()
     return any(hint in lowered for hint in LLM_HINTS)

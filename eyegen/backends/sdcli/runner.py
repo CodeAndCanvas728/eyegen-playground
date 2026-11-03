@@ -12,6 +12,7 @@ from eyegen.model_specs import ModelSpec
 
 from .constants import SDCLI_MODELS, SDCLI_ROLE_FLAGS
 from .install import diffusion_path, get_sdcli_timeout, physical_memory, validate_sdcli_install
+from .pick import is_encoder_shaped
 from .render import SdCliRenderMixin
 
 log = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ class SdCliWrapper(SdCliRenderMixin, BaseSubprocessRunner):
         self.model = spec.name
         self.spec = spec
         self._check_roles()
+        self._check_the_transformer_is_a_model()
 
         status = validate_sdcli_install(self.model, spec=spec, config=config)
         if not status.installed and from_repo and not spec.is_local:
@@ -163,6 +165,31 @@ class SdCliWrapper(SdCliRenderMixin, BaseSubprocessRunner):
                 f"backend does not know: {', '.join(sorted(unknown))}. "
                 f"The roles it knows are: {known}."
             )
+
+    def _check_the_transformer_is_a_model(self) -> None:
+        """Refuse a text encoder handed over as the model.
+
+        A directory of one GGUF is that file's model, and the tool keeps a
+        model's companions in a directory of their own. When the transformer
+        lives elsewhere, that directory holds the encoder alone, and sd-cli
+        is given a file it cannot read a version from.
+        """
+        source = self.spec.sources.get("diffusion_model")
+        if source is None or not source.path:
+            return
+        path = Path(source.path).expanduser()
+        if path.suffix.lower() != ".gguf" or not path.is_file():
+            return
+        if len(list(path.parent.glob("*.gguf"))) != 1:
+            return
+        if not is_encoder_shaped(path.name):
+            return
+        raise ValueError(
+            f"The file {path} is a text encoder, not a model: it is the only GGUF in "
+            f"{path.parent}, and a directory of one GGUF is that file's model. The model "
+            f"it belongs to keeps its transformer elsewhere — choose the transformer "
+            f"file, or the directory that holds it."
+        )
 
     def _validate_cmd_args(self, cmd: List[str]) -> None:
         """Allow only the flags this backend passes."""

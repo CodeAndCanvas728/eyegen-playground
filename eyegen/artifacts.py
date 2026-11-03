@@ -195,8 +195,13 @@ def infer_sdcli_roles(directory: Path) -> tuple[dict[str, Path], list[str]]:
 
     # A name may claim a GGUF as an encoder only when another GGUF is left
     # to be the transformer: a directory of one GGUF is a model of one file,
-    # and that file is the model.
-    hintable = ggufs if len(ggufs) > 1 else []
+    # and that file is the model. The exception is a directory that also
+    # holds a VAE. A VAE belongs to a model, and a directory with a VAE and
+    # no transformer in it is where the tool keeps a model's companions —
+    # the one GGUF there is the encoder that came with the VAE, and the
+    # transformer it conditions is elsewhere.
+    has_vae = any(_safetensors_role(path.name) == "vae" for path in safetensors)
+    hintable = ggufs if len(ggufs) > 1 or has_vae else []
     for path in hintable:
         role = _gguf_role(path.name)
         if role and role not in roles:
@@ -220,8 +225,14 @@ def infer_sdcli_roles(directory: Path) -> tuple[dict[str, Path], list[str]]:
 
 
 def _gguf_role(name: str) -> Optional[str]:
-    """The role a GGUF file fills, from its name."""
+    """The role a GGUF file fills, from its name.
+
+    "qwen" on its own is not an encoder's name: a Qwen Image transformer is
+    called "qwen-image-2.1-….gguf", and the model must not be taken for the
+    encoder that conditions it.
+    """
     lowered = name.lower()
+    flat = "".join(ch for ch in lowered if ch.isalnum())
     for hint, role in (
         ("t5xxl", "t5xxl"),
         ("clip_l", "clip_l"),
@@ -229,11 +240,13 @@ def _gguf_role(name: str) -> Optional[str]:
         ("clip_vision", "clip_vision"),
         ("llm_vision", "llm_vision"),
         ("control", "control_net"),
-        ("qwen", "llm"),
+        ("text_encoder", "llm"),
         ("llm", "llm"),
     ):
         if hint in lowered:
             return role
+    if any(variant in flat for variant in ("qwen3vl", "qwen25vl", "qwen2vl")):
+        return "llm"
     return None
 
 

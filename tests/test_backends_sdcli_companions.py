@@ -197,3 +197,24 @@ def test_a_repository_with_no_encoder_at_all_is_warned_about(tmp_path, monkeypat
 
     assert "llm" not in completed.sources
     assert "no text encoder" in caplog.text
+
+
+def test_a_text_encoder_is_not_run_as_the_model(tmp_path):
+    """The companions live in a directory of their own; it is not a model.
+
+    A directory of one GGUF is that file's model, so the encoder the tool
+    fetched next to a model whose transformer lives elsewhere would be run
+    as the model, and sd-cli fails on a file it cannot read a version from.
+    """
+    directory = tmp_path / "qwen-image-2.1-UC-Q4_K_M"
+    directory.mkdir()
+    encoder = directory / "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+    encoder.write_bytes(b"x")
+    spec = ModelSpec(
+        name="qwen-image-2.1-UC-Q4_K_M",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(encoder))},
+    )
+
+    with pytest.raises(ValueError, match="is a text encoder, not a model"):
+        SdCliWrapper(EyeGenConfig(), "qwen-image-2.1-UC-Q4_K_M", spec=spec)
