@@ -128,8 +128,8 @@ def text_encoder_companion(
     that the spelling of a file name cannot decide it. The encoder's own
     name is a second signal, for a repository that does not say.
     """
-    signals = [_normalise(repo), _normalise(transformer or "")]
-    signals += [_normalise(f) for f in files]
+    signals = [normalise(repo), normalise(transformer or "")]
+    signals += [normalise(f) for f in files]
     for family, companion in TEXT_ENCODER_COMPANIONS.items():
         if any(family in signal for signal in signals):
             return companion
@@ -172,7 +172,7 @@ def _skipped_note(rejected: tuple[str, ...]) -> str:
     )
 
 
-def _normalise(name: str) -> str:
+def normalise(name: str) -> str:
     """A name as its letters and digits only, in lower case.
 
     "Qwen-Image-2.1" and "qwen_image_2_1" are one family written two

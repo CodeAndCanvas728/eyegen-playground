@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 from eyegen.config import Backend
+from eyegen.gui.state import backend_value, settings_by_model
 from eyegen.saved_models import validate_saved_model
 
 log = logging.getLogger("eyegen")
@@ -14,9 +15,19 @@ log = logging.getLogger("eyegen")
 
 class MainWindowStateMixin:
     def _collect_state(self) -> dict:
+        model = self.model_input.text()
+        settings = dict(self._settings_by_model)
+        if model:
+            settings[model] = {
+                "steps": self.steps_spin.value(),
+                "guidance": self.guidance_spin.value(),
+            }
         return {
             "prompt": self.prompt_input.toPlainText(),
             "negative_prompt": self.negative_prompt_input.toPlainText(),
+            "settings_by_model": settings,
+            # The pair of the model below, where a build that predates the
+            # per-model table still looks for it.
             "steps": self.steps_spin.value(),
             "guidance": self.guidance_spin.value(),
             "width": str(self.width_combo.currentText()),
@@ -28,7 +39,7 @@ class MainWindowStateMixin:
             "mode_tab": self.mode_tabs.currentIndex(),
             "image_path": self.image_path_input.text(),
             "denoise": self.denoise_spin.value(),
-            "backend": self.backend_combo.currentData().value,
+            "backend": backend_value(self.backend_combo.currentData()),
             "mflux_quantize": self.quantize_combo.currentData(),
             "mflux_model_path": self.model_path_input.text(),
             "hf_cache_dir": self.hf_cache_input.text(),
@@ -42,6 +53,7 @@ class MainWindowStateMixin:
         s = self._gui_state
         if not s:
             return
+        self._settings_by_model = settings_by_model(s)
         self._restoring_state = True
         self._restore_text_state(s)
         self._restore_numeric_state(s)
@@ -49,7 +61,24 @@ class MainWindowStateMixin:
         self._restore_image_state(s)
         self._restore_optional_fields(s)
         self._restoring_state = False
+        self._adopt_restored_settings(s)
         self._on_backend_changed(self.backend_combo.currentIndex())
+
+    def _adopt_restored_settings(self, s: dict):
+        """Take the values on the spins as the restored model's own.
+
+        The model the file was closed on may not be one the dropdown can
+        offer any more. When it was swapped, the values on the spins belong
+        to no model, and the model that replaced it is left to choose its
+        own.
+        """
+        model = self.model_input.text().strip()
+        if model and model == str(s.get("model") or "").strip():
+            self._settings_by_model[model] = {
+                "steps": self.steps_spin.value(),
+                "guidance": self.guidance_spin.value(),
+            }
+            self._applied_model = model
 
     def _restore_text_state(self, s: dict):
         if "prompt" in s:
@@ -60,10 +89,13 @@ class MainWindowStateMixin:
             self.model_input.setText(s["model"])
 
     def _restore_numeric_state(self, s: dict):
-        if "steps" in s:
-            self.steps_spin.setValue(s["steps"])
-        if "guidance" in s:
-            self.guidance_spin.setValue(s["guidance"])
+        # Steps and guidance belong to the model that saved them, not to the
+        # window: a model with no pair of its own is given its defaults by
+        # `_apply_model_settings` once the backend is known.
+        saved = self._settings_by_model.get(self.model_input.text().strip())
+        if saved is not None:
+            self.steps_spin.setValue(saved["steps"])
+            self.guidance_spin.setValue(saved["guidance"])
         if "width" in s:
             self.width_combo.setCurrentText(str(s["width"]))
         if "height" in s:
@@ -83,7 +115,7 @@ class MainWindowStateMixin:
                 backend = Backend(s["backend"])
             except ValueError:
                 backend = None
-            idx = self.backend_combo.findData(backend) if backend else -1
+            idx = self.backend_combo.findData(backend.value) if backend else -1
             if idx >= 0:
                 self.backend_combo.setCurrentIndex(idx)
         if "mflux_quantize" in s:

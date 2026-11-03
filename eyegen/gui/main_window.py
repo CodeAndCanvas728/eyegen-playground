@@ -79,8 +79,10 @@ class MainWindow(
             restyle_label(self.status_label, "warning")
         self._gui_state = load_gui_state()
         self._log_file = CONFIG_DIR / "eyegen.log"
-        self._pre_mflux_steps: Optional[int] = None
-        self._pre_mflux_guidance: Optional[float] = None
+        # The steps and guidance each model was last run with, so that one
+        # model's settings never arrive at another model's run.
+        self._settings_by_model: dict[str, dict] = {}
+        self._applied_model: Optional[str] = None
         self._restoring_state = False
         self._elapsed_seconds = 0
         self._current_phase = ""

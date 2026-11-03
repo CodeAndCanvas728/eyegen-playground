@@ -136,6 +136,10 @@ def test_a_failed_fetch_names_the_repository_each_file_comes_from(tmp_path, monk
     binary.write_text("#!/bin/sh\n")
     binary.chmod(0o755)
     monkeypatch.setenv("SDCLI_BIN", str(binary))
+    # The model's directory must start empty: a real download of the same
+    # model on this machine would hold exactly the files the fetch is meant
+    # to be missing, and the run would not come to the advice at all.
+    monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path / "models"))
     monkeypatch.setattr(models, "pull_sdcli_model", lambda *args, **kwargs: None)
 
     with pytest.raises(RuntimeError, match="Qwen/Qwen3-VL-8B-Instruct-GGUF"):

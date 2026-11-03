@@ -1,5 +1,6 @@
 """Tests for the stable-diffusion.cpp backend."""
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -132,6 +133,37 @@ def test_a_changed_setting_is_the_users():
     steps, guidance = resolve_settings("flux-3-image-klein-gguf", 8, 3.0)
     assert steps == 8
     assert guidance == 3.0
+
+
+def test_a_family_default_fills_what_the_model_does_not_state():
+    """Qwen Image 2.1 is not distilled: it runs at the steps sd-cli and
+    upstream use, not at the tool-wide default."""
+    assert resolve_settings("qwen-image-2.1-UC-Q4_K_M", None, None) == (20, 6.0)
+
+
+def test_a_stated_setting_beats_the_family_default():
+    spec = ModelSpec(
+        name="qwen-image-2.1-uc",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(repo="owner/repo", file="qwen.gguf")},
+        steps=12,
+        guidance=3.0,
+    )
+    assert resolve_settings("qwen-image-2.1-uc", 30, 7.5, spec=spec) == (12, 3.0)
+
+
+def test_a_step_count_below_what_the_family_renders_at_is_raised(caplog):
+    """One step of a twenty-step flow model is not a faster picture."""
+    with caplog.at_level(logging.WARNING):
+        steps, guidance = resolve_settings("qwen-image-2.1-UC-Q4_K_M", 1, 4.0)
+    assert steps == 10
+    assert guidance == 4.0
+    assert "has not left the noise" in caplog.text
+
+
+def test_the_turbo_weights_are_not_run_at_the_family_settings():
+    """Turbo answers to the same family name and has a schedule of its own."""
+    assert resolve_settings("qwen-image-2.1-turbo", None, None) == (30, 7.5)
 
 
 def test_the_command_only_carries_flags_the_backend_passes(model_dir, binary):

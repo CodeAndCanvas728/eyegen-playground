@@ -111,8 +111,8 @@ The default mode. Enter a prompt (and optional negative prompt), adjust the sett
 |---------|-------------|
 | **Prompt** | What you want in the image |
 | **Negative Prompt** | What to avoid (optional) |
-| **Steps** | Inference steps — 20 = fast, 30 = default, 40 = best quality (collapsible Advanced Settings) |
-| **Guidance** | How closely to follow the prompt (1.0–15.0, default 7.5) (collapsible Advanced Settings) |
+| **Steps** | Inference steps — each model keeps its own; a new model starts at what it wants (20 = fast, 30 = the general default, 40 = best quality) (collapsible Advanced Settings) |
+| **Guidance** | How closely to follow the prompt (1.0–15.0; each model keeps its own, default 7.5) (collapsible Advanced Settings) |
 | **Width / Height** | Output dimensions — presets: 512, 640, 768, 896, 1024 px (in Settings tab) |
 | **Seed** | Leave blank for random; set a number to reproduce a result |
 | **T5 encoder** | Better prompt understanding at the cost of slower load time (MLX only) (collapsible Advanced Settings) |
@@ -191,8 +191,8 @@ source venv/bin/activate
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--steps` | | Inference steps (default: 30, 4 for Bonsai, 16 for FLUX.3) |
-| `--guidance` | | Guidance scale 1.0–15.0 (default: 7.5, 1.0 for Bonsai/FLUX.3) |
+| `--steps` | | Inference steps (default: 30; a model's own when it states one — 4 for Bonsai, 16 for FLUX.3, 20 for Qwen Image 2.1) |
+| `--guidance` | | Guidance scale 1.0–15.0 (default: 7.5; 1.0 for Bonsai/FLUX.3, 6.0 for Qwen Image 2.1) |
 | `--width` | | Output width in pixels, multiple of 8 (MLX/CoreML/GGUF) or 32 (Bonsai) |
 | `--height` | | Output height in pixels, multiple of 8 (MLX/CoreML/GGUF) or 32 (Bonsai) |
 | `--seed` | | Random seed for reproducibility |

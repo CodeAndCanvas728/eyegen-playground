@@ -1,7 +1,9 @@
 """Backend/controls visibility mixin for MainWindow."""
 
 from eyegen import DEFAULT_CONFIG, resolve_model
+from eyegen.backends.sdcli.constants import SDCLI_MODELS, family_settings
 from eyegen.config import Backend
+from eyegen.gui.state import settings_for_model
 
 
 class MainWindowControlsMixin:
@@ -84,6 +86,7 @@ class MainWindowControlsMixin:
             self._refresh_coreml_status()
 
         self._update_backend_hint(backend, is_mflux, is_mlx, is_bonsai, is_coreml)
+        self._apply_model_settings()
         self._apply_mflux_steps_guidance(is_mflux)
 
     def _update_t5_control(self, is_mlx, is_ollama, is_mflux, is_bonsai, is_coreml):
@@ -101,6 +104,7 @@ class MainWindowControlsMixin:
         self.t5_check.setToolTip(tip)
 
     def _update_backend_hint(self, backend, is_mflux, is_mlx, is_bonsai, is_coreml):
+        family = family_settings(self.model_input.text().strip())
         if is_mflux:
             hint = "💡 FLUX models: ~4 steps, 3.5–4.0 guidance."
             if not self.model_path_input.text().strip():
@@ -121,24 +125,72 @@ class MainWindowControlsMixin:
                 "and multiples of 8. First call pays CoreML compile cost; "
                 "subsequent calls are fast."
             )
+        elif backend == Backend.SDCLI and family is not None:
+            hint = (
+                f"💡 {family['name']}: {family['steps']} steps, "
+                f"{family['guidance']} guidance, dimensions a multiple of 32."
+            )
         else:
             self.backend_hint.hide()
             return
         self.backend_hint.setText(hint)
         self.backend_hint.show()
 
-    def _apply_mflux_steps_guidance(self, is_mflux: bool):
+    def _apply_model_settings(self):
+        """Show the steps and guidance the selected model wants.
+
+        A model is not a window: the settings of the last model do not apply
+        to the next. Each model keeps its own pair, and one with no pair of
+        its own is shown what its family or its specification asks for.
+        """
         if self._restoring_state:
             return
-        if is_mflux:
-            if self._pre_mflux_steps is None:
-                self._pre_mflux_steps = self.steps_spin.value()
-            self._pre_mflux_guidance = self.guidance_spin.value()
-            self.steps_spin.setValue(4)
-            self.guidance_spin.setValue(4.0)
-        else:
-            if self._pre_mflux_steps is not None:
-                self.steps_spin.setValue(self._pre_mflux_steps)
-                self.guidance_spin.setValue(self._pre_mflux_guidance)
-            self._pre_mflux_steps = None
-            self._pre_mflux_guidance = None
+        model = self.model_input.text().strip() or DEFAULT_CONFIG.model
+        if model == self._applied_model:
+            return
+        if self._applied_model:
+            self._settings_by_model[self._applied_model] = {
+                "steps": self.steps_spin.value(),
+                "guidance": self.guidance_spin.value(),
+            }
+        self._applied_model = model
+        steps, guidance = settings_for_model(
+            self._settings_by_model, model, self._model_defaults(model)
+        )
+        self.steps_spin.setValue(steps)
+        self.guidance_spin.setValue(guidance)
+
+    def _model_defaults(self, model: str) -> tuple[int, float]:
+        """The steps and guidance *model* wants before the user says otherwise."""
+        import dataclasses
+
+        try:
+            config = dataclasses.replace(self.config, model=model)
+            spec = resolve_model(model, self.backend_combo.currentData(), config=config).spec
+        except (ValueError, ImportError, OSError):
+            spec = None
+        if spec is not None and spec.steps is not None:
+            guidance = spec.guidance if spec.guidance is not None else DEFAULT_CONFIG.guidance_scale
+            return spec.steps, guidance
+        family = family_settings(model)
+        if family is not None:
+            return family["steps"], family["guidance"]
+        shipped = SDCLI_MODELS.get(model)
+        if shipped is not None and shipped.get("steps") is not None:
+            steps = shipped["steps"]
+            guidance = shipped.get("guidance")
+            if guidance is None:
+                guidance = DEFAULT_CONFIG.guidance_scale
+            return steps, guidance
+        return DEFAULT_CONFIG.num_inference_steps, DEFAULT_CONFIG.guidance_scale
+
+    def _apply_mflux_steps_guidance(self, is_mflux: bool):
+        """MFLUX models are distilled: four steps at a guidance of 4.0.
+
+        The pair is remembered with the model like any other, so leaving
+        MFLUX returns to the values the model before it had.
+        """
+        if self._restoring_state or not is_mflux:
+            return
+        self.steps_spin.setValue(4)
+        self.guidance_spin.setValue(4.0)

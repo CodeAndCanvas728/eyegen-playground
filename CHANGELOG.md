@@ -5,6 +5,15 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-11-03
+
+### Fixed
+- **The GUI saves its state again.** The backend combo holds a plain string, and the state file read it as an enum: closing the window raised `AttributeError: 'str' object has no attribute 'value'` before a byte was written. The file on disk therefore kept whatever it held — a July state with one step in it — and every launch since restored it. The backend is now written as the name it is, and the values are saved on close as they are used.
+- **One model's steps no longer arrive at another model's run.** The GUI kept a single steps/guidance pair for the whole window, restored it on every launch, and applied it to whatever model was selected. A July CoreML experiment left `steps: 1` in `gui_state.json`; every later launch started there, and a Qwen Image 2.1 run at 512x512 with one step came back as a flat purple and green field rather than a picture. Steps and guidance are now kept per model: each model is shown its own pair, or the pair its family or specification asks for, and a legacy state file's single pair is read as belonging to the model it was saved with.
+- **Qwen Image 2.1 runs at the steps and guidance it is trained for.** Neighbouring families stated their settings; this one stated none, so it inherited the tool-wide 30 steps / 7.5 guidance and any stale GUI value on top. `SDCLI_FAMILY_SETTINGS` now names the family's 20 steps and 6.0 guidance (sd-cli's own default, and upstream's example), matched from the model name, its repository or the transformer's file name, so a locally discovered model is covered too. Turbo weights are excluded: they are a different model with a fixed eight-step sigma schedule.
+- **A step count below what a family renders at is raised, with a warning.** Below ten steps a flow sampler has not left the noise, so the VAE decodes an almost untouched latent; the run says what it did and why instead of quietly producing a field of colour.
+- **The GUI says what a family wants.** A model with known family settings shows the steps, guidance and dimension rule in the backend hint, next to the existing FLUX, Bonsai and CoreML hints.
+
 ## [0.5.1] - 2026-11-02
 
 ### Fixed
