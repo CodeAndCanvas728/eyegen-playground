@@ -238,6 +238,38 @@ def test_a_lone_gguf_is_the_transformer_not_an_encoder(tmp_path):
     assert any("diffusion_model" in line for line in inferred)
 
 
+def test_a_directory_of_a_vae_and_an_encoder_is_not_a_model(tmp_path):
+    """The tool keeps a model's companions in a directory of their own.
+
+    When the transformer lives elsewhere, that directory holds the encoder
+    alone, and offering it as a model hands sd-cli an encoder to decode
+    with.
+    """
+    directory = tmp_path / "qwen-image-2.1-UC-Q4_K_M"
+    directory.mkdir()
+    _gguf(directory, "Qwen3VL-8B-Instruct-Q4_K_M.gguf")
+    (directory / "qwen_image_2.1_vae_bf16.safetensors").write_bytes(b"x")
+
+    roles, _ = infer_sdcli_roles(directory)
+
+    assert "diffusion_model" not in roles
+    assert roles["llm"].name == "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+    assert describe(directory) is None
+
+
+def test_a_qwen_image_transformer_is_not_taken_for_its_encoder(tmp_path):
+    """The family's name is not the encoder's name."""
+    directory = tmp_path / "qwen-image-2.1-UC-Q4_K_M"
+    directory.mkdir()
+    _gguf(directory, "qwen-image-2.1-UC-Q4_K_M.gguf", size=64)
+    _gguf(directory, "Qwen3VL-8B-Instruct-Q4_K_M.gguf", size=32)
+
+    roles, _ = infer_sdcli_roles(directory)
+
+    assert roles["diffusion_model"].name == "qwen-image-2.1-UC-Q4_K_M.gguf"
+    assert roles["llm"].name == "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+
+
 def test_a_directory_of_one_gguf_is_named_after_the_file(tmp_path):
     """A revision hash is where the model is, not what it is called."""
     snapshot = tmp_path / "snapshots" / "7959e658915f52274897fb573ffeda49de8dc16b"

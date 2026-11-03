@@ -5,6 +5,12 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-11-03
+
+### Fixed
+- **The companions of a model are not offered as a model.** The tool keeps a model's text encoder and VAE in a directory of their own; when the transformer lives elsewhere — as it does for a model that came from a HuggingFace cache — that directory holds the encoder alone. A directory of one GGUF is that file's model, so the encoder was offered in the model list and run as the model, and sd-cli failed with `get sd version from file failed`. A directory that holds a VAE and no transformer is now recognised as the home of the companions, and the run refuses an encoder handed over as the model, naming the file and saying which to choose.
+- **A Qwen Image transformer is not taken for its own encoder.** "qwen" is the model's family, not the encoder's name: in a directory holding both, the transformer `qwen-image-2.1-….gguf` was claimed by the encoder role and the encoder was run as the model. The encoder's own names — `Qwen3VL`, `Qwen2.5-VL` — now say which is which.
+
 ## [0.5.2] - 2026-11-03
 
 ### Fixed
