@@ -4,7 +4,7 @@ import sys
 
 import typer
 
-from eyegen.cli import bonsai, config, coreml, generate, hf, models, pull, status, update
+from eyegen.cli import bonsai, config, coreml, generate, hf, models, pull, status, to3d, update
 
 
 def _print_version() -> None:
@@ -52,6 +52,9 @@ app.command(name="list-bonsai-models")(bonsai.list_bonsai_models_cmd)
 app.command(name="setup-coreml")(coreml.setup_coreml_cmd)
 app.command(name="convert-coreml")(coreml.convert_coreml_cmd)
 app.command(name="list-coreml-models")(coreml.list_coreml_models_cmd)
+
+app.command(name="setup-idol")(to3d.setup_idol_cmd)
+app.command(name="to3d")(to3d.to3d)
 
 
 def main() -> None:

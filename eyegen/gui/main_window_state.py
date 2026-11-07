@@ -47,6 +47,13 @@ class MainWindowStateMixin:
             "coreml_model_path": self.config.coreml_model_path or "",
             "coreml_compute_unit": self.config.coreml_compute_unit or "CPU_AND_NE",
             "low_memory": self.low_memory_check.isChecked(),
+            "to3d_image": self.to3d_image_input.text(),
+            "to3d_mode": self.to3d_mode_combo.currentData(),
+            "to3d_steps": self.to3d_steps_spin.value(),
+            "to3d_gaussians": self.to3d_gaussians_combo.currentData(),
+            "to3d_seed": self.to3d_seed_input.text(),
+            "to3d_device": self.to3d_device_combo.currentData(),
+            "to3d_out": self.to3d_out_input.text(),
         }
 
     def _restore_state(self):
@@ -59,6 +66,7 @@ class MainWindowStateMixin:
         self._restore_numeric_state(s)
         self._restore_model_backend_state(s)
         self._restore_image_state(s)
+        self._restore_to3d_state(s)
         self._restore_optional_fields(s)
         self._restoring_state = False
         self._adopt_restored_settings(s)
@@ -141,6 +149,29 @@ class MainWindowStateMixin:
         scaled = pixmap.scaledToHeight(80, Qt.SmoothTransformation)
         self.image_thumbnail.setPixmap(scaled)
         self.image_thumbnail.show()
+
+    def _restore_to3d_state(self, s: dict):
+        if "to3d_image" in s:
+            self.to3d_image_input.setText(str(s["to3d_image"]))
+        combos = (
+            ("to3d_mode", self.to3d_mode_combo),
+            ("to3d_gaussians", self.to3d_gaussians_combo),
+            ("to3d_device", self.to3d_device_combo),
+        )
+        for key, combo in combos:
+            if key in s:
+                idx = combo.findData(s[key])
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+        if "to3d_steps" in s:
+            try:
+                self.to3d_steps_spin.setValue(int(s["to3d_steps"]))
+            except (TypeError, ValueError):
+                pass
+        if "to3d_seed" in s:
+            self.to3d_seed_input.setText(str(s["to3d_seed"]))
+        if "to3d_out" in s and s["to3d_out"]:
+            self.to3d_out_input.setText(str(s["to3d_out"]))
 
     def _restore_optional_fields(self, s: dict):
         if "low_memory" in s and isinstance(s["low_memory"], bool):

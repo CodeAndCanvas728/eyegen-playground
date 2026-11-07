@@ -29,6 +29,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+The `./generate.py` and `./gui.py` shims re-exec into `venv/` automatically when run with a Python that lacks the dependencies, so the bare commands work even without activating the venv first.
+
 The MLX model (~3 GB) downloads automatically on first use and is cached by HuggingFace.
 MFLUX models also auto-download from HuggingFace on first use — no pull step needed.
 GGUF models are pulled separately — see [GGUF Models](#gguf-models-ollamadiffuser) below.
@@ -137,6 +139,22 @@ The prompt still guides the output style. Width/Height controls are disabled in 
 
 > **Known limitation (MLX only):** img2img may produce output identical to the input when using the 4-bit quantized MLX model. This does not affect MFLUX or OllamaDiffuser models — img2img works correctly with those backends.
 
+### Image to 3D
+
+The **Image to 3D** tab turns one image of an object into a 3D Gaussian splat (`.ply`) with [Idol](https://huggingface.co/speridlabs/idol) — see [Image to 3D (Idol)](#image-to-3d-idol) below.
+
+| Control | Description |
+|---------|-------------|
+| **Input Image** | Browse for a PNG/JPG/JPEG/BMP/WEBP file of a single object |
+| **Mode** | `synthetic` for renders/AI images, `real` for photos |
+| **Steps** | Sampling steps — fewer are faster but lose detail (~30 s/step on MPS) |
+| **Gaussians** | How many 3D Gaussians to generate (more = finer detail) |
+| **Seed** | Random seed (default 42) |
+| **Device** | `mps` (default on Apple Silicon), `cuda`, or `cpu` |
+| **Output** | Where the `.ply` is written (default `outputs/to3d/`) |
+
+Click **Generate 3D** — the run takes minutes on MPS. When it finishes, **Reveal in Finder** opens the `.ply`; view it in a Gaussian splat viewer such as [SuperSplat](https://playcanvas.com/supersplat/editor). Requires the one-time `./generate.py setup-idol` (the tab shows a warning until it's installed).
+
 ---
 
 ## CLI
@@ -220,7 +238,7 @@ source venv/bin/activate
 ./generate.py config-reset                       # restore factory defaults
 ```
 
-Configurable keys: `model`, `num_inference_steps`, `guidance_scale`, `width`, `height`, `backend`, `mflux_quantize`, `use_t5`, `sdcli_offload_to_cpu`, `hf_cache_dir`, `models_dir`.
+Configurable keys: `model`, `num_inference_steps`, `guidance_scale`, `width`, `height`, `backend`, `mflux_quantize`, `use_t5`, `sdcli_offload_to_cpu`, `hf_cache_dir`, `models_dir`, `idol_device`, `idol_mode`, `idol_steps`, `idol_num_gaussians`, `idol_timeout`.
 
 ### Utility commands
 
@@ -568,6 +586,42 @@ Run `./generate.py list-coreml-models` to see installed models.
   select CoreML while on the img2img tab.
 - **First call** at a new shape pays the CoreML compile cost (~5-30s).
   Subsequent calls are fast.
+
+---
+
+## Image to 3D (Idol)
+
+[Idol](https://huggingface.co/speridlabs/idol) (`speridlabs/idol`) turns **one image of an object into a 3D Gaussian splat** — a `.ply` you can orbit in a splat viewer. It is a pipeline stage, not an image-generation backend: it takes an image, not a prompt, so it is not in the Backend dropdown; it runs as its own CLI command and GUI tab.
+
+**Idol is opt-in** and runs in a sidecar Python 3.11 venv at `~/models/eyegen/idol/` (like the CoreML backend), because its dependency set (torch + `transformers>=4.56,<5`) is separate from EyeGen's main venv. On Apple Silicon it uses the SDK's MPS branch, so it runs on the GPU with no CUDA.
+
+### One-time setup
+
+```bash
+brew install python@3.11      # if not already installed
+./generate.py setup-idol      # clones speridlabs/idol-sdk (MPS branch) + creates the sidecar venv (~5-10 min)
+```
+
+The first `to3d` run also downloads ~5 GB of weights (DINOv3 + FLUX.2 VAE). The DINOv3 encoder and the FLUX.2 VAE are gated on HuggingFace — accept their licenses on your account and run `./generate.py hf-login` first.
+
+### Using it
+
+```bash
+# CLI: image -> .ply (plus <stem>_input.png and <stem>_camera.json in the out dir)
+./generate.py to3d photo.jpg                          # defaults: synthetic mode, 25 steps, 131072 gaussians, mps
+./generate.py to3d photo.jpg --mode real              # photos instead of renders
+./generate.py to3d photo.jpg --steps 10 --num-gaussians 65536 -o outputs/to3d
+./generate.py to3d render.png --device cpu            # no GPU
+```
+
+GUI: the **Image to 3D** tab (see above).
+
+### Idol constraints
+
+- **One image, one object.** Idol reconstructs a single object from a single view; it is not a scene or multi-view reconstructor.
+- **Time scales with steps × gaussians.** On a 16 GB M2 Air, the full defaults (50 steps × 262144 gaussians) took ~33 min and fit in memory; `--steps 5 --num-gaussians 32768` is a ~10 min smoke test. There are no official quantized Idol weights — steps and gaussians are the memory/quality levers.
+- **Output is a `.ply`**, not a mesh: view it in SuperSplat or another Gaussian splat viewer.
+- Config keys: `idol_device`, `idol_mode`, `idol_steps`, `idol_num_gaussians`, `idol_timeout` (seconds; default 3600).
 
 ---
 

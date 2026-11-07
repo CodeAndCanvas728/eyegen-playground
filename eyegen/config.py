@@ -82,6 +82,13 @@ class EyeGenConfig:
     #: Whether the T5 text encoder is used. T5 is better quality but slower
     #: and not applicable to every backend.
     use_t5: bool = True
+    #: Idol (image-to-3D) sidecar settings — see DD-020. The defaults are the
+    #: interactive ones measured on the 16 GB M2 Air, not the paper defaults.
+    idol_device: str = "mps"
+    idol_mode: str = "synthetic"
+    idol_steps: int = 25
+    idol_num_gaussians: int = 131072
+    idol_timeout: int = 3600
 
     def __post_init__(self):
         self._normalize_model()
@@ -134,6 +141,7 @@ class EyeGenConfig:
             errors.append("Download timeout must be greater than 0.")
         if self.convert_timeout <= 0:
             errors.append("Convert timeout must be greater than 0.")
+        self._validate_idol(errors)
 
         from eyegen.validation import validate_model_path
 
@@ -158,6 +166,25 @@ class EyeGenConfig:
 
         return errors
 
+    def _validate_idol(self, errors: list[str]) -> None:
+        """The Idol (image-to-3D) sidecar settings — see DD-020."""
+        if self.idol_device not in ("cuda", "mps", "cpu"):
+            errors.append(
+                f"Invalid idol_device '{self.idol_device}'. Must be one of: cuda, mps, cpu."
+            )
+        if self.idol_mode not in ("synthetic", "real"):
+            errors.append(f"Invalid idol_mode '{self.idol_mode}'. Must be one of: synthetic, real.")
+        if not 1 <= self.idol_steps <= 100:
+            errors.append("idol_steps must be between 1 and 100.")
+        if (
+            self.idol_num_gaussians < 32768
+            or self.idol_num_gaussians > 1048576
+            or self.idol_num_gaussians % 32 != 0
+        ):
+            errors.append("idol_num_gaussians must be a multiple of 32 between 32768 and 1048576.")
+        if self.idol_timeout <= 0:
+            errors.append("Idol timeout must be greater than 0.")
+
     @classmethod
     def from_dict(cls, data: dict) -> "EyeGenConfig":
         """Build config from dict, applying type casting and rejecting unknown keys."""
@@ -179,6 +206,9 @@ class EyeGenConfig:
         cls._coerce_int(kwargs, "subprocess_timeout")
         cls._coerce_int(kwargs, "download_timeout")
         cls._coerce_int(kwargs, "convert_timeout")
+        cls._coerce_int(kwargs, "idol_steps")
+        cls._coerce_int(kwargs, "idol_num_gaussians")
+        cls._coerce_int(kwargs, "idol_timeout")
         cls._coerce_bool(kwargs, "sdcli_offload_to_cpu")
         cls._coerce_bool(kwargs, "use_t5")
         cls._coerce_backend(kwargs)

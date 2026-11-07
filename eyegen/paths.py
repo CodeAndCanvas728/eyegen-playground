@@ -14,6 +14,7 @@ is named after what it is rather than after a model:
     ├── coreml/<model>/    # converted bundles
     ├── saved-mflux/       # models saved for a faster load
     ├── bonsai-demo/       # the Bonsai checkout
+    ├── idol/              # the Idol sidecar: SDK checkout + .venv
     └── .coreml-venv/      # the CoreML sidecar
 
 A model of one file and a model of three files cannot share a directory:
@@ -99,6 +100,11 @@ def coreml_venv_dir(config=None) -> Path:
 def bonsai_dir(config=None) -> Path:
     """The Bonsai checkout."""
     return models_dir(config) / "bonsai-demo"
+
+
+def idol_dir(config=None) -> Path:
+    """The Idol sidecar root: the SDK checkout and its venv live under it."""
+    return models_dir(config) / "idol"
 
 
 def saved_mflux_dir(config=None) -> Path:
