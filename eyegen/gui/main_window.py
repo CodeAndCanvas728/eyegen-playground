@@ -25,6 +25,7 @@ from eyegen.gui.main_window_save_model import MainWindowSaveModelMixin
 from eyegen.gui.main_window_settings import MainWindowSettingsMixin
 from eyegen.gui.main_window_settings_page import MainWindowSettingsPageMixin
 from eyegen.gui.main_window_state import MainWindowStateMixin
+from eyegen.gui.main_window_to3d import MainWindowTo3DMixin
 from eyegen.gui.main_window_ui import MainWindowUIMixin
 from eyegen.gui.state import load_gui_state
 
@@ -46,6 +47,7 @@ class MainWindow(
     MainWindowLifecycleMixin,
     MainWindowModelDropdownMixin,
     MainWindowStateMixin,
+    MainWindowTo3DMixin,
 ):
     """Main window class for the EyeGen GUI.
 
@@ -72,6 +74,8 @@ class MainWindow(
         self.worker: Optional[object] = None
         self.pull_worker: Optional[object] = None
         self._save_worker: Optional[object] = None
+        self.to3d_worker: Optional[object] = None
+        self._to3d_result = None
         self.config = load_config()
         for w in pop_config_warnings():
             log.warning("Config warning: %s", w)

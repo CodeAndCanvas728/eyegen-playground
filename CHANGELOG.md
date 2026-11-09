@@ -5,6 +5,14 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`./generate.py` and `./gui.py` work without activating the venv first.** The shims run under the system `python3` (`#!/usr/bin/env python3`), which has no typer/PySide6, so the bare commands died with `ModuleNotFoundError`. When the import fails and a repo `venv/` exists, the shim now re-execs itself with `venv/bin/python` (`_bootstrap.py`); `source venv/bin/activate` is still the documented flow, this just makes the bare command work too.
+
+### Added
+- **Image to 3D: one image becomes a 3D Gaussian splat.** The [Idol](https://huggingface.co/speridlabs/idol) model (`speridlabs/idol`) is integrated as a pipeline stage, not a generation backend — it takes an image, not a prompt, so it is not in the Backend dropdown. New `./generate.py to3d <image>` CLI command (with `--mode synthetic|real`, `--steps`, `--num-gaussians`, `--seed`, `--device`, `--out`) and a fourth GUI tab, **Image to 3D**, with image picker, thumbnail, options, live progress and a Reveal-in-Finder button for the resulting `.ply`. One-time `./generate.py setup-idol` clones the SDK's MPS branch into a sidecar Python 3.11 venv at `~/models/eyegen/idol/` (same pattern as CoreML), so it runs on the GPU of a 16 GB M2 Mac. New config keys: `idol_device`, `idol_mode`, `idol_steps`, `idol_num_gaussians`, `idol_timeout`. Each run writes `<stem>.ply`, `<stem>_input.png` and `<stem>_camera.json` to the output directory (default `outputs/to3d/`).
+
 ## [0.5.3] - 2026-11-03
 
 ### Fixed
@@ -48,8 +56,6 @@ This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - The GUI opens ready instead of locked to a stale saved model: when the restored model no longer resolves, the first resolvable local model is selected instead.
 - A catalogued model is not listed twice.
 - The UI: sections separated by space and type rather than bordered boxes, a real canvas surface for the preview, room to breathe for inputs, a proper segmented mode switch, and the QSS theme tokens substitute hyphenated names so the stylesheet parses instead of being dropped.
-
-## [Unreleased]
 
 ## [0.4.0] - 2026-10-27
 

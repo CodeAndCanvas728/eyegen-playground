@@ -16,6 +16,7 @@ from eyegen.backends import (
     get_mflux_pipeline,
     get_ollama_pipeline,
     get_pipeline,
+    idol,
     resolve_model,
     sdcli,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "Backend",
     "bonsai",
     "coreml",
+    "idol",
     "sdcli",
     "CONFIG_DIR",
     "CONFIG_FILE",

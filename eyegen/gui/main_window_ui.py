@@ -40,6 +40,7 @@ class MainWindowUIMixin:
         self.nav_bar.addTab("Home")
         self.nav_bar.addTab("History")
         self.nav_bar.addTab("Settings")
+        self.nav_bar.addTab("Image to 3D")
         self.nav_bar.setExpanding(False)
         self.nav_bar.currentChanged.connect(self._on_nav_changed)
         nav_layout.addWidget(self.nav_bar)
@@ -51,12 +52,13 @@ class MainWindowUIMixin:
         self._build_home_page()
         self._build_history_page()
         self._build_settings_page()
+        self._build_to3d_page()
 
         self._current_pixmap = None
 
     def _on_nav_changed(self, index: int):
         self.content_stack.setCurrentIndex(index)
-        labels = ["Home", "History", "Settings"]
+        labels = ["Home", "History", "Settings", "Image to 3D"]
         self.setWindowTitle(f"EyeGen — {labels[index]}")
         if index == 0:
             self._scale_preview()

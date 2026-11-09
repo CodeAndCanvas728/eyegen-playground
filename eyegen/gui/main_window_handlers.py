@@ -34,6 +34,20 @@ class MainWindowHandlersMixin:
                 return
             self.worker.cancel()
             self.worker.wait(2000)
+        to3d_worker = getattr(self, "to3d_worker", None)
+        if to3d_worker is not None and to3d_worker.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "3D generation in progress",
+                "An image-to-3D run is still going. Stop and close?",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if reply != QMessageBox.Yes:
+                event.ignore()
+                return
+            to3d_worker.cancel()
+            to3d_worker.wait(2000)
         from eyegen.gui.state import save_gui_state
 
         try:

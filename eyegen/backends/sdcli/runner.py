@@ -6,13 +6,13 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
+from eyegen.artifacts import is_lone_encoder_gguf
 from eyegen.backends.runner import BaseSubprocessRunner
 from eyegen.config import EyeGenConfig
 from eyegen.model_specs import ModelSpec
 
 from .constants import SDCLI_MODELS, SDCLI_ROLE_FLAGS
 from .install import diffusion_path, get_sdcli_timeout, physical_memory, validate_sdcli_install
-from .pick import is_encoder_shaped
 from .render import SdCliRenderMixin
 
 log = logging.getLogger(__name__)
@@ -169,20 +169,16 @@ class SdCliWrapper(SdCliRenderMixin, BaseSubprocessRunner):
     def _check_the_transformer_is_a_model(self) -> None:
         """Refuse a text encoder handed over as the model.
 
-        A directory of one GGUF is that file's model, and the tool keeps a
-        model's companions in a directory of their own. When the transformer
-        lives elsewhere, that directory holds the encoder alone, and sd-cli
-        is given a file it cannot read a version from.
+        The same rule the scan applies (artifacts.is_lone_encoder_gguf): a
+        directory of a VAE and one encoder-shaped GGUF is where the tool
+        keeps a model's companions, and sd-cli would be given a file it
+        cannot read a version from.
         """
         source = self.spec.sources.get("diffusion_model")
         if source is None or not source.path:
             return
         path = Path(source.path).expanduser()
-        if path.suffix.lower() != ".gguf" or not path.is_file():
-            return
-        if len(list(path.parent.glob("*.gguf"))) != 1:
-            return
-        if not is_encoder_shaped(path.name):
+        if not is_lone_encoder_gguf(path):
             return
         raise ValueError(
             f"The file {path} is a text encoder, not a model: it is the only GGUF in "

@@ -257,6 +257,24 @@ def test_a_directory_of_a_vae_and_an_encoder_is_not_a_model(tmp_path):
     assert describe(directory) is None
 
 
+def test_a_lone_gguf_next_to_a_vae_is_the_model_unless_encoder_shaped(tmp_path):
+    """A single-file model that ships its VAE locally keeps its model role.
+
+    Only an encoder-shaped lone GGUF next to a VAE is read as the encoder
+    that came with the VAE; a name carrying a non-encoder hint (a control
+    net, say) does not take the model's place.
+    """
+    directory = tmp_path / "my-model"
+    directory.mkdir()
+    _gguf(directory, "my-model-control-net-Q4_K_M.gguf")
+    (directory / "ae.safetensors").write_bytes(b"x")
+
+    roles, _ = infer_sdcli_roles(directory)
+
+    assert roles["diffusion_model"].name == "my-model-control-net-Q4_K_M.gguf"
+    assert "control_net" not in roles
+
+
 def test_a_qwen_image_transformer_is_not_taken_for_its_encoder(tmp_path):
     """The family's name is not the encoder's name."""
     directory = tmp_path / "qwen-image-2.1-UC-Q4_K_M"

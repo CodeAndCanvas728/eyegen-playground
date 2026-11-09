@@ -1,10 +1,11 @@
-"""Bonsai/CoreML-specific background worker threads for the EyeGen GUI."""
+"""Bonsai/CoreML/Idol-specific background worker threads for the EyeGen GUI."""
 
 import subprocess
+import threading
 
 from PySide6.QtCore import QThread, Signal
 
-from eyegen.backends import bonsai
+from eyegen.backends import bonsai, idol
 
 
 class _ScriptWorker(QThread):
@@ -65,3 +66,54 @@ class BonsaiDownloadWorker(QThread):
 class CoreMLSetupWorker(_ScriptWorker):
     def _success_message(self) -> str:
         return "CoreML sidecar venv installed"
+
+
+class To3DWorker(QThread):
+    """Runs one image through the Idol sidecar (image → 3D Gaussian splat).
+
+    The runner is kept on the instance so cancel() can terminate the
+    subprocess mid-run. It is written by the worker thread and read by the
+    GUI thread, so access goes through a lock.
+    """
+
+    finished = Signal(object, str)
+    error = Signal(str)
+    status = Signal(str)
+
+    def __init__(self, image, out_dir, mode, steps, num_gaussians, seed, device, config):
+        super().__init__()
+        self.image = image
+        self.out_dir = out_dir
+        self.mode = mode
+        self.steps = steps
+        self.num_gaussians = num_gaussians
+        self.seed = seed
+        self.device = device
+        self.config = config
+        self._runner_lock = threading.Lock()
+        self._runner = None
+
+    def run(self):
+        try:
+            runner = idol.IdolRunner(self.config)
+            with self._runner_lock:
+                self._runner = runner
+            result = runner.run(
+                self.image,
+                self.out_dir,
+                mode=self.mode,
+                steps=self.steps,
+                num_gaussians=self.num_gaussians,
+                seed=self.seed,
+                device=self.device,
+                progress_callback=lambda line: self.status.emit(line),
+            )
+            self.finished.emit(result, f"3D splat written: {result.ply}")
+        except (RuntimeError, OSError, ValueError) as exc:
+            self.error.emit(str(exc))
+
+    def cancel(self):
+        with self._runner_lock:
+            runner = self._runner
+        if runner is not None:
+            runner.cancel()

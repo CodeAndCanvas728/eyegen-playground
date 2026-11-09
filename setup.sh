@@ -7,22 +7,63 @@ echo "🚀 EyeGen Setup"
 echo "=================================="
 
 # Check Python
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 not found. Please install Python 3.10+ first."
+find_supported_python() {
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
+        if command -v "$candidate" &>/dev/null; then
+            local cmd
+            cmd=$(command -v "$candidate")
+            if [[ "$cmd" == *"$PWD"* ]]; then
+                continue
+            fi
+            local ver
+            ver=$("$cmd" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)
+            local major=$(echo "$ver" | cut -d. -f1)
+            local minor=$(echo "$ver" | cut -d. -f2)
+            if [ "$major" -eq 3 ] && [ "$minor" -ge 10 ] && [ "$minor" -lt 15 ]; then
+                echo "$cmd"
+                return 0
+            fi
+        fi
+    done
+    for py in "$HOME"/.local/share/uv/python/*/bin/python3; do
+        if [ -x "$py" ]; then
+            local ver
+            ver=$("$py" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)
+            local major=$(echo "$ver" | cut -d. -f1)
+            local minor=$(echo "$ver" | cut -d. -f2)
+            if [ "$major" -eq 3 ] && [ "$minor" -ge 10 ] && [ "$minor" -lt 15 ]; then
+                echo "$py"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+PYTHON_BIN=$(find_supported_python || true)
+if [ -z "$PYTHON_BIN" ]; then
+    echo "❌ Compatible Python (3.10-3.14) not found. PyTorch and MLX do not yet support Python 3.15+."
     exit 1
 fi
 
-PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
-echo "✓ Python $PYTHON_VERSION found"
+PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1 | awk '{print $2}')
+echo "✓ Python $PYTHON_VERSION found ($PYTHON_BIN)"
 
 # Create venv
 echo ""
 echo "📦 Creating virtual environment..."
+if [ -d "venv" ]; then
+    if [ ! -x "venv/bin/python" ] || ! "venv/bin/python" -c "pass" 2>/dev/null; then
+        echo "⚠️  Existing venv is broken or non-executable. Recreating..."
+        rm -rf "venv"
+    fi
+fi
+
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    "$PYTHON_BIN" -m venv venv
     echo "✓ Virtual environment created"
 else
-    echo "✓ Virtual environment already exists"
+    echo "✓ Virtual environment already exists and is healthy"
 fi
 
 # Activate venv

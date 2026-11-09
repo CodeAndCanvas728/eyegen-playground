@@ -3,14 +3,7 @@
 A model that is already on this machine has no name in a catalogue, and
 the tool cannot tell what it is by looking at the name: a directory of
 weights is a model however it is named. These are the rules that say what
-a thing on disk is. They answer two questions: what is this path, and
-what is under the models root.
-
-The rules are about the shape of what is there — the files, and what they
-are called — and not about the name of the directory it is in. Where a
-shape fits two backends, the more specific one wins, and what was decided
-is said out loud, because a role the binary takes by path is a role the
-user may want to correct.
+a thing on disk is — the shape of what is there, not the directory's name.
 """
 
 from __future__ import annotations
@@ -44,14 +37,10 @@ class Artifact:
 def describe(path: Path) -> Optional[Artifact]:
     """What the thing at *path* is, or nothing when it is not a model.
 
-    The path is made absolute first: it is handed to a runtime, linked into
-    another program's directory, and compared with the paths in a
-    specification, and a relative path means a different file to each of
-    them.
-
-    A symlink is not followed. A model in a HuggingFace cache is a link to
-    a blob whose name says nothing, and the link's own name — the one the
-    user sees and the one that says what the file is — is what is read.
+    The path is made absolute first: a relative path means a different
+    file to each runtime it is handed to. A symlink is not followed: in a
+    HuggingFace cache the link's own name is the one that says what the
+    file is.
     """
     target = Path(path).expanduser()
     if not target.is_absolute():
@@ -178,30 +167,43 @@ def _describe_directory(path: Path) -> Optional[Artifact]:
     )
 
 
+# The roles a name may claim for a lone GGUF that sits next to a VAE: only an
+# encoder that came with the VAE, never the model itself.
+_ENCODER_ROLES = {"llm", "t5xxl", "clip_l", "clip_g", "clip_vision", "llm_vision"}
+
+
+def is_lone_encoder_gguf(path: Path) -> bool:
+    """Whether *path* is the one GGUF of a companions directory.
+
+    A directory of a VAE and no transformer is where the tool keeps a
+    model's companions: the lone GGUF there is the encoder that came with
+    the VAE, not a model. One rule, used by the scan and by the run-time
+    refusal alike.
+    """
+    if path.suffix.lower() != ".gguf" or not path.is_file():
+        return False
+    if len(list(path.parent.glob("*.gguf"))) != 1:
+        return False
+    has_vae = any(_safetensors_role(p.name) == "vae" for p in path.parent.glob("*.safetensors"))
+    return has_vae and _gguf_role(path.name) in _ENCODER_ROLES
+
+
 def infer_sdcli_roles(directory: Path) -> tuple[dict[str, Path], list[str]]:
     """The roles the files in *directory* fill, and what was read off them.
 
-    The binary takes a path per role, and nothing about a file says which
-    role it fills. The names do: a file that says it is a VAE is the VAE, a
-    GGUF that says it is an encoder is the encoder, and the transformer is
-    the largest GGUF that is left. What was decided is returned with it,
-    because a role the user meant differently is one line of a
-    specification away.
+    The binary takes a path per role; the names say which file fills which.
+    What was decided is returned with it, because a role the user meant
+    differently is one line of a specification away.
     """
     ggufs = sorted(directory.glob("*.gguf"), key=_size, reverse=True)
     safetensors = sorted(directory.glob("*.safetensors"), key=_size, reverse=True)
     roles: dict[str, Path] = {}
     inferred: list[str] = []
 
-    # A name may claim a GGUF as an encoder only when another GGUF is left
-    # to be the transformer: a directory of one GGUF is a model of one file,
-    # and that file is the model. The exception is a directory that also
-    # holds a VAE. A VAE belongs to a model, and a directory with a VAE and
-    # no transformer in it is where the tool keeps a model's companions —
-    # the one GGUF there is the encoder that came with the VAE, and the
-    # transformer it conditions is elsewhere.
-    has_vae = any(_safetensors_role(path.name) == "vae" for path in safetensors)
-    hintable = ggufs if len(ggufs) > 1 or has_vae else []
+    # A name may claim a GGUF as an encoder only when another GGUF is left to
+    # be the transformer; a lone GGUF is the model unless it is the encoder
+    # of a companions directory (is_lone_encoder_gguf).
+    hintable = ggufs if len(ggufs) > 1 or (ggufs and is_lone_encoder_gguf(ggufs[0])) else []
     for path in hintable:
         role = _gguf_role(path.name)
         if role and role not in roles:

@@ -202,14 +202,16 @@ def test_a_repository_with_no_encoder_at_all_is_warned_about(tmp_path, monkeypat
 def test_a_text_encoder_is_not_run_as_the_model(tmp_path):
     """The companions live in a directory of their own; it is not a model.
 
-    A directory of one GGUF is that file's model, so the encoder the tool
-    fetched next to a model whose transformer lives elsewhere would be run
-    as the model, and sd-cli fails on a file it cannot read a version from.
+    A directory of a VAE and one encoder-shaped GGUF is where the tool keeps
+    a model's companions, so the lone GGUF there is the encoder, not the
+    model — the same rule the scan applies (artifacts.is_lone_encoder_gguf),
+    and sd-cli would fail on a file it cannot read a version from.
     """
     directory = tmp_path / "qwen-image-2.1-UC-Q4_K_M"
     directory.mkdir()
     encoder = directory / "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
     encoder.write_bytes(b"x")
+    (directory / "ae.safetensors").write_bytes(b"x")
     spec = ModelSpec(
         name="qwen-image-2.1-UC-Q4_K_M",
         backend=Backend.SDCLI,
@@ -218,3 +220,36 @@ def test_a_text_encoder_is_not_run_as_the_model(tmp_path):
 
     with pytest.raises(ValueError, match="is a text encoder, not a model"):
         SdCliWrapper(EyeGenConfig(), "qwen-image-2.1-UC-Q4_K_M", spec=spec)
+
+
+def test_a_lone_encoder_named_gguf_without_a_vae_is_the_model(tmp_path, monkeypatch):
+    """One rule, one answer: without a VAE beside it the lone GGUF is the
+    model, exactly as the scan reads the same directory."""
+    directory = tmp_path / "solo"
+    directory.mkdir()
+    gguf = directory / "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+    gguf.write_bytes(b"x")
+    spec = ModelSpec(
+        name="solo",
+        backend=Backend.SDCLI,
+        sources={"diffusion_model": ModelSource(path=str(gguf))},
+    )
+    binary = tmp_path / "sd-cli"
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("SDCLI_BIN", str(binary))
+    monkeypatch.setenv("SDCLI_MODEL_DIR", str(tmp_path / "models"))
+    monkeypatch.setattr(models, "_repo_files", lambda repo: COMPANION_FILES)
+
+    def fake_pull(model, spec=None, model_dir=None, **kwargs):
+        model_dir.mkdir(parents=True, exist_ok=True)
+        for source in spec.sources.values():
+            if not source.is_local:
+                (model_dir / source.name).write_bytes(b"x")
+        return model_dir
+
+    monkeypatch.setattr(models, "pull_sdcli_model", fake_pull)
+
+    wrapper = SdCliWrapper(EyeGenConfig(), "solo", spec=spec)
+
+    assert wrapper.spec.sources["diffusion_model"].path == str(gguf)
