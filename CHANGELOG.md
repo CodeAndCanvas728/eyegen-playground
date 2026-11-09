@@ -5,7 +5,7 @@ All notable changes to EyeGen are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-09
 
 ### Fixed
 - **`./generate.py` and `./gui.py` work without activating the venv first.** The shims run under the system `python3` (`#!/usr/bin/env python3`), which has no typer/PySide6, so the bare commands died with `ModuleNotFoundError`. When the import fails and a repo `venv/` exists, the shim now re-execs itself with `venv/bin/python` (`_bootstrap.py`); `source venv/bin/activate` is still the documented flow, this just makes the bare command work too.
