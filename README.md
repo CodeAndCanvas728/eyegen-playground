@@ -761,6 +761,7 @@ mygen-playground/
 ├── scripts/
 │   ├── setup-bonsai.sh   # One-time installer for Bonsai
 │   ├── setup-coreml.sh   # One-time installer for CoreML sidecar venv
+│   ├── setup-idol.sh     # One-time installer for the Idol image-to-3D SDK
 │   └── generate_theme.py # Generates gui/style/*.qss from the tokens
 ├── config/
 │   ├── config.json       # Generation defaults
@@ -779,7 +780,8 @@ mygen-playground/
     │   ├── .venv/        # Py 3.11 venv with patched mflux-prism + mlx
     │   └── models/       # Downloaded bonsai models
     ├── coreml/           # Downloaded/converted CoreML model bundles
-    └── .coreml-venv/     # Py 3.11 sidecar venv with python_coreml_stable_diffusion
+    ├── .coreml-venv/     # Py 3.11 sidecar venv with python_coreml_stable_diffusion
+    └── idol/             # Idol SDK clone + Py 3.11 sidecar venv (created by setup-idol)
 ```
 
 The root is one setting. `models_dir` in `config/config.json` moves everything under it — `./generate.py config-set models_dir /Volumes/Models` — and `EYEGEN_MODELS_DIR` does the same for one run, which is the way to use a different disk without editing a file.

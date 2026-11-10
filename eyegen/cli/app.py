@@ -22,7 +22,8 @@ app = typer.Typer(
     help=(
         "Generate images using MLX SD3.5, MFLUX (FLUX/FIBO/Z-Image), "
         "OllamaDiffuser GGUF, Bonsai (PrismML ternary), or CoreML "
-        "(Apple Neural Engine) backends"
+        "(Apple Neural Engine) backends — and turn one image into a 3D "
+        "Gaussian splat with Idol (`to3d`, after the one-time `setup-idol`)"
     ),
     no_args_is_help=True,
 )
