@@ -29,7 +29,12 @@ _IMAGE_HELP = "Input image (" + "/".join(e.lstrip(".").upper() for e in IDOL_IMA
 
 
 def setup_idol_cmd():
-    """One-time install: clones the Idol SDK and creates its sidecar venv."""
+    """One-time install: clones the Idol SDK and creates its sidecar venv.
+
+    Clones speridlabs/idol-sdk (MPS branch) into ~/models/eyegen/idol/ and
+    creates a sidecar Python 3.11 venv with torch there. Takes several
+    minutes on first run.
+    """
     script = PROJECT_ROOT / "scripts" / "setup-idol.sh"
     if not script.is_file():
         typer.echo(f"❌ Setup script not found: {script}", err=True)
@@ -106,7 +111,12 @@ def to3d(
         typer.Option("--out", "-o", help="Output directory (default: outputs/to3d)"),
     ] = None,
 ):
-    """Turn one image into a 3D Gaussian splat (.ply) with Idol."""
+    """Turn one image into a 3D Gaussian splat (.ply) with Idol.
+
+    Requires the one-time `setup-idol` install. The first run downloads
+    ~5 GB of weights (DINOv3 + FLUX.2 VAE); both are gated on HuggingFace,
+    so accept their licenses on your account and run `hf-login` first.
+    """
     config = load_config()
 
     err = validate_image_path(str(image))
